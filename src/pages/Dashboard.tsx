@@ -1,8 +1,27 @@
+import { useState } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
 import { format } from 'date-fns';
+import { supabase } from '../integrations/supabase/client';
 
 export default function Dashboard() {
-  const { activeLocationId, reviewRequests, orders, customers, loading } = useMapRated();
+  const { activeLocationId, reviewRequests, orders, customers, loading, refreshData } = useMapRated();
+  const [processing, setProcessing] = useState(false);
+
+  const runProcessor = async () => {
+    setProcessing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('process-reviews');
+      if (error) throw error;
+      
+      alert(`Processed ${data.processed} pending requests.`);
+      await refreshData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to run processor: ' + err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   if (loading) {
     return <div className="p-8">Loading dashboard data...</div>;
@@ -19,7 +38,16 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">Dashboard</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+        <button
+          onClick={runProcessor}
+          disabled={processing}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+        >
+          {processing ? 'Processing...' : 'Run Review Processor'}
+        </button>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
