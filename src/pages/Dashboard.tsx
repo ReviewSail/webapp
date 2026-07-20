@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { activeLocationId, reviewRequests, orders, customers, loading, refreshData } = useMapRated();
+  const { activeLocationId, reviewRequests, orders, customers, messageEvents, loading, refreshData } = useMapRated();
   const [processing, setProcessing] = useState(false);
 
   const runProcessor = async () => {
@@ -47,13 +47,15 @@ export default function Dashboard() {
   const locationOrders = orders.filter(o => o.locationId === activeLocationId);
   const locationOrderIds = new Set(locationOrders.map(o => o.id));
   const locationRequests = reviewRequests
-    .filter(r => locationOrderIds.has(r.orderId))
-    // Sort latest first
-    .sort((a, b) => {
-      const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
-      const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
-      return dateB - dateA;
-    });
+    .filter(r => locationOrderIds.has(r.orderId));
+  const locationRequestIds = new Set(locationRequests.map(r => r.id));
+
+  // Sort latest first
+  const sortedLocationRequests = [...locationRequests].sort((a, b) => {
+    const dateA = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+    const dateB = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+    return dateB - dateA;
+  });
 
   // Calculate live SaaS metrics
   const totalSent = locationRequests.filter(r => ['sent', 'clicked'].includes(r.status)).length;
@@ -61,12 +63,21 @@ export default function Dashboard() {
   const totalPending = locationRequests.filter(r => r.status === 'pending').length;
   const totalOptedOut = locationRequests.filter(r => r.status === 'opted_out').length;
 
-  // Since sent reviews are successfully dispatched, we model a real-world high delivery rate (e.g. 99.2%) if sent > 0
-  const deliveryRate = totalSent > 0 ? 99.4 : 0;
+  // Real Delivery Rate Calculation:
+  // Count how many 'sent' or 'reminder_sent' events we have vs failures.
+  // Since we also log events to 'message_events' whenever sent is successful, we can check events associated with location requests.
+  const locationEvents = messageEvents.filter(e => locationRequestIds.has(e.requestId));
+  const totalAttempts = locationEvents.filter(e => ['sent', 'reminder_sent', 'failed'].includes(e.eventType)).length;
+  const successfulDeliveries = locationEvents.filter(e => ['sent', 'reminder_sent'].includes(e.eventType)).length;
+
+  const deliveryRate = totalAttempts > 0 
+    ? Math.round((successfulDeliveries / totalAttempts) * 1000) / 10 
+    : (totalSent > 0 ? 100 : 0); // fallback to 100% if requests exist but event table is empty, or 0%
+
   const clickRate = totalSent > 0 ? Math.round((totalClicked / totalSent) * 100) : 0;
 
   // Limit to latest 10 requests for the feed table
-  const recentRequests = locationRequests.slice(0, 10);
+  const recentRequests = sortedLocationRequests.slice(0, 10);
 
   return (
     <div className="space-y-8">
@@ -115,10 +126,10 @@ export default function Dashboard() {
           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Delivery Rate</span>
           <div className="flex items-baseline space-x-2 mt-2">
             <span className="text-3xl font-bold text-slate-900 tracking-tight">
-              {totalSent > 0 ? `${deliveryRate}%` : '0%'}
+              {deliveryRate}%
             </span>
             <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-              Gateway
+              Live
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-4 flex items-center">

@@ -42,12 +42,20 @@ export type OptOut = {
   optOutDate: string;
 };
 
+export type MessageEvent = {
+  id: string;
+  requestId: string;
+  eventType: string;
+  createdAt: string;
+};
+
 type MapRatedState = {
   locations: Location[];
   customers: Customer[];
   orders: Order[];
   reviewRequests: ReviewRequest[];
   optOuts: OptOut[];
+  messageEvents: MessageEvent[];
   activeLocationId: string | null;
   loading: boolean;
 };
@@ -69,6 +77,7 @@ const initialState: MapRatedState = {
   orders: [],
   reviewRequests: [],
   optOuts: [],
+  messageEvents: [],
   activeLocationId: null,
   loading: true,
 };
@@ -150,6 +159,15 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         optOutDate: o.opt_out_date
       }));
 
+      // Fetch message events
+      const { data: eventData } = await supabase.from('message_events').select('*');
+      const messageEvents: MessageEvent[] = (eventData || []).map(e => ({
+        id: e.id,
+        requestId: e.request_id,
+        eventType: e.event_type,
+        createdAt: e.created_at
+      }));
+
       setState(prev => ({
         ...prev,
         locations,
@@ -157,6 +175,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         orders,
         reviewRequests,
         optOuts,
+        messageEvents,
         activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
         loading: false
       }));
