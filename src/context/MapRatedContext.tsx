@@ -58,6 +58,7 @@ type MapRatedContextType = MapRatedState & {
   addReviewRequest: (orderId: string) => Promise<void>;
   updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
   refreshData: () => Promise<void>;
+  bulkImport: (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => Promise<{ success: boolean, count: number, error?: string }>;
 };
 
 const initialState: MapRatedState = {
@@ -240,6 +241,84 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     await refreshData();
   };
 
+  const bulkImport = async (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => {
+    if (!state.activeLocationId) {
+      return { success: false, count: 0, error: "No active location selected" };
+    }
+
+    try {
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+      if (!userData) {
+        return { success: false, count: 0, error: "No user account linked" };
+      }
+      const accountId = userData.account_id;
+
+      // 1. Bulk insert customers
+      const { data: insertedCustomers, error: custError } = await supabase
+        .from('customers')
+        .insert(rows.map(r => ({
+          account_id: accountId,
+          first_name: r.firstName,
+          last_name: r.lastName,
+          email: r.email,
+          phone: r.phone || null
+        })))
+        .select();
+
+      if (custError || !insertedCustomers) {
+        throw custError || new Error("Failed to bulk insert customers");
+      }
+
+      // 2. Bulk insert orders
+      const ordersToInsert = insertedCustomers.map((cust, idx) => {
+        const originalRow = rows[idx];
+        return {
+          location_id: state.activeLocationId,
+          customer_id: cust.id,
+          checkout_date: originalRow ? new Date(originalRow.checkoutDate).toISOString() : new Date().toISOString(),
+          status: 'completed' as const
+        };
+      });
+
+      const { data: insertedOrders, error: orderError } = await supabase
+        .from('orders')
+        .insert(ordersToInsert)
+        .select();
+
+      if (orderError || !insertedOrders) {
+        throw orderError || new Error("Failed to bulk insert orders");
+      }
+
+      // 3. Bulk insert review requests
+      const { data: optOuts } = await supabase.from('opt_outs').select('email');
+      const optedOutEmails = new Set((optOuts || []).map(o => o.email?.toLowerCase()));
+
+      const requestsToInsert = insertedOrders.map(order => {
+        const customer = insertedCustomers.find(c => c.id === order.customer_id);
+        const isOptedOut = customer?.email && optedOutEmails.has(customer.email.toLowerCase());
+        return {
+          order_id: order.id,
+          status: isOptedOut ? 'opted_out' : 'pending'
+        };
+      });
+
+      const { error: rrError } = await supabase
+        .from('review_requests')
+        .insert(requestsToInsert);
+
+      if (rrError) {
+        throw rrError;
+      }
+
+      await refreshData();
+      return { success: true, count: rows.length };
+
+    } catch (e: any) {
+      console.error(e);
+      return { success: false, count: 0, error: e.message || "Failed to bulk import data" };
+    }
+  };
+
   const updateLocationSettings = async (id: string, settings: Partial<Location>) => {
     if (settings.name || settings.googlePlaceUrl || settings.timezone) {
       await supabase.from('locations').update({
@@ -270,7 +349,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       addOptOut,
       addReviewRequest,
       updateLocationSettings,
-      refreshData
+      refreshData,
+      bulkImport
     }}>
       {children}
     </MapRatedContext.Provider>
