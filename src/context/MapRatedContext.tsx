@@ -1,10 +1,12 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../integrations/supabase/client';
+import { useAuth } from './AuthContext';
 
 export type Location = {
   id: string;
   name: string;
   googlePlaceUrl: string;
-  templateText: string;
+  templateText?: string;
   timezone: string;
 };
 
@@ -12,8 +14,8 @@ export type Customer = {
   id: string;
   firstName: string;
   lastName: string;
-  email: string;
-  phone?: string;
+  email: string | null;
+  phone?: string | null;
 };
 
 export type Order = {
@@ -21,7 +23,7 @@ export type Order = {
   customerId: string;
   locationId: string;
   checkoutDate: string;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'completed' | 'cancelled';
 };
 
 export type ReviewRequest = {
@@ -33,8 +35,8 @@ export type ReviewRequest = {
 
 export type OptOut = {
   id: string;
-  email: string;
-  phone?: string;
+  email: string | null;
+  phone?: string | null;
   optOutDate: string;
 };
 
@@ -45,140 +47,218 @@ type MapRatedState = {
   reviewRequests: ReviewRequest[];
   optOuts: OptOut[];
   activeLocationId: string | null;
+  loading: boolean;
 };
 
 type MapRatedContextType = MapRatedState & {
   setActiveLocationId: (id: string) => void;
-  addCustomer: (customer: Omit<Customer, 'id'>) => Customer;
-  addOrder: (order: Omit<Order, 'id'>) => Order;
-  addOptOut: (email: string) => void;
-  addReviewRequest: (orderId: string) => void;
-  updateLocationSettings: (id: string, settings: Partial<Location>) => void;
+  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
+  addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
+  addOptOut: (email: string) => Promise<void>;
+  addReviewRequest: (orderId: string) => Promise<void>;
+  updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
+  refreshData: () => Promise<void>;
 };
 
-const defaultLocations: Location[] = [
-  {
-    id: 'loc_1',
-    name: 'Grand Plaza Hotel',
-    googlePlaceUrl: 'https://g.page/r/example/review',
-    templateText: 'Hi {firstName}, thanks for staying at Grand Plaza! We hope you had a great time. Could you take a moment to review us? {reviewLink}',
-    timezone: 'America/New_York',
-  },
-  {
-    id: 'loc_2',
-    name: 'Seaside Resort',
-    googlePlaceUrl: 'https://g.page/r/seaside/review',
-    templateText: 'Hi {firstName}, thanks for choosing Seaside Resort! Please share your experience: {reviewLink}',
-    timezone: 'America/Los_Angeles',
-  }
-];
-
-const defaultCustomers: Customer[] = [
-  { id: 'cus_1', firstName: 'Alice', lastName: 'Smith', email: 'alice@example.com' },
-  { id: 'cus_2', firstName: 'Bob', lastName: 'Jones', email: 'bob@example.com' },
-  { id: 'cus_3', firstName: 'Charlie', lastName: 'Brown', email: 'charlie@example.com' },
-  { id: 'cus_4', firstName: 'Diana', lastName: 'Prince', email: 'diana@example.com' },
-  { id: 'cus_5', firstName: 'Evan', lastName: 'Wright', email: 'evan@example.com' },
-];
-
-const defaultOrders: Order[] = [
-  { id: 'ord_1', customerId: 'cus_1', locationId: 'loc_1', checkoutDate: new Date(Date.now() - 86400000 * 2).toISOString(), status: 'completed' },
-  { id: 'ord_2', customerId: 'cus_2', locationId: 'loc_1', checkoutDate: new Date(Date.now() - 86400000 * 1).toISOString(), status: 'completed' },
-  { id: 'ord_3', customerId: 'cus_3', locationId: 'loc_1', checkoutDate: new Date().toISOString(), status: 'completed' },
-  { id: 'ord_4', customerId: 'cus_4', locationId: 'loc_1', checkoutDate: new Date().toISOString(), status: 'pending' },
-  { id: 'ord_5', customerId: 'cus_5', locationId: 'loc_1', checkoutDate: new Date(Date.now() + 86400000).toISOString(), status: 'pending' },
-];
-
-const defaultReviewRequests: ReviewRequest[] = [
-  { id: 'req_1', orderId: 'ord_1', status: 'clicked', sentAt: new Date(Date.now() - 86400000 * 1.5).toISOString() },
-  { id: 'req_2', orderId: 'ord_2', status: 'sent', sentAt: new Date(Date.now() - 86400000 * 0.5).toISOString() },
-  { id: 'req_3', orderId: 'ord_3', status: 'pending' },
-];
-
 const initialState: MapRatedState = {
-  locations: defaultLocations,
-  customers: defaultCustomers,
-  orders: defaultOrders,
-  reviewRequests: defaultReviewRequests,
+  locations: [],
+  customers: [],
+  orders: [],
+  reviewRequests: [],
   optOuts: [],
-  activeLocationId: defaultLocations[0].id,
+  activeLocationId: null,
+  loading: true,
 };
 
 const MapRatedContext = createContext<MapRatedContextType | undefined>(undefined);
 
 export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
-  const [state, setState] = useState<MapRatedState>(() => {
-    const saved = localStorage.getItem('maprated_state');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Failed to parse state from localStorage", e);
-      }
+  const { session } = useAuth();
+  const [state, setState] = useState<MapRatedState>(initialState);
+
+  const refreshData = async () => {
+    if (!session?.user) return;
+    
+    setState(prev => ({ ...prev, loading: true }));
+    
+    try {
+      // Fetch locations
+      const { data: locData } = await supabase.from('locations').select('*');
+      
+      const parsedLocations: Location[] = (locData || []).map(l => ({
+        id: l.id,
+        name: l.name,
+        googlePlaceUrl: l.google_place_url || '',
+        timezone: l.timezone || 'UTC'
+      }));
+
+      // Fetch message templates for the locations to merge templateText
+      const { data: templatesData } = await supabase.from('message_templates').select('*');
+      
+      const locations = parsedLocations.map(loc => {
+        const t = templatesData?.find(t => t.location_id === loc.id);
+        return { ...loc, templateText: t?.template_text || '' };
+      });
+
+      // Fetch customers
+      const { data: custData } = await supabase.from('customers').select('*');
+      const customers: Customer[] = (custData || []).map(c => ({
+        id: c.id,
+        firstName: c.first_name,
+        lastName: c.last_name,
+        email: c.email,
+        phone: c.phone
+      }));
+
+      // Fetch orders
+      const { data: orderData } = await supabase.from('orders').select('*');
+      const orders: Order[] = (orderData || []).map(o => ({
+        id: o.id,
+        customerId: o.customer_id,
+        locationId: o.location_id,
+        checkoutDate: o.checkout_date,
+        status: o.status as 'pending' | 'completed' | 'cancelled'
+      }));
+
+      // Fetch review requests
+      const { data: rrData } = await supabase.from('review_requests').select('*');
+      const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
+        id: r.id,
+        orderId: r.order_id,
+        status: r.status as 'pending' | 'sent' | 'clicked' | 'opted_out',
+        sentAt: r.sent_at
+      }));
+      
+      // Fetch optouts
+      const { data: optData } = await supabase.from('opt_outs').select('*');
+      const optOuts: OptOut[] = (optData || []).map(o => ({
+        id: o.id,
+        email: o.email,
+        phone: o.phone,
+        optOutDate: o.opt_out_date
+      }));
+
+      setState(prev => ({
+        ...prev,
+        locations,
+        customers,
+        orders,
+        reviewRequests,
+        optOuts,
+        activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
+        loading: false
+      }));
+
+    } catch (e) {
+      console.error('Failed to fetch from supabase', e);
+      setState(prev => ({ ...prev, loading: false }));
     }
-    return initialState;
-  });
+  };
 
   useEffect(() => {
-    localStorage.setItem('maprated_state', JSON.stringify(state));
-  }, [state]);
+    refreshData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user]);
 
   const setActiveLocationId = (id: string) => {
     setState((prev) => ({ ...prev, activeLocationId: id }));
   };
 
-  const addCustomer = (customer: Omit<Customer, 'id'>) => {
-    const newCustomer: Customer = { ...customer, id: `cus_${Date.now()}` };
-    setState((prev) => ({ ...prev, customers: [...prev.customers, newCustomer] }));
-    return newCustomer;
+  const addCustomer = async (customer: Omit<Customer, 'id'>) => {
+    // Note: requires account_id logic, assuming handled by trigger or we fetch it
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+    if (!userData) return null;
+
+    const { data, error } = await supabase.from('customers').insert({
+      account_id: userData.account_id,
+      first_name: customer.firstName,
+      last_name: customer.lastName,
+      email: customer.email,
+      phone: customer.phone
+    }).select().single();
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+    
+    await refreshData();
+    
+    return {
+      id: data.id,
+      firstName: data.first_name,
+      lastName: data.last_name,
+      email: data.email,
+      phone: data.phone
+    };
   };
 
-  const addOrder = (order: Omit<Order, 'id'>) => {
-    const newOrder: Order = { ...order, id: `ord_${Date.now()}` };
-    setState((prev) => ({ ...prev, orders: [...prev.orders, newOrder] }));
-    return newOrder;
+  const addOrder = async (order: Omit<Order, 'id'>) => {
+    const { data, error } = await supabase.from('orders').insert({
+      location_id: order.locationId,
+      customer_id: order.customerId,
+      checkout_date: order.checkoutDate,
+      status: order.status
+    }).select().single();
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+    
+    await refreshData();
+    
+    return {
+      id: data.id,
+      customerId: data.customer_id,
+      locationId: data.location_id,
+      checkoutDate: data.checkout_date,
+      status: data.status as 'pending' | 'completed' | 'cancelled'
+    };
   };
 
-  const addOptOut = (email: string) => {
-    setState((prev) => {
-      // Check if already opted out
-      if (prev.optOuts.some(o => o.email === email)) return prev;
-      
-      const newOptOut: OptOut = {
-        id: `opt_${Date.now()}`,
-        email,
-        optOutDate: new Date().toISOString(),
-      };
-      
-      return { ...prev, optOuts: [...prev.optOuts, newOptOut] };
+  const addOptOut = async (email: string) => {
+    await supabase.from('opt_outs').insert({ email });
+    await refreshData();
+  };
+
+  const addReviewRequest = async (orderId: string) => {
+    // Check for opt-out first (compliance)
+    const order = state.orders.find(o => o.id === orderId);
+    const customer = order ? state.customers.find(c => c.id === order.customerId) : null;
+    
+    let status = 'pending';
+    if (customer && state.optOuts.some(o => o.email === customer.email)) {
+      status = 'opted_out';
+    }
+
+    await supabase.from('review_requests').insert({
+      order_id: orderId,
+      status
     });
+    
+    await refreshData();
   };
 
-  const addReviewRequest = (orderId: string) => {
-    setState((prev) => {
-      // Check for opt-out first (compliance)
-      const order = prev.orders.find(o => o.id === orderId);
-      const customer = order ? prev.customers.find(c => c.id === order.customerId) : null;
-      
-      let status: ReviewRequest['status'] = 'pending';
-      if (customer && prev.optOuts.some(o => o.email === customer.email)) {
-        status = 'opted_out';
+  const updateLocationSettings = async (id: string, settings: Partial<Location>) => {
+    if (settings.name || settings.googlePlaceUrl || settings.timezone) {
+      await supabase.from('locations').update({
+        name: settings.name,
+        google_place_url: settings.googlePlaceUrl,
+        timezone: settings.timezone
+      }).eq('id', id);
+    }
+    
+    if (settings.templateText !== undefined) {
+      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).single();
+      if (existing) {
+        await supabase.from('message_templates').update({ template_text: settings.templateText }).eq('id', existing.id);
+      } else {
+        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.templateText, type: 'email' });
       }
-
-      const newRequest: ReviewRequest = {
-        id: `req_${Date.now()}`,
-        orderId,
-        status,
-      };
-      return { ...prev, reviewRequests: [...prev.reviewRequests, newRequest] };
-    });
-  };
-
-  const updateLocationSettings = (id: string, settings: Partial<Location>) => {
-    setState((prev) => ({
-      ...prev,
-      locations: prev.locations.map(loc => loc.id === id ? { ...loc, ...settings } : loc),
-    }));
+    }
+    
+    await refreshData();
   };
 
   return (
@@ -189,7 +269,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       addOrder,
       addOptOut,
       addReviewRequest,
-      updateLocationSettings
+      updateLocationSettings,
+      refreshData
     }}>
       {children}
     </MapRatedContext.Provider>

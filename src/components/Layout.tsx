@@ -1,10 +1,15 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { useMapRated } from '../context/MapRatedContext';
-import { MapPin } from 'lucide-react';
+import { MapPin, LogOut } from 'lucide-react';
+import { supabase } from '../integrations/supabase/client';
 
 export function Layout() {
   const { locations, activeLocationId, setActiveLocationId } = useMapRated();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
@@ -29,6 +34,13 @@ export function Layout() {
             <div className="h-8 w-8 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 font-medium text-sm">
               AD
             </div>
+            <button
+              onClick={handleLogout}
+              className="text-slate-400 hover:text-slate-600 transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto bg-slate-50 p-8">
