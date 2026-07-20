@@ -48,6 +48,13 @@ type MapRatedState = {
   optOuts: OptOut[];
   activeLocationId: string | null;
   loading: boolean;
+  accountSettings: {
+    resendApiKey: string;
+    resendFromEmail: string;
+    twilioAccountSid: string;
+    twilioAuthToken: string;
+    twilioFromNumber: string;
+  } | null;
 };
 
 type MapRatedContextType = MapRatedState & {
@@ -57,6 +64,13 @@ type MapRatedContextType = MapRatedState & {
   addOptOut: (email: string) => Promise<void>;
   addReviewRequest: (orderId: string) => Promise<void>;
   updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
+  updateAccountSettings: (settings: {
+    resendApiKey: string;
+    resendFromEmail: string;
+    twilioAccountSid: string;
+    twilioAuthToken: string;
+    twilioFromNumber: string;
+  }) => Promise<void>;
   refreshData: () => Promise<void>;
   bulkImport: (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => Promise<{ success: boolean, count: number, error?: string }>;
 };
@@ -69,6 +83,7 @@ const initialState: MapRatedState = {
   optOuts: [],
   activeLocationId: null,
   loading: true,
+  accountSettings: null,
 };
 
 const MapRatedContext = createContext<MapRatedContextType | undefined>(undefined);
@@ -83,6 +98,34 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     setState(prev => ({ ...prev, loading: true }));
     
     try {
+      // Trigger database schema migration just in case columns do not exist yet
+      try {
+        await supabase.functions.invoke('setup-db');
+      } catch (err) {
+        console.warn('DB setup invocation skipped or failed', err);
+      }
+
+      // Fetch user account and API settings
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+      let accountSettings = null;
+      if (userData?.account_id) {
+        const { data: accData } = await supabase
+          .from('accounts')
+          .select('resend_api_key, resend_from_email, twilio_account_sid, twilio_auth_token, twilio_from_number')
+          .eq('id', userData.account_id)
+          .single();
+        
+        if (accData) {
+          accountSettings = {
+            resendApiKey: accData.resend_api_key || '',
+            resendFromEmail: accData.resend_from_email || '',
+            twilioAccountSid: accData.twilio_account_sid || '',
+            twilioAuthToken: accData.twilio_auth_token || '',
+            twilioFromNumber: accData.twilio_from_number || '',
+          };
+        }
+      }
+
       // Fetch locations
       const { data: locData } = await supabase.from('locations').select('*');
       
@@ -146,6 +189,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         orders,
         reviewRequests,
         optOuts,
+        accountSettings,
         activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
         loading: false
       }));
@@ -319,6 +363,31 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const updateAccountSettings = async (settings: {
+    resendApiKey: string;
+    resendFromEmail: string;
+    twilioAccountSid: string;
+    twilioAuthToken: string;
+    twilioFromNumber: string;
+  }) => {
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user?.id).single();
+    if (!userData?.account_id) throw new Error("No user account linked");
+
+    const { error } = await supabase
+      .from('accounts')
+      .update({
+        resend_api_key: settings.resendApiKey,
+        resend_from_email: settings.resendFromEmail,
+        twilio_account_sid: settings.twilioAccountSid,
+        twilio_auth_token: settings.twilioAuthToken,
+        twilio_from_number: settings.twilioFromNumber,
+      })
+      .eq('id', userData.account_id);
+
+    if (error) throw error;
+    await refreshData();
+  };
+
   const updateLocationSettings = async (id: string, settings: Partial<Location>) => {
     if (settings.name || settings.googlePlaceUrl || settings.timezone) {
       await supabase.from('locations').update({
@@ -349,6 +418,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       addOptOut,
       addReviewRequest,
       updateLocationSettings,
+      updateAccountSettings,
       refreshData,
       bulkImport
     }}>

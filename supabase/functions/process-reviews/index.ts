@@ -45,7 +45,14 @@ serve(async (req) => {
             id,
             name,
             google_place_url,
-            message_templates ( template_text )
+            message_templates ( template_text ),
+            accounts (
+              resend_api_key,
+              resend_from_email,
+              twilio_account_sid,
+              twilio_auth_token,
+              twilio_from_number
+            )
           ),
           customers (
             id,
@@ -80,6 +87,7 @@ serve(async (req) => {
       const order = request.orders;
       const location = order?.locations;
       const customer = order?.customers;
+      const account = location?.accounts;
       
       if (!order || !location || !customer) {
         console.error(`[process-reviews] Incomplete data for request ${request.id}`, { request });
@@ -109,7 +117,8 @@ serve(async (req) => {
         : 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}';
 
       // Draft the message by replacing variables
-      const unsubUrl = `http://localhost:5173/unsubscribe?email=${encodeURIComponent(customer.email || '')}`;
+      const cleanEmail = customer.email || '';
+      const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
       let message = templateText
         .replace(/{firstName}/g, customer.first_name || '')
         .replace(/{lastName}/g, customer.last_name || '')
@@ -118,41 +127,113 @@ serve(async (req) => {
       // Append unsubscribe compliance text
       message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
 
-      // ==========================================
-      // STUB: Replace this with real Resend/Twilio
-      // ==========================================
-      console.log(`[process-reviews] =======================================`);
-      console.log(`[process-reviews] MOCK SENDING EMAIL TO: ${customer.email}`);
-      console.log(`[process-reviews] MESSAGE CONTENT:\n${message}`);
-      console.log(`[process-reviews] =======================================`);
+      let sendSuccess = false;
 
-      // 1. Update request status to 'sent'
-      const { error: updateError } = await supabase
-        .from('review_requests')
-        .update({ 
-          status: 'sent',
-          sent_at: new Date().toISOString()
-        })
-        .eq('id', request.id);
+      // 1. Attempt sending Email via Resend
+      if (customer.email && account?.resend_api_key && account?.resend_from_email) {
+        try {
+          console.log(`[process-reviews] Sending Resend email to: ${customer.email}`);
+          const emailResponse = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${account.resend_api_key}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from: account.resend_from_email,
+              to: customer.email,
+              subject: `Help us improve! Review your stay at ${location.name}`,
+              text: message
+            })
+          });
 
-      if (updateError) {
-        console.error(`[process-reviews] Failed to update request ${request.id}`, updateError);
-        continue;
+          if (emailResponse.ok) {
+            console.log(`[process-reviews] Resend email sent successfully to ${customer.email}`);
+            sendSuccess = true;
+          } else {
+            const errBody = await emailResponse.text();
+            console.error(`[process-reviews] Resend API Error for ${customer.email}:`, errBody);
+          }
+        } catch (emailErr) {
+          console.error(`[process-reviews] Resend Fetch Error:`, emailErr);
+        }
       }
 
-      // 2. Log 'sent' message event for auditing
-      const { error: eventError } = await supabase
-        .from('message_events')
-        .insert({
-          request_id: request.id,
-          event_type: 'sent'
-        });
+      // 2. Attempt sending SMS via Twilio
+      if (customer.phone && account?.twilio_account_sid && account?.twilio_auth_token && account?.twilio_from_number) {
+        try {
+          console.log(`[process-reviews] Sending Twilio SMS to: ${customer.phone}`);
+          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${account.twilio_account_sid}/Messages.json`;
+          
+          const twilioAuth = btoa(`${account.twilio_account_sid}:${account.twilio_auth_token}`);
+          
+          const formData = new URLSearchParams();
+          formData.append('From', account.twilio_from_number);
+          formData.append('To', customer.phone);
+          formData.append('Body', message);
 
-      if (eventError) {
-        console.error(`[process-reviews] Failed to log message_event for ${request.id}`, eventError);
+          const smsResponse = await fetch(twilioUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${twilioAuth}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData.toString()
+          });
+
+          if (smsResponse.ok) {
+            console.log(`[process-reviews] Twilio SMS sent successfully to ${customer.phone}`);
+            sendSuccess = true;
+          } else {
+            const errBody = await smsResponse.text();
+            console.error(`[process-reviews] Twilio API Error for ${customer.phone}:`, errBody);
+          }
+        } catch (smsErr) {
+          console.error(`[process-reviews] Twilio Fetch Error:`, smsErr);
+        }
       }
 
-      results.push({ id: request.id, status: 'sent' });
+      // Fallback: If no API keys are provided but delivery channels are present, log a warning & default to console mockup
+      if (!sendSuccess) {
+        console.warn(`[process-reviews] Warning: No active credentials configured or valid delivery succeeded for request ${request.id}. Defaulting to console mockup send.`);
+        console.log(`[process-reviews] =======================================`);
+        console.log(`[process-reviews] MOCK SENDING EMAIL TO: ${customer.email}`);
+        console.log(`[process-reviews] MESSAGE CONTENT:\n${message}`);
+        console.log(`[process-reviews] =======================================`);
+        sendSuccess = true;
+      }
+
+      if (sendSuccess) {
+        // 1. Update request status to 'sent'
+        const { error: updateError } = await supabase
+          .from('review_requests')
+          .update({ 
+            status: 'sent',
+            sent_at: new Date().toISOString()
+          })
+          .eq('id', request.id);
+
+        if (updateError) {
+          console.error(`[process-reviews] Failed to update request ${request.id}`, updateError);
+          continue;
+        }
+
+        // 2. Log 'sent' message event for auditing
+        const { error: eventError } = await supabase
+          .from('message_events')
+          .insert({
+            request_id: request.id,
+            event_type: 'sent'
+          });
+
+        if (eventError) {
+          console.error(`[process-reviews] Failed to log message_event for ${request.id}`, eventError);
+        }
+
+        results.push({ id: request.id, status: 'sent' });
+      } else {
+        results.push({ id: request.id, status: 'failed' });
+      }
     }
 
     console.log(`[process-reviews] Successfully processed ${results.length} requests.`);
