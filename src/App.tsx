@@ -5,7 +5,7 @@ import { Layout } from "./components/Layout"
 import Dashboard from "./pages/Dashboard"
 import Import from "./pages/Import"
 import Settings from "./pages/Settings"
-import OptOut from "./pages/OptOut"
+import Unsubscribe from "./pages/Unsubscribe"
 import Login from "./pages/Login"
 
 // Protected Route Wrapper
@@ -26,7 +26,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/opt-out" element={<OptOut />} />
+      <Route path="/opt-out" element={<Unsubscribe />} />
+      <Route path="/unsubscribe" element={<Unsubscribe />} />
       <Route path="/login" element={<Login />} />
       <Route path="/" element={
         <ProtectedRoute>

@@ -1,28 +1,43 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../integrations/supabase/client';
 
-export default function OptOut() {
+export default function Unsubscribe() {
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const emailParam = searchParams.get('email');
+
+  useEffect(() => {
+    if (emailParam) {
+      setEmail(emailParam);
+      // Auto-submit if email is in URL
+      handleUnsubscribe(emailParam);
+    }
+  }, [emailParam]);
+
+  const handleUnsubscribe = async (targetEmail: string) => {
     setLoading(true);
     setError('');
-
     try {
-      const { error } = await supabase.from('opt_outs').insert({ email });
-      if (error) {
-        throw error;
-      }
+      const { error } = await supabase.from('opt_outs').insert({ email: targetEmail });
+      if (error) throw error;
       setSuccess(true);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'An error occurred while opting out.');
+      setError(err.message || 'An error occurred while unsubscribing.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email) {
+      handleUnsubscribe(email);
     }
   };
 
@@ -37,7 +52,7 @@ export default function OptOut() {
           </div>
           <h2 className="mt-4 text-2xl font-extrabold text-slate-900">Unsubscribed</h2>
           <p className="mt-2 text-sm text-slate-600">
-            You have successfully opted out. You will no longer receive review requests.
+            The email <strong className="text-slate-800">{email}</strong> has been unsubscribed from all future review requests.
           </p>
         </div>
       </div>
@@ -84,7 +99,7 @@ export default function OptOut() {
               disabled={loading || !email}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 disabled:opacity-50"
             >
-              {loading ? 'Processing...' : 'Opt Out'}
+              {loading ? 'Processing...' : 'Confirm Unsubscribe'}
             </button>
           </div>
         </form>

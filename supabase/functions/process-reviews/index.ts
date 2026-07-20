@@ -21,6 +21,19 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Fetch all opt-outs first
+    const { data: optOuts, error: optOutError } = await supabase
+      .from('opt_outs')
+      .select('email');
+
+    if (optOutError) {
+      console.error("[process-reviews] Error fetching opt-outs:", optOutError);
+      throw optOutError;
+    }
+
+    const optedOutEmails = new Set((optOuts || []).map(o => o.email?.toLowerCase()));
+    console.log(`[process-reviews] Loaded ${optedOutEmails.size} opted-out emails.`);
+
     // Fetch pending requests in a batch (e.g., 50 at a time)
     const { data: pendingRequests, error: fetchError } = await supabase
       .from('review_requests')
@@ -73,18 +86,37 @@ serve(async (req) => {
         continue;
       }
 
+      const emailLower = customer.email?.toLowerCase();
+
+      // STRICT COMPLIANCE: Skip if opted out
+      if (emailLower && optedOutEmails.has(emailLower)) {
+        console.log(`[process-reviews] STRICT COMPLIANCE: Skipping request ${request.id} because ${customer.email} has opted out.`);
+        
+        // Mark request as opted_out in DB so we don't try to process it again
+        await supabase
+          .from('review_requests')
+          .update({ status: 'opted_out' })
+          .eq('id', request.id);
+
+        results.push({ id: request.id, status: 'opted_out_skipped' });
+        continue;
+      }
+
       // Get template text (fallback if none found)
-      // Supabase nested joins might return an array for one-to-many relationships
       const templates = location.message_templates;
       const templateText = (Array.isArray(templates) && templates.length > 0)
         ? templates[0].template_text 
         : 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}';
 
       // Draft the message by replacing variables
+      const unsubUrl = `http://localhost:5173/unsubscribe?email=${encodeURIComponent(customer.email || '')}`;
       let message = templateText
         .replace(/{firstName}/g, customer.first_name || '')
         .replace(/{lastName}/g, customer.last_name || '')
         .replace(/{reviewLink}/g, location.google_place_url || '');
+      
+      // Append unsubscribe compliance text
+      message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
 
       // ==========================================
       // STUB: Replace this with real Resend/Twilio
