@@ -57,6 +57,8 @@ type MapRatedState = {
   optOuts: OptOut[];
   messageEvents: MessageEvent[];
   activeLocationId: string | null;
+  subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null;
+  stripeCustomerId: string | null;
   loading: boolean;
 };
 
@@ -69,6 +71,7 @@ type MapRatedContextType = MapRatedState & {
   updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
   refreshData: () => Promise<void>;
   bulkImport: (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => Promise<{ success: boolean, count: number, error?: string }>;
+  subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
 };
 
 const initialState: MapRatedState = {
@@ -79,6 +82,8 @@ const initialState: MapRatedState = {
   optOuts: [],
   messageEvents: [],
   activeLocationId: null,
+  subscriptionStatus: 'inactive',
+  stripeCustomerId: null,
   loading: true,
 };
 
@@ -94,11 +99,44 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     setState(prev => ({ ...prev, loading: true }));
     
     try {
+      // Detect mock subscription parameters in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const isMockSuccess = urlParams.get('mock_checkout_success') === 'true';
+      const mockAccountId = urlParams.get('account_id');
+
+      if (isMockSuccess && mockAccountId) {
+        console.log('[MapRatedContext] Intercepted mock checkout success. Activating subscription...');
+        const { error: mockUpdateError } = await supabase
+          .from('accounts')
+          .update({ subscription_status: 'active' })
+          .eq('id', mockAccountId);
+        
+        if (mockUpdateError) {
+          console.error('[MapRatedContext] Mock activation error:', mockUpdateError);
+        } else {
+          // Remove query params from URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+
       // Trigger database schema migration just in case columns do not exist yet
       try {
         await supabase.functions.invoke('setup-db');
       } catch (err) {
         console.warn('DB setup invocation skipped or failed', err);
+      }
+
+      // Fetch user account info
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+      let subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null = 'inactive';
+      let stripeCustomerId = null;
+      
+      if (userData?.account_id) {
+        const { data: accData } = await supabase.from('accounts').select('subscription_status, stripe_customer_id').eq('id', userData.account_id).single();
+        if (accData) {
+          subscriptionStatus = (accData.subscription_status as any) || 'inactive';
+          stripeCustomerId = accData.stripe_customer_id || null;
+        }
       }
 
       // Fetch locations
@@ -176,6 +214,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         reviewRequests,
         optOuts,
         messageEvents,
+        subscriptionStatus,
+        stripeCustomerId,
         activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
         loading: false
       }));
@@ -196,7 +236,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addCustomer = async (customer: Omit<Customer, 'id'>) => {
-    // Note: requires account_id logic, assuming handled by trigger or we fetch it
     const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
     if (!userData) return null;
 
@@ -254,7 +293,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addReviewRequest = async (orderId: string) => {
-    // Check for opt-out first (compliance)
     const order = state.orders.find(o => o.id === orderId);
     const customer = order ? state.customers.find(c => c.id === order.customerId) : null;
     
@@ -373,6 +411,20 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     await refreshData();
   };
 
+  const subscribe = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout-session');
+      if (error) throw error;
+      if (data && data.url) {
+        return { success: true, url: data.url };
+      }
+      return { success: false, error: "No checkout session URL returned" };
+    } catch (err: any) {
+      console.error(err);
+      return { success: false, error: err.message || "Failed to initiate subscription" };
+    }
+  };
+
   return (
     <MapRatedContext.Provider value={{
       ...state,
@@ -383,7 +435,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       addReviewRequest,
       updateLocationSettings,
       refreshData,
-      bulkImport
+      bulkImport,
+      subscribe
     }}>
       {children}
     </MapRatedContext.Provider>

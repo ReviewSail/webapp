@@ -30,6 +30,13 @@ serve(async (req) => {
       ADD COLUMN IF NOT EXISTS enable_sms BOOLEAN DEFAULT TRUE;
     `);
 
+    // Add stripe billing columns to accounts table
+    await client.queryArray(`
+      ALTER TABLE public.accounts 
+      ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
+      ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'inactive';
+    `);
+
     console.log("[setup-db] Database migrations completed successfully!");
     await client.end();
 
