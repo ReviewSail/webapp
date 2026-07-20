@@ -37,6 +37,13 @@ serve(async (req) => {
       ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'inactive';
     `);
 
+    // Auto-activate all existing accounts for development and testing purposes
+    await client.queryArray(`
+      UPDATE public.accounts 
+      SET subscription_status = 'active' 
+      WHERE subscription_status IS NULL OR subscription_status = 'inactive';
+    `);
+
     console.log("[setup-db] Database migrations completed successfully!");
     await client.end();
 
