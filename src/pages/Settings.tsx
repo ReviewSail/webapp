@@ -1,24 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
-import { Settings as SettingsIcon, Mail, Phone, Key, ShieldCheck } from 'lucide-react';
+import { Settings as SettingsIcon, Mail, Phone, ToggleLeft, ToggleRight, Save } from 'lucide-react';
 
 export default function Settings() {
-  const { activeLocationId, locations, updateLocationSettings, accountSettings, updateAccountSettings } = useMapRated();
+  const { activeLocationId, locations, updateLocationSettings } = useMapRated();
   const [loading, setLoading] = useState(false);
-  const [savingAccount, setSavingAccount] = useState(false);
   
   const [formData, setFormData] = useState({
     googlePlaceUrl: '',
     templateText: '',
     timezone: 'UTC',
-  });
-
-  const [accountForm, setAccountForm] = useState({
-    resendApiKey: '',
-    resendFromEmail: '',
-    twilioAccountSid: '',
-    twilioAuthToken: '',
-    twilioFromNumber: '',
+    enableEmail: true,
+    enableSms: true,
   });
 
   useEffect(() => {
@@ -28,27 +21,19 @@ export default function Settings() {
         googlePlaceUrl: loc.googlePlaceUrl || '',
         templateText: loc.templateText || '',
         timezone: loc.timezone || 'UTC',
+        enableEmail: loc.enableEmail,
+        enableSms: loc.enableSms,
       });
     } else {
       setFormData({
         googlePlaceUrl: '',
         templateText: '',
         timezone: 'UTC',
+        enableEmail: true,
+        enableSms: true,
       });
     }
   }, [activeLocationId, locations]);
-
-  useEffect(() => {
-    if (accountSettings) {
-      setAccountForm({
-        resendApiKey: accountSettings.resendApiKey || '',
-        resendFromEmail: accountSettings.resendFromEmail || '',
-        twilioAccountSid: accountSettings.twilioAccountSid || '',
-        twilioAuthToken: accountSettings.twilioAuthToken || '',
-        twilioFromNumber: accountSettings.twilioFromNumber || '',
-      });
-    }
-  }, [accountSettings]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,20 +51,6 @@ export default function Settings() {
     }
   };
 
-  const handleAccountSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingAccount(true);
-    try {
-      await updateAccountSettings(accountForm);
-      alert('API integrations saved successfully!');
-    } catch (error) {
-      console.error(error);
-      alert('Failed to save API integration settings.');
-    } finally {
-      setSavingAccount(false);
-    }
-  };
-
   return (
     <div className="space-y-8">
       <div>
@@ -87,99 +58,7 @@ export default function Settings() {
           <SettingsIcon className="mr-2 h-6 w-6 text-slate-700" />
           Settings
         </h1>
-        <p className="text-sm text-slate-500">Configure your property specifics and API communication gateways.</p>
-      </div>
-
-      {/* Global Communication Credentials */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <form onSubmit={handleAccountSubmit} className="p-6">
-          <div className="flex items-center space-x-2 border-b border-slate-100 pb-4 mb-6">
-            <Key className="h-5 w-5 text-indigo-600" />
-            <h2 className="text-lg font-semibold text-slate-800">Integration Credentials</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Resend Segment */}
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Mail className="h-4 w-4 text-slate-500" />
-                <h3 className="text-sm font-semibold text-slate-700">Resend (Emails)</h3>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Resend API Key</label>
-                <input 
-                  type="password" 
-                  value={accountForm.resendApiKey}
-                  onChange={e => setAccountForm(prev => ({ ...prev, resendApiKey: e.target.value }))}
-                  className="w-full text-sm rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 border border-slate-300" 
-                  placeholder="re_..."
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">From Email Address</label>
-                <input 
-                  type="email" 
-                  value={accountForm.resendFromEmail}
-                  onChange={e => setAccountForm(prev => ({ ...prev, resendFromEmail: e.target.value }))}
-                  className="w-full text-sm rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 border border-slate-300" 
-                  placeholder="reviews@yourdomain.com"
-                />
-                <p className="mt-1 text-xs text-slate-400">Must be a verified domain in your Resend Dashboard.</p>
-              </div>
-            </div>
-
-            {/* Twilio Segment */}
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Phone className="h-4 w-4 text-slate-500" />
-                <h3 className="text-sm font-semibold text-slate-700">Twilio (SMS)</h3>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Twilio Account SID</label>
-                <input 
-                  type="text" 
-                  value={accountForm.twilioAccountSid}
-                  onChange={e => setAccountForm(prev => ({ ...prev, twilioAccountSid: e.target.value }))}
-                  className="w-full text-sm rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 border border-slate-300" 
-                  placeholder="AC..."
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Twilio Auth Token</label>
-                  <input 
-                    type="password" 
-                    value={accountForm.twilioAuthToken}
-                    onChange={e => setAccountForm(prev => ({ ...prev, twilioAuthToken: e.target.value }))}
-                    className="w-full text-sm rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 border border-slate-300" 
-                    placeholder="auth_token"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Twilio From Number</label>
-                  <input 
-                    type="text" 
-                    value={accountForm.twilioFromNumber}
-                    onChange={e => setAccountForm(prev => ({ ...prev, twilioFromNumber: e.target.value }))}
-                    className="w-full text-sm rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3 border border-slate-300" 
-                    placeholder="+15550000000"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-slate-100 flex justify-end">
-            <button 
-              type="submit"
-              disabled={savingAccount}
-              className="bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center"
-            >
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              {savingAccount ? 'Saving...' : 'Save Credentials'}
-            </button>
-          </div>
-        </form>
+        <p className="text-sm text-slate-500">Configure your property specifics and communication channels.</p>
       </div>
       
       {/* Location Specific Configuration */}
@@ -197,6 +76,57 @@ export default function Settings() {
           )}
 
           <div className="space-y-6">
+            {/* Delivery Channel Toggles */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 shadow-sm">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                    <Mail className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800">Email Requests</h4>
+                    <p className="text-xs text-slate-500">Send invites using our shared Resend gateway</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, enableEmail: !prev.enableEmail }))}
+                  className="text-slate-600 hover:text-slate-900 transition-colors"
+                  disabled={!activeLocationId}
+                >
+                  {formData.enableEmail ? (
+                    <ToggleRight className="h-10 w-10 text-indigo-600" />
+                  ) : (
+                    <ToggleLeft className="h-10 w-10 text-slate-300" />
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 shadow-sm">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                    <Phone className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800">SMS Requests</h4>
+                    <p className="text-xs text-slate-500">Send texts using our shared Twilio gateway</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, enableSms: !prev.enableSms }))}
+                  className="text-slate-600 hover:text-slate-900 transition-colors"
+                  disabled={!activeLocationId}
+                >
+                  {formData.enableSms ? (
+                    <ToggleRight className="h-10 w-10 text-indigo-600" />
+                  ) : (
+                    <ToggleLeft className="h-10 w-10 text-slate-300" />
+                  )}
+                </button>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Google Maps Review URL</label>
               <input 
@@ -244,9 +174,10 @@ export default function Settings() {
             <button 
               type="submit"
               disabled={loading || !activeLocationId}
-              className="bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              className="bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
             >
-              {loading ? 'Saving...' : 'Save Settings'}
+              <Save className="h-4 w-4" />
+              <span>{loading ? 'Saving...' : 'Save Settings'}</span>
             </button>
           </div>
         </form>

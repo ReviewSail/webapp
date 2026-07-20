@@ -15,6 +15,13 @@ serve(async (req) => {
   try {
     console.log("[process-reviews] Starting to process pending review requests");
     
+    // Read secure API keys from master environment variables
+    const resendApiKey = Deno.env.get('RESEND_API_KEY');
+    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@maprated.com';
+    const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+    const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+    const twilioFromNumber = Deno.env.get('TWILIO_FROM_NUMBER');
+
     // Use the service role key to bypass RLS, since this is a background job 
     // that needs to process requests across all accounts.
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -45,14 +52,9 @@ serve(async (req) => {
             id,
             name,
             google_place_url,
-            message_templates ( template_text ),
-            accounts (
-              resend_api_key,
-              resend_from_email,
-              twilio_account_sid,
-              twilio_auth_token,
-              twilio_from_number
-            )
+            enable_email,
+            enable_sms,
+            message_templates ( template_text )
           ),
           customers (
             id,
@@ -87,7 +89,6 @@ serve(async (req) => {
       const order = request.orders;
       const location = order?.locations;
       const customer = order?.customers;
-      const account = location?.accounts;
       
       if (!order || !location || !customer) {
         console.error(`[process-reviews] Incomplete data for request ${request.id}`, { request });
@@ -110,6 +111,10 @@ serve(async (req) => {
         continue;
       }
 
+      // Check toggles on this location (enable_email, enable_sms)
+      const isEmailEnabled = location.enable_email !== false; // Default true
+      const isSmsEnabled = location.enable_sms !== false; // Default true
+
       // Get template text (fallback if none found)
       const templates = location.message_templates;
       const templateText = (Array.isArray(templates) && templates.length > 0)
@@ -129,18 +134,18 @@ serve(async (req) => {
 
       let sendSuccess = false;
 
-      // 1. Attempt sending Email via Resend
-      if (customer.email && account?.resend_api_key && account?.resend_from_email) {
+      // 1. Attempt sending Email via Master Resend Gateway
+      if (isEmailEnabled && customer.email && resendApiKey && resendFromEmail) {
         try {
           console.log(`[process-reviews] Sending Resend email to: ${customer.email}`);
           const emailResponse = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${account.resend_api_key}`,
+              'Authorization': `Bearer ${resendApiKey}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              from: account.resend_from_email,
+              from: resendFromEmail,
               to: customer.email,
               subject: `Help us improve! Review your stay at ${location.name}`,
               text: message
@@ -159,16 +164,16 @@ serve(async (req) => {
         }
       }
 
-      // 2. Attempt sending SMS via Twilio
-      if (customer.phone && account?.twilio_account_sid && account?.twilio_auth_token && account?.twilio_from_number) {
+      // 2. Attempt sending SMS via Master Twilio Gateway
+      if (isSmsEnabled && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
         try {
           console.log(`[process-reviews] Sending Twilio SMS to: ${customer.phone}`);
-          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${account.twilio_account_sid}/Messages.json`;
+          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
           
-          const twilioAuth = btoa(`${account.twilio_account_sid}:${account.twilio_auth_token}`);
+          const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
           
           const formData = new URLSearchParams();
-          formData.append('From', account.twilio_from_number);
+          formData.append('From', twilioFromNumber);
           formData.append('To', customer.phone);
           formData.append('Body', message);
 
@@ -193,11 +198,11 @@ serve(async (req) => {
         }
       }
 
-      // Fallback: If no API keys are provided but delivery channels are present, log a warning & default to console mockup
+      // Fallback: If no delivery has succeeded (either because disabled, or keys aren't configured), fallback to mock log
       if (!sendSuccess) {
-        console.warn(`[process-reviews] Warning: No active credentials configured or valid delivery succeeded for request ${request.id}. Defaulting to console mockup send.`);
+        console.warn(`[process-reviews] Warning: Mock mode triggered for request ${request.id}. Channel states: Email Enabled=${isEmailEnabled}, SMS Enabled=${isSmsEnabled}.`);
         console.log(`[process-reviews] =======================================`);
-        console.log(`[process-reviews] MOCK SENDING EMAIL TO: ${customer.email}`);
+        console.log(`[process-reviews] MOCK SENDING INVITE TO: ${customer.email || customer.phone}`);
         console.log(`[process-reviews] MESSAGE CONTENT:\n${message}`);
         console.log(`[process-reviews] =======================================`);
         sendSuccess = true;

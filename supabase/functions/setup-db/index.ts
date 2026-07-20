@@ -23,14 +23,11 @@ serve(async (req) => {
 
     console.log("[setup-db] Running schema migrations...");
     
-    // Add columns to accounts table
+    // Add columns to locations table
     await client.queryArray(`
-      ALTER TABLE public.accounts 
-      ADD COLUMN IF NOT EXISTS resend_api_key TEXT,
-      ADD COLUMN IF NOT EXISTS resend_from_email TEXT,
-      ADD COLUMN IF NOT EXISTS twilio_account_sid TEXT,
-      ADD COLUMN IF NOT EXISTS twilio_auth_token TEXT,
-      ADD COLUMN IF NOT EXISTS twilio_from_number TEXT;
+      ALTER TABLE public.locations 
+      ADD COLUMN IF NOT EXISTS enable_email BOOLEAN DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS enable_sms BOOLEAN DEFAULT TRUE;
     `);
 
     console.log("[setup-db] Database migrations completed successfully!");
