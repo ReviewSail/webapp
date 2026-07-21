@@ -28,7 +28,8 @@ serve(async (req) => {
       ALTER TABLE public.locations 
       ADD COLUMN IF NOT EXISTS enable_email BOOLEAN DEFAULT TRUE,
       ADD COLUMN IF NOT EXISTS enable_sms BOOLEAN DEFAULT TRUE,
-      ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;
+      ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS preferred_send_hour INTEGER DEFAULT 10;
     `);
 
     // Add stripe billing columns to accounts table
@@ -92,7 +93,6 @@ serve(async (req) => {
     try {
       console.log("[setup-db] Creating automated hourly background cron job via pg_cron...");
       
-      // We wrap this inside pg_cron check to avoid breaking environments where pg_cron isn't enabled globally yet
       await client.queryArray(`
         CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
       `);
@@ -106,7 +106,7 @@ serve(async (req) => {
         SELECT cron.unschedule('invoke-process-reviews') FROM cron.job WHERE jobname = 'invoke-process-reviews';
       `);
 
-      // Schedule new job
+      // Schedule process reviews cron
       await client.queryArray(`
         SELECT cron.schedule(
           'invoke-process-reviews',
@@ -121,7 +121,29 @@ serve(async (req) => {
           $$
         );
       `);
-      console.log("[setup-db] Hourly cron scheduled successfully.");
+
+      // Unschedule weekly summary if it exists
+      await client.queryArray(`
+        SELECT cron.unschedule('invoke-weekly-summary') FROM cron.job WHERE jobname = 'invoke-weekly-summary';
+      `);
+
+      // Schedule weekly summary cron: Every Monday at 8am (0 8 * * 1)
+      await client.queryArray(`
+        SELECT cron.schedule(
+          'invoke-weekly-summary',
+          '0 8 * * 1',
+          $$
+          SELECT public.http_post(
+            'https://vqjzscdlfhgzzqhmkchw.supabase.co/functions/v1/weekly-summary',
+            '{}',
+            'application/json',
+            '{}'
+          )
+          $$
+        );
+      `);
+      
+      console.log("[setup-db] Cron jobs configured successfully.");
     } catch (cronErr) {
       console.warn("[setup-db] pg_cron configuration skipped or not supported on this tenant:", cronErr);
     }

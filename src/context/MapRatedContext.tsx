@@ -12,6 +12,7 @@ export type Location = {
   enableEmail: boolean;
   enableSms: boolean;
   onboardingComplete: boolean;
+  preferredSendHour: number;
 };
 
 export type Customer = {
@@ -167,7 +168,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         timezone: l.timezone || 'UTC',
         enableEmail: l.enable_email !== false, // Default to true if null
         enableSms: l.enable_sms !== false,      // Default to true if null
-        onboardingComplete: l.onboarding_complete === true
+        onboardingComplete: l.onboarding_complete === true,
+        preferredSendHour: l.preferred_send_hour !== null && l.preferred_send_hour !== undefined ? l.preferred_send_hour : 10
       }));
 
       // Fetch message templates for the locations to merge templateText and smsTemplateText
@@ -282,7 +284,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       timezone: 'UTC',
       enable_email: true,
       enable_sms: true,
-      onboarding_complete: false
+      onboarding_complete: false,
+      preferred_send_hour: 10
     }).select().single();
 
     if (error) {
@@ -312,7 +315,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       timezone: 'UTC',
       enableEmail: true,
       enableSms: true,
-      onboardingComplete: false
+      onboardingComplete: false,
+      preferredSendHour: 10
     };
   };
 
@@ -518,6 +522,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     if (settings.timezone !== undefined) updateData.timezone = settings.timezone;
     if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
     if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
+    if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
 
     if (Object.keys(updateData).length > 0) {
       await supabase.from('locations').update(updateData).eq('id', id);

@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
-import { Settings as SettingsIcon, Mail, Phone, ToggleLeft, ToggleRight, Save, Plus, Home, MapPin, CheckCircle, AlertCircle, Eye, Trash2, X, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, Mail, Phone, ToggleLeft, ToggleRight, Save, Plus, Home, MapPin, CheckCircle, AlertCircle, Eye, Trash2, X, RefreshCw, Clock } from 'lucide-react';
+
+const HOURS_DATA = Array.from({ length: 24 }, (_, i) => {
+  const ampm = i >= 12 ? 'PM' : 'AM';
+  const hour = i % 12 === 0 ? 12 : i % 12;
+  return {
+    value: i,
+    label: `${hour}:00 ${ampm}`
+  };
+});
 
 export default function Settings() {
   const { activeLocationId, locations, updateLocationSettings, addLocation, deleteLocation } = useMapRated();
@@ -21,6 +30,7 @@ export default function Settings() {
     timezone: 'UTC',
     enableEmail: true,
     enableSms: true,
+    preferredSendHour: 10,
   });
 
   useEffect(() => {
@@ -33,6 +43,7 @@ export default function Settings() {
         timezone: loc.timezone || 'UTC',
         enableEmail: loc.enableEmail,
         enableSms: loc.enableSms,
+        preferredSendHour: loc.preferredSendHour !== undefined ? loc.preferredSendHour : 10
       });
     } else {
       setFormData({
@@ -42,6 +53,7 @@ export default function Settings() {
         timezone: 'UTC',
         enableEmail: true,
         enableSms: true,
+        preferredSendHour: 10
       });
     }
   }, [activeLocationId, locations]);
@@ -271,6 +283,29 @@ export default function Settings() {
                       <option value="America/Los_Angeles">Pacific Time (PT)</option>
                     </select>
                     <p className="mt-1 text-xs text-slate-400">Timezone used for reminders scheduling.</p>
+                  </div>
+                </div>
+
+                {/* Scheduled Send Time Preference Setting (Requirement 1) */}
+                <div className="bg-indigo-50/30 border border-indigo-100 p-4 rounded-xl space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-5 w-5 text-indigo-600" />
+                    <h3 className="text-sm font-bold text-slate-800">Send Time Preference</h3>
+                  </div>
+                  <div>
+                    <select
+                      value={formData.preferredSendHour}
+                      onChange={e => setFormData(prev => ({ ...prev, preferredSendHour: Number(e.target.value) }))}
+                      className="max-w-xs w-full text-sm rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 py-2 px-3 border bg-white"
+                      disabled={!activeLocationId}
+                    >
+                      {HOURS_DATA.map(h => (
+                        <option key={h.value} value={h.value}>{h.label} (UTC)</option>
+                      ))}
+                    </select>
+                    <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                      Guests will receive their review invitation at this time on the day after checkout.
+                    </p>
                   </div>
                 </div>
 

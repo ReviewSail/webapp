@@ -30,6 +30,10 @@ serve(async (req) => {
 
     console.log("[process-reviews] Starting to process pending review requests & reminders");
     
+    // Get current UTC hour
+    const currentUTCHour = new Date().getUTCHours();
+    console.log(`[process-reviews] Current UTC Hour is: ${currentUTCHour}`);
+
     // Read secure API keys from master environment variables
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@maprated.com';
@@ -69,6 +73,7 @@ serve(async (req) => {
             google_place_url,
             enable_email,
             enable_sms,
+            preferred_send_hour,
             message_templates ( template_text )
           ),
           customers (
@@ -99,7 +104,7 @@ serve(async (req) => {
     const processedResults = [];
 
     if (pendingRequests && pendingRequests.length > 0) {
-      console.log(`[process-reviews] Found ${pendingRequests.length} requests to process.`);
+      console.log(`[process-reviews] Found ${pendingRequests.length} candidate requests to evaluate.`);
 
       for (const request of pendingRequests) {
         const order = request.orders;
@@ -109,6 +114,19 @@ serve(async (req) => {
         if (!order || !location || !customer) {
           console.error(`[process-reviews] Incomplete data for request ${request.id}`, { request });
           continue;
+        }
+
+        // --- ENFORCE SCHEDULED SEND TIME PREFERENCE ---
+        // If not a single force-resend, evaluate preferred_send_hour (defaulting to 10 if null/not set)
+        if (!specificRequestId) {
+          const preferredHour = location.preferred_send_hour !== null && location.preferred_send_hour !== undefined
+            ? location.preferred_send_hour 
+            : 10;
+          
+          if (currentUTCHour !== preferredHour) {
+            console.log(`[process-reviews] Skipping request ${request.id} for location "${location.name}". Current hour (${currentUTCHour} UTC) does not match preferred send hour (${preferredHour} UTC).`);
+            continue;
+          }
         }
 
         const emailLower = customer.email?.toLowerCase();
@@ -267,6 +285,7 @@ serve(async (req) => {
               google_place_url,
               enable_email,
               enable_sms,
+              preferred_send_hour,
               message_templates ( template_text )
             ),
             customers (
@@ -314,13 +333,23 @@ serve(async (req) => {
 
             // Only proceed if the guest has NOT clicked and NOT received a reminder yet
             if (!hasClicked && !hasReminderSent) {
-              console.log(`[process-reviews] Request ${request.id} is eligible for a reminder. No click or prior reminder found.`);
               
               const order = request.orders;
               const location = order?.locations;
               const customer = order?.customers;
 
               if (!order || !location || !customer) continue;
+
+              // ENFORCE SCHEDULE CHECK ON REMINDERS TOO
+              const preferredHour = location.preferred_send_hour !== null && location.preferred_send_hour !== undefined
+                ? location.preferred_send_hour 
+                : 10;
+              
+              if (currentUTCHour !== preferredHour) {
+                continue;
+              }
+
+              console.log(`[process-reviews] Request ${request.id} is eligible for a scheduled reminder.`);
 
               const emailLower = customer.email?.toLowerCase();
 
