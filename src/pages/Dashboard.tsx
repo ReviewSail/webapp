@@ -166,7 +166,7 @@ export default function Dashboard() {
           <div className="space-y-2">
             <h2 className="text-lg font-extrabold text-slate-900">No review requests sent yet</h2>
             <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto">
-              Import your first guests or add stays manually to trigger instant multi-channel emails, text messages, and direct Google rating generation.
+              Sync your first guests or add stays manually to trigger instant multi-channel emails, text messages, and direct Google rating generation.
             </p>
           </div>
           <Link
@@ -174,7 +174,7 @@ export default function Dashboard() {
             className="inline-flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-5 rounded-xl shadow-md transition-all"
           >
             <FileUp className="h-4 w-4" />
-            <span>Import Your First Guests</span>
+            <span>Sync Your First Guests</span>
           </Link>
         </div>
       ) : (

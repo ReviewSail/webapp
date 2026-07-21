@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-export default function Import() {
+export default function SyncGuests() {
   const { addCustomer, addOrder, addReviewRequest, activeLocationId, locations, bulkImport } = useMapRated();
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -208,7 +208,7 @@ export default function Import() {
             success: false,
             count: 0,
             skipped,
-            error: "No valid rows found in the CSV. Make sure rows contain a First Name and either an Email or Phone."
+            error: "No valid rows found in the report. Make sure rows contain a First Name and either an Email or Phone."
           });
           setLoading(false);
           return;
@@ -252,10 +252,10 @@ export default function Import() {
   const hasNoLocations = locations.length === 0;
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Import Data</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Sync Guests</h1>
           <p className="text-sm text-slate-500 mt-1">Register guest checkout entries or ingest bulk files from external PMS networks.</p>
         </div>
         <button
@@ -268,7 +268,7 @@ export default function Import() {
       </div>
 
       {feedback && (
-        <div className={`mb-6 p-4 rounded-xl border flex items-start space-x-2.5 shadow-sm text-sm ${
+        <div className={`p-4 rounded-xl border flex items-start space-x-2.5 shadow-sm text-sm ${
           feedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
         }`}>
           {feedback.type === 'success' ? (
@@ -300,137 +300,153 @@ export default function Import() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-8 max-w-3xl mx-auto">
           
-          {/* Left Column: Manual Entry */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 h-fit">
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">Manual Entry</h2>
-            <p className="text-sm text-slate-500 mb-4">Add a single guest checkout record for the currently selected location.</p>
+          {/* Hero Form: Quick Add a Guest */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-8 space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <h2 className="text-xl font-black text-slate-900">Quick Add a Guest</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Perfect for 1-3 daily checkouts — just fill in the details and we handle the rest.
+              </p>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">First Name</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">First Name</label>
                   <input 
                     type="text" 
                     required
                     value={formData.firstName}
                     onChange={e => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
                     placeholder="Jane"
-                    className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border border-slate-300 bg-white" 
+                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Last Name</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
                   <input 
                     type="text" 
                     required
                     value={formData.lastName}
                     onChange={e => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
                     placeholder="Doe"
-                    className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border border-slate-300 bg-white" 
+                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
                 <input 
                   type="email" 
                   value={formData.email}
                   onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border border-slate-300 bg-white" 
+                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
                   placeholder="guest@example.com"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number (Optional)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number (Optional)</label>
                 <input 
                   type="tel" 
                   value={formData.phone}
                   onChange={e => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border border-slate-300 bg-white" 
+                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
                   placeholder="+15551234567"
                 />
               </div>
+              
               <div className="pt-2">
                 <button 
                   type="submit" 
                   disabled={loading}
-                  className="w-full bg-indigo-600 text-white px-4 py-2.5 rounded-md text-sm font-semibold hover:bg-indigo-700 active:bg-indigo-800 transition-colors disabled:opacity-50 shadow-sm flex items-center justify-center space-x-2"
+                  className="w-full bg-indigo-600 text-white px-5 py-3.5 rounded-xl text-sm font-extrabold hover:bg-indigo-700 active:bg-indigo-800 transition-colors disabled:opacity-50 shadow-md flex items-center justify-center space-x-2"
                 >
                   {loading && <RefreshCw className="h-4 w-4 animate-spin" />}
-                  <span>{loading ? 'Adding...' : 'Add Record & Queue Request'}</span>
+                  <span>{loading ? 'Adding...' : 'Add Guest & Send Review Request'}</span>
                 </button>
+                <p className="mt-2.5 text-center text-[11px] text-slate-400">
+                  Review invitations send automatically at your preferred time — no action needed after saving.
+                </p>
               </div>
             </form>
           </div>
 
-          {/* Right Column: CSV Upload */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col justify-between">
+          {/* Divider 'OR' */}
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-slate-200"></div>
+            <span className="flex-shrink mx-4 text-xs font-black text-slate-400 tracking-widest bg-slate-50 px-3 py-1 border border-slate-200 rounded-full">OR</span>
+            <div className="flex-grow border-t border-slate-200"></div>
+          </div>
+
+          {/* Bottom Card: CSV Checkout Upload */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
             <div>
-              <h2 className="text-lg font-semibold text-slate-800 mb-2">CSV Bulk Import</h2>
-              <p className="text-sm text-slate-500 mb-4">
-                Upload a checkout list exported from your booking extranet or PMS software. MapRated will automatically look for standard layout patterns.
+              <h2 className="text-lg font-bold text-slate-900">Upload Checkout Report</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Upload your weekly checkout report exported from Booking.com, Airbnb, or your PMS. MapRated handles the rest automatically.
               </p>
-
-              <div 
-                onDragEnter={handleDrag} 
-                onDragOver={handleDrag} 
-                onDragLeave={handleDrag} 
-                onDrop={handleDrop}
-                onClick={onButtonClick}
-                className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[220px] ${
-                  dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <input 
-                  ref={fileInputRef}
-                  type="file" 
-                  accept=".csv"
-                  className="hidden" 
-                  onChange={handleFileInputChange}
-                />
-                <FileUp className="h-10 w-10 text-slate-400 mb-4" />
-                <p className="text-sm text-slate-600 font-medium">
-                  Drag and drop your PMS CSV here, or <span className="text-indigo-600 hover:underline">browse</span>
-                </p>
-                <p className="text-xs text-slate-400 mt-2">Only CSV files accepted</p>
-              </div>
-
-              {uploadResult && (
-                <div className={`mt-6 p-4 rounded-lg border flex items-start space-x-3 ${
-                  uploadResult.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
-                }`}>
-                  {uploadResult.success ? (
-                    <>
-                      <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                      <div>
-                        <h4 className="font-semibold text-sm">Bulk Ingestion Complete!</h4>
-                        <p className="text-xs text-green-700 mt-1">
-                          Successfully imported <strong className="text-green-900">{uploadResult.count}</strong> guest checkout records and queued their review requests.
-                        </p>
-                        {uploadResult.skipped > 0 && (
-                          <p className="text-xs text-amber-700 mt-1 flex items-center">
-                            <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                            Skipped {uploadResult.skipped} row(s) due to missing First Name or contact channels.
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
-                      <div>
-                        <h4 className="font-semibold text-sm">Ingestion Failed</h4>
-                        <p className="text-xs text-red-700 mt-1">{uploadResult.error}</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
 
-            <div className="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-400 flex items-start space-x-2">
-              <Info className="h-4 w-4 text-indigo-500 mt-0.5 shrink-0" />
+            <div 
+              onDragEnter={handleDrag} 
+              onDragOver={handleDrag} 
+              onDragLeave={handleDrag} 
+              onDrop={handleDrop}
+              onClick={onButtonClick}
+              className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[180px] ${
+                dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <input 
+                ref={fileInputRef}
+                type="file" 
+                accept=".csv"
+                className="hidden" 
+                onChange={handleFileInputChange}
+              />
+              <FileUp className="h-9 w-9 text-slate-400 mb-3" />
+              <p className="text-xs text-slate-600 font-semibold">
+                Drop your checkout report here, or <span className="text-indigo-600 hover:underline">browse</span>
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1.5">Only CSV files accepted</p>
+            </div>
+
+            {uploadResult && (
+              <div className={`p-4 rounded-xl border flex items-start space-x-3 ${
+                uploadResult.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
+              }`}>
+                {uploadResult.success ? (
+                  <>
+                    <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                    <div>
+                      <h4 className="font-semibold text-sm">Bulk Ingestion Complete!</h4>
+                      <p className="text-xs text-green-700 mt-1">
+                        Successfully imported <strong className="text-green-900">{uploadResult.count}</strong> guest checkout records and queued their review requests.
+                      </p>
+                      {uploadResult.skipped > 0 && (
+                        <p className="text-xs text-amber-700 mt-1 flex items-center">
+                          <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                          Skipped {uploadResult.skipped} row(s) due to missing First Name or contact channels.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                    <div>
+                      <h4 className="font-semibold text-sm">Ingestion Failed</h4>
+                      <p className="text-xs text-red-700 mt-1">{uploadResult.error}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 flex items-start space-x-2">
+              <Info className="h-4 w-4 text-indigo-500 shrink-0" />
               <span>
                 <strong>Tip:</strong> MapRated automatically reconciles alternative column names. Need templates? Click the <strong>Import Guide</strong> button at the top to see expectations.
               </span>

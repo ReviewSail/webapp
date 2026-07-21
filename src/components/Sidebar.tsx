@@ -8,7 +8,7 @@ export function Sidebar() {
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Import Data', href: '/import', icon: FileUp },
+    { name: 'Sync Guests', href: '/import', icon: FileUp },
     { name: 'Guests', href: '/guests', icon: Users },
     ...(role !== 'staff' ? [{ name: 'Settings', href: '/settings', icon: Settings }] : []),
   ];

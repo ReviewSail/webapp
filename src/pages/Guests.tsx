@@ -205,7 +205,7 @@ export default function Guests() {
             </div>
             <h3 className="font-semibold text-slate-800 text-sm">No guests matched</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-sm">
-              Try refining your search terms or verify that guests are registered under this selected location.
+              Try refining your search terms or verify that guests are registered under this selected location. Use the 'Sync Guests' page to register stays manually or upload checkout reports.
             </p>
           </div>
         ) : (

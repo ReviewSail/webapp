@@ -132,13 +132,12 @@ export function OnboardingWizard({
             <div className="flex-1 h-0.5 bg-indigo-500/35" />
             <div className="flex items-center space-x-2">
               <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 2 ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-indigo-300'}`}>2</span>
-              {/* REQUIREMENT 2: Rename Step 2 label to "Add First Guest" */}
-              <span className="text-xs font-semibold">Add First Guest</span>
+              {/* REQUIREMENT: Rename Step 2 label to "Sync Your Guests" */}
+              <span className="text-xs font-semibold">Sync Your Guests</span>
             </div>
             <div className="flex-1 h-0.5 bg-indigo-500/35" />
             <div className="flex items-center space-x-2">
               <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 3 ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-indigo-300'}`}>3</span>
-              {/* REQUIREMENT 5: Rename Step 3 label to "You’re Live 🎉" */}
               <span className="text-xs font-semibold">You’re Live 🎉</span>
             </div>
           </div>
@@ -193,7 +192,7 @@ export function OnboardingWizard({
                     We’ll send guests a friendly review invitation after checkout — fully automated. You can customize the message anytime in Settings.
                   </p>
 
-                  {/* REQUIREMENT 1: Collapsible 'How do I find this?' section */}
+                  {/* REQUIREMENT 1: Collapsible 'How do I find this?' help section */}
                   <div className="mt-3 border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                     <button
                       type="button"
@@ -257,7 +256,7 @@ export function OnboardingWizard({
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm py-3 px-6 rounded-2xl flex items-center justify-center space-x-1.5 transition-all shadow-md"
                 >
                   <FileUp className="h-4.5 w-4.5" />
-                  <span>Import Guests Now</span>
+                  <span>Sync Guests Now</span>
                 </button>
                 <button
                   onClick={handleSkipToStep3}

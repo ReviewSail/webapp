@@ -69,7 +69,7 @@ export function RecentRequestsTable({
           </div>
           <h3 className="font-semibold text-slate-800 text-sm">No requests found</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm">
-            Head to the "Import Data" page to add guests manually or upload a CSV file to queue reviews.
+            Head to the "Sync Guests" page to add guests manually or upload checkout reports to queue reviews.
           </p>
         </div>
       ) : (
