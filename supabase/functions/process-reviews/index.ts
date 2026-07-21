@@ -67,6 +67,7 @@ serve(async (req) => {
         id,
         orders (
           id,
+          checkout_date,
           locations (
             id,
             name,
@@ -107,13 +108,32 @@ serve(async (req) => {
       console.log(`[process-reviews] Found ${pendingRequests.length} candidate requests to evaluate.`);
 
       for (const request of pendingRequests) {
-        const order = request.orders;
+        const order = request.orders as any;
         const location = order?.locations;
         const customer = order?.customers;
         
         if (!order || !location || !customer) {
           console.error(`[process-reviews] Incomplete data for request ${request.id}`, { request });
           continue;
+        }
+
+        // --- STALE SUPPRESSION CHECK (Layer 1) ---
+        // If checkout_date is more than 14 days in the past, skip sending and mark status as 'expired'
+        if (order.checkout_date) {
+          const checkoutDate = new Date(order.checkout_date);
+          const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+          
+          if (checkoutDate < fourteenDaysAgo) {
+            console.log(`[process-reviews] Suppressing request ${request.id} as expired. Checkout date (${order.checkout_date}) was > 14 days ago.`);
+            
+            await supabase
+              .from('review_requests')
+              .update({ status: 'expired' })
+              .eq('id', request.id);
+
+            processedResults.push({ id: request.id, type: 'pending', status: 'expired' });
+            continue;
+          }
         }
 
         // --- ENFORCE SCHEDULED SEND TIME PREFERENCE ---
@@ -158,14 +178,16 @@ serve(async (req) => {
         const cleanEmail = customer.email || '';
         const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
         const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
+        const alreadyReviewedUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/already-reviewed?request_id=${request.id}`;
         
         let message = templateText
           .replace(/{firstName}/g, customer.first_name || '')
           .replace(/{lastName}/g, customer.last_name || '')
           .replace(/{reviewLink}/g, location.google_place_url || '');
         
-        // Append private feedback link and unsubscribe compliance text
+        // Append private feedback, self-suppression link, and unsubscribe compliance text
         message += `\n\nAlternatively, you can share private feedback with us directly here: ${feedbackUrl}`;
+        message += `\n\nAlready left us a review? Click here and we won't contact you again: ${alreadyReviewedUrl}`;
         message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
 
         let sendSuccess = false;
@@ -279,6 +301,7 @@ serve(async (req) => {
           sent_at,
           orders (
             id,
+            checkout_date,
             locations (
               id,
               name,
@@ -334,11 +357,26 @@ serve(async (req) => {
             // Only proceed if the guest has NOT clicked and NOT received a reminder yet
             if (!hasClicked && !hasReminderSent) {
               
-              const order = request.orders;
+              const order = request.orders as any;
               const location = order?.locations;
               const customer = order?.customers;
 
               if (!order || !location || !customer) continue;
+
+              // --- STALE SUPPRESSION CHECK (Layer 1) ON REMINDERS TOO ---
+              if (order.checkout_date) {
+                const checkoutDate = new Date(order.checkout_date);
+                const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+                
+                if (checkoutDate < fourteenDaysAgo) {
+                  console.log(`[process-reviews] Expiring reminder for request ${request.id}. Checkout date (${order.checkout_date}) was > 14 days ago.`);
+                  await supabase
+                    .from('review_requests')
+                    .update({ status: 'expired' })
+                    .eq('id', request.id);
+                  continue;
+                }
+              }
 
               // ENFORCE SCHEDULE CHECK ON REMINDERS TOO
               const preferredHour = location.preferred_send_hour !== null && location.preferred_send_hour !== undefined
@@ -378,6 +416,7 @@ serve(async (req) => {
               const cleanEmail = customer.email || '';
               const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
               const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
+              const alreadyReviewedUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/already-reviewed?request_id=${request.id}`;
 
               let message = `[Reminder] ` + templateText
                 .replace(/{firstName}/g, customer.first_name || '')
@@ -385,6 +424,7 @@ serve(async (req) => {
                 .replace(/{reviewLink}/g, location.google_place_url || '');
               
               message += `\n\nAlternatively, you can share private feedback with us directly here: ${feedbackUrl}`;
+              message += `\n\nAlready left us a review? Click here and we won't contact you again: ${alreadyReviewedUrl}`;
               message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
 
               let sendSuccess = false;

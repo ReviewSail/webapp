@@ -52,7 +52,7 @@ serve(async (req) => {
       UPDATE public.users SET role = 'admin' WHERE role IS NULL;
     `);
 
-    // Attempt backfilling emails of existing users from auth.users (if possible via Postgres query)
+    // Attempt backfilling emails of existing users from auth.users
     try {
       await client.queryArray(`
         UPDATE public.users u
@@ -145,6 +145,39 @@ serve(async (req) => {
       await client.queryArray(`
         CREATE POLICY "feedback_update_policy" ON public.feedback
         FOR UPDATE USING (true);
+      `);
+    } catch (_) { /* Policy already exists */ }
+
+    // Grant SELECT and UPDATE privileges on review_requests table to anon so self-suppression links work
+    await client.queryArray(`
+      GRANT SELECT, INSERT, UPDATE ON TABLE public.review_requests TO anon;
+      GRANT SELECT, INSERT, UPDATE ON TABLE public.review_requests TO authenticated;
+    `);
+
+    try {
+      await client.queryArray(`
+        CREATE POLICY "review_requests_anon_select" ON public.review_requests
+        FOR SELECT TO anon USING (true);
+      `);
+    } catch (_) { /* Policy already exists */ }
+
+    try {
+      await client.queryArray(`
+        CREATE POLICY "review_requests_anon_update" ON public.review_requests
+        FOR UPDATE TO anon USING (true) WITH CHECK (true);
+      `);
+    } catch (_) { /* Policy already exists */ }
+
+    // Ensure opt_outs can be inserted by public users
+    await client.queryArray(`
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.opt_outs TO anon;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.opt_outs TO authenticated;
+    `);
+
+    try {
+      await client.queryArray(`
+        CREATE POLICY "opt_outs_anon_insert_policy" ON public.opt_outs
+        FOR INSERT TO anon WITH CHECK (true);
       `);
     } catch (_) { /* Policy already exists */ }
 

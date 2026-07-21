@@ -50,6 +50,38 @@ export function RecentRequestsTable({
     }
   };
 
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return 'bg-blue-50 text-blue-700 border-blue-100';
+      case 'clicked':
+      case 'already_reviewed':
+        return 'bg-green-50 text-green-700 border-green-100';
+      case 'expired':
+        return 'bg-slate-100 text-slate-600 border-slate-200';
+      case 'opted_out':
+        return 'bg-red-50 text-red-700 border-red-100';
+      default:
+        return 'bg-amber-50 text-amber-700 border-amber-100';
+    }
+  };
+
+  const getStatusDotColor = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return 'bg-blue-500';
+      case 'clicked':
+      case 'already_reviewed':
+        return 'bg-green-500';
+      case 'expired':
+        return 'bg-slate-400';
+      case 'opted_out':
+        return 'bg-red-500';
+      default:
+        return 'bg-amber-500';
+    }
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -112,24 +144,8 @@ export function RecentRequestsTable({
                       {order ? format(new Date(order.checkoutDate), 'MMM d, yyyy') : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                        request.status === 'sent' 
-                          ? 'bg-blue-50 text-blue-700 border-blue-100' 
-                          : request.status === 'clicked' 
-                          ? 'bg-green-50 text-green-700 border-green-100' 
-                          : request.status === 'opted_out' 
-                          ? 'bg-red-50 text-red-700 border-red-100' 
-                          : 'bg-amber-50 text-amber-700 border-amber-100'
-                      }`}>
-                        <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${
-                          request.status === 'sent' 
-                            ? 'bg-blue-500' 
-                            : request.status === 'clicked' 
-                            ? 'bg-green-500' 
-                            : request.status === 'opted_out' 
-                            ? 'bg-red-500' 
-                            : 'bg-amber-500'
-                        }`} />
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusBadgeStyle(request.status)}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${getStatusDotColor(request.status)}`} />
                         {request.status.replace('_', ' ')}
                       </span>
                     </td>
@@ -149,7 +165,7 @@ export function RecentRequestsTable({
                         </button>
                         <button
                           onClick={(e) => handleResend(e, request.id)}
-                          disabled={sendingId === request.id}
+                          disabled={sendingId === request.id || request.status === 'expired'}
                           className={`p-1.5 rounded-lg border transition-all flex items-center space-x-1 ${
                             successId === request.id 
                               ? 'bg-emerald-50 border-emerald-200 text-emerald-600'

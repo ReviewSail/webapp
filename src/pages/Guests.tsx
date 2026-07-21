@@ -113,7 +113,7 @@ export default function Guests() {
     }
   };
 
-  // Export CSV of Guests (Requirement 2)
+  // Export CSV of Guests
   const handleExportCSV = () => {
     if (filteredGuests.length === 0) return;
 
@@ -154,6 +154,38 @@ export default function Guests() {
   const selectedOrder = selectedRequest ? orders.find(o => o.id === selectedRequest.orderId) : null;
   const selectedCustomer = selectedOrder ? customers.find(c => c.id === selectedOrder.customerId) : null;
   const selectedEvents = selectedRequestId ? messageEvents.filter(e => e.requestId === selectedRequestId) : [];
+
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return 'bg-blue-50 text-blue-700 border-blue-100';
+      case 'clicked':
+      case 'already_reviewed':
+        return 'bg-green-50 text-green-700 border-green-100';
+      case 'expired':
+        return 'bg-slate-100 text-slate-600 border-slate-200';
+      case 'opted_out':
+        return 'bg-red-50 text-red-700 border-red-100';
+      default:
+        return 'bg-amber-50 text-amber-700 border-amber-100';
+    }
+  };
+
+  const getStatusDotColor = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return 'bg-blue-500';
+      case 'clicked':
+      case 'already_reviewed':
+        return 'bg-green-500';
+      case 'expired':
+        return 'bg-slate-400';
+      case 'opted_out':
+        return 'bg-red-500';
+      default:
+        return 'bg-amber-500';
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -251,24 +283,8 @@ export default function Guests() {
                       {g.totalRequestsSent}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${
-                        g.lastStatus === 'sent' 
-                          ? 'bg-blue-50 text-blue-700 border-blue-100' 
-                          : g.lastStatus === 'clicked' 
-                          ? 'bg-green-50 text-green-700 border-green-100' 
-                          : g.lastStatus === 'opted_out' 
-                          ? 'bg-red-50 text-red-700 border-red-100' 
-                          : 'bg-amber-50 text-amber-700 border-amber-100'
-                      }`}>
-                        <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${
-                          g.lastStatus === 'sent' 
-                            ? 'bg-blue-500' 
-                            : g.lastStatus === 'clicked' 
-                            ? 'bg-green-500' 
-                            : g.lastStatus === 'opted_out' 
-                            ? 'bg-red-500' 
-                            : 'bg-amber-500'
-                        }`} />
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusBadgeStyle(g.lastStatus)}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${getStatusDotColor(g.lastStatus)}`} />
                         {g.lastStatus.replace('_', ' ')}
                       </span>
                     </td>

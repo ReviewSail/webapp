@@ -34,7 +34,7 @@ export type Order = {
 export type ReviewRequest = {
   id: string;
   orderId: string;
-  status: 'pending' | 'sent' | 'clicked' | 'opted_out';
+  status: 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed';
   sentAt?: string;
 };
 
@@ -210,7 +210,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
         id: r.id,
         orderId: r.order_id,
-        status: r.status as 'pending' | 'sent' | 'clicked' | 'opted_out',
+        status: r.status as 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed',
         sentAt: r.sent_at
       }));
       

@@ -21,7 +21,7 @@ export function GuestDetailPanel({
 }: GuestDetailPanelProps) {
   if (!isOpen || !request) return null;
 
-  // Sort events chronologically (latest first or oldest first? Chronological order: oldest first to read like a timeline)
+  // Sort events chronologically
   const sortedEvents = [...events].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   const getEventIcon = (type: string) => {
@@ -51,6 +51,22 @@ export function GuestDetailPanel({
         return 'bg-red-50 text-red-700 border-red-100';
       default:
         return 'bg-slate-50 text-slate-700 border-slate-100';
+    }
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return 'bg-blue-50 text-blue-700 border-blue-100';
+      case 'clicked':
+      case 'already_reviewed':
+        return 'bg-green-50 text-green-700 border-green-100';
+      case 'expired':
+        return 'bg-slate-100 text-slate-600 border-slate-200';
+      case 'opted_out':
+        return 'bg-red-50 text-red-700 border-red-100';
+      default:
+        return 'bg-amber-50 text-amber-700 border-amber-100';
     }
   };
 
@@ -92,15 +108,7 @@ export function GuestDetailPanel({
                   <h4 className="font-extrabold text-slate-800 text-sm">
                     {customer ? `${customer.firstName} ${customer.lastName}` : 'Unidentified Guest'}
                   </h4>
-                  <span className={`inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-[10px] font-bold border ${
-                    request.status === 'sent' 
-                      ? 'bg-blue-50 text-blue-700 border-blue-100' 
-                      : request.status === 'clicked' 
-                      ? 'bg-green-50 text-green-700 border-green-100' 
-                      : request.status === 'opted_out' 
-                      ? 'bg-red-50 text-red-700 border-red-100' 
-                      : 'bg-amber-50 text-amber-700 border-amber-100'
-                  }`}>
+                  <span className={`inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-[10px] font-bold border ${getStatusBadgeClass(request.status)}`}>
                     {request.status.replace('_', ' ')}
                   </span>
                 </div>
