@@ -7,6 +7,7 @@ import Import from "./pages/Import"
 import Settings from "./pages/Settings"
 import Unsubscribe from "./pages/Unsubscribe"
 import Login from "./pages/Login"
+import Feedback from "./pages/Feedback"
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -28,6 +29,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/opt-out" element={<Unsubscribe />} />
       <Route path="/unsubscribe" element={<Unsubscribe />} />
+      <Route path="/feedback" element={<Feedback />} />
       <Route path="/login" element={<Login />} />
       <Route path="/" element={
         <ProtectedRoute>

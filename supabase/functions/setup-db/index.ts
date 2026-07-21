@@ -44,6 +44,49 @@ serve(async (req) => {
       WHERE subscription_status IS NULL OR subscription_status = 'inactive';
     `);
 
+    // Create public feedback table
+    await client.queryArray(`
+      CREATE TABLE IF NOT EXISTS public.feedback (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        request_id UUID,
+        rating INTEGER CHECK (rating >= 1 AND rating <= 5) NOT NULL,
+        comment TEXT,
+        manager_response TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+
+    // Enable RLS and add Grants
+    await client.queryArray(`
+      ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
+      
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.feedback TO service_role;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.feedback TO authenticated;
+      GRANT SELECT, INSERT, UPDATE ON TABLE public.feedback TO anon;
+    `);
+
+    // Create Policies safely by checking if they exist first
+    try {
+      await client.queryArray(`
+        CREATE POLICY "feedback_select_policy" ON public.feedback
+        FOR SELECT USING (true);
+      `);
+    } catch (_) { /* Policy already exists */ }
+
+    try {
+      await client.queryArray(`
+        CREATE POLICY "feedback_insert_policy" ON public.feedback
+        FOR INSERT WITH CHECK (true);
+      `);
+    } catch (_) { /* Policy already exists */ }
+
+    try {
+      await client.queryArray(`
+        CREATE POLICY "feedback_update_policy" ON public.feedback
+        FOR UPDATE USING (true);
+      `);
+    } catch (_) { /* Policy already exists */ }
+
     // Configure pg_cron job to automatically process reviews hourly
     try {
       console.log("[setup-db] Creating automated hourly background cron job via pg_cron...");

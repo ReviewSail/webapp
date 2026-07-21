@@ -50,6 +50,15 @@ export type MessageEvent = {
   createdAt: string;
 };
 
+export type PrivateFeedback = {
+  id: string;
+  requestId: string | null;
+  rating: number;
+  comment: string | null;
+  managerResponse: string | null;
+  createdAt: string;
+};
+
 type MapRatedState = {
   locations: Location[];
   customers: Customer[];
@@ -57,6 +66,7 @@ type MapRatedState = {
   reviewRequests: ReviewRequest[];
   optOuts: OptOut[];
   messageEvents: MessageEvent[];
+  feedbacks: PrivateFeedback[];
   activeLocationId: string | null;
   subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null;
   stripeCustomerId: string | null;
@@ -72,6 +82,7 @@ type MapRatedContextType = MapRatedState & {
   addOptOut: (email: string) => Promise<void>;
   addReviewRequest: (orderId: string) => Promise<void>;
   updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
+  respondToFeedback: (id: string, text: string) => Promise<void>;
   refreshData: () => Promise<void>;
   bulkImport: (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => Promise<{ success: boolean, count: number, error?: string }>;
   subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
@@ -84,6 +95,7 @@ const initialState: MapRatedState = {
   reviewRequests: [],
   optOuts: [],
   messageEvents: [],
+  feedbacks: [],
   activeLocationId: null,
   subscriptionStatus: 'inactive',
   stripeCustomerId: null,
@@ -214,6 +226,17 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         createdAt: e.created_at
       }));
 
+      // Fetch private feedbacks
+      const { data: fbData } = await supabase.from('feedback').select('*');
+      const feedbacks: PrivateFeedback[] = (fbData || []).map(f => ({
+        id: f.id,
+        requestId: f.request_id,
+        rating: f.rating,
+        comment: f.comment,
+        managerResponse: f.manager_response,
+        createdAt: f.created_at
+      }));
+
       setState(prev => ({
         ...prev,
         locations,
@@ -222,6 +245,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         reviewRequests,
         optOuts,
         messageEvents,
+        feedbacks,
         subscriptionStatus,
         stripeCustomerId,
         activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
@@ -490,6 +514,19 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     await refreshData();
   };
 
+  const respondToFeedback = async (id: string, text: string) => {
+    const { error } = await supabase
+      .from('feedback')
+      .update({ manager_response: text })
+      .eq('id', id);
+
+    if (error) {
+      console.error(error);
+      throw error;
+    }
+    await refreshData();
+  };
+
   const subscribe = async () => {
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout-session');
@@ -515,6 +552,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       addOptOut,
       addReviewRequest,
       updateLocationSettings,
+      respondToFeedback,
       refreshData,
       bulkImport,
       subscribe

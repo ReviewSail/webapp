@@ -129,10 +129,15 @@ export default function Settings() {
 
   const renderPreview = (text: string) => {
     const mockLink = formData.googlePlaceUrl || 'https://g.page/r/mock-review-url';
-    return text
+    let baseText = text
       .replace(/{firstName}/g, 'Alex')
       .replace(/{lastName}/g, 'Davis')
       .replace(/{reviewLink}/g, mockLink);
+
+    // Append compliant dual CTA mock content
+    baseText += `\n\nAlternatively, you can share private feedback with us directly here: https://maprated.com/feedback?request_id=mock-request-id`;
+    baseText += `\n\nTo unsubscribe from future requests, please click here: https://maprated.com/unsubscribe?email=alex@example.com`;
+    return baseText;
   };
 
   const activeLoc = locations.find(l => l.id === activeLocationId);

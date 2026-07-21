@@ -116,12 +116,15 @@ serve(async (req) => {
         // Draft the message by replacing variables
         const cleanEmail = customer.email || '';
         const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
+        const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
+        
         let message = templateText
           .replace(/{firstName}/g, customer.first_name || '')
           .replace(/{lastName}/g, customer.last_name || '')
           .replace(/{reviewLink}/g, location.google_place_url || '');
         
-        // Append unsubscribe compliance text
+        // Append private feedback link and unsubscribe compliance text
+        message += `\n\nAlternatively, you can share private feedback with us directly here: ${feedbackUrl}`;
         message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
 
         let sendSuccess = false;
@@ -321,11 +324,14 @@ serve(async (req) => {
             // Draft reminder text (same template)
             const cleanEmail = customer.email || '';
             const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
+            const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
+
             let message = `[Reminder] ` + templateText
               .replace(/{firstName}/g, customer.first_name || '')
               .replace(/{lastName}/g, customer.last_name || '')
               .replace(/{reviewLink}/g, location.google_place_url || '');
             
+            message += `\n\nAlternatively, you can share private feedback with us directly here: ${feedbackUrl}`;
             message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
 
             let sendSuccess = false;

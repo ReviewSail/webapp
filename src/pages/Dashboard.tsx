@@ -5,6 +5,7 @@ import { TrialBanner } from '../components/dashboard/TrialBanner';
 import { OnboardingWizard } from '../components/dashboard/OnboardingWizard';
 import { StatsGrid } from '../components/dashboard/StatsGrid';
 import { RecentRequestsTable } from '../components/dashboard/RecentRequestsTable';
+import { PrivateFeedbackSection } from '../components/dashboard/PrivateFeedbackSection';
 
 export default function Dashboard() {
   const { 
@@ -14,6 +15,7 @@ export default function Dashboard() {
     orders, 
     customers, 
     messageEvents, 
+    feedbacks,
     subscriptionStatus, 
     subscribe, 
     loading, 
@@ -22,7 +24,8 @@ export default function Dashboard() {
     updateLocationSettings,
     addCustomer,
     addOrder,
-    addReviewRequest
+    addReviewRequest,
+    respondToFeedback
   } = useMapRated();
   
   const [upgrading, setUpgrading] = useState(false);
@@ -103,6 +106,13 @@ export default function Dashboard() {
   // Limit to latest 10 requests for the feed table
   const recentRequests = sortedLocationRequests.slice(0, 10);
 
+  // Filter feedbacks for the active location
+  const activeLocationFeedbacks = feedbacks.filter(fb => {
+    const req = reviewRequests.find(r => r.id === fb.requestId);
+    const order = req ? orders.find(o => o.id === req.orderId) : null;
+    return order?.locationId === activeLocationId;
+  });
+
   // Show inline warning banner if subscription is inactive
   const isPremium = subscriptionStatus === 'active';
 
@@ -142,6 +152,15 @@ export default function Dashboard() {
         clickRate={clickRate}
         totalClicked={totalClicked}
         totalOptedOut={totalOptedOut}
+      />
+
+      {/* Private Feedback Manager Portal Feed */}
+      <PrivateFeedbackSection
+        feedbacks={activeLocationFeedbacks}
+        reviewRequests={reviewRequests}
+        orders={orders}
+        customers={customers}
+        onRespond={respondToFeedback}
       />
 
       {/* Recent Requests Table Section */}
