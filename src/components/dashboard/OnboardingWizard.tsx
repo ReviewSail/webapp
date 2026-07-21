@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, ChevronRight, Building2, MapPin, CheckCircle, RefreshCw, AlertCircle, FileUp, ShieldCheck } from 'lucide-react';
+import { Sparkles, ChevronRight, Building2, MapPin, CheckCircle, RefreshCw, AlertCircle, FileUp, ShieldCheck, HelpCircle, ChevronDown, ChevronUp, Map, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface OnboardingWizardProps {
@@ -20,6 +20,7 @@ export function OnboardingWizard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [createdLocId, setCreatedLocId] = useState('');
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +45,7 @@ export function OnboardingWizard({
 
     setLoading(true);
     try {
+      // REQUIREMENT 6: Immediately save the location name and Google URL to Supabase before proceeding
       const location = await addLocation(propertyName.trim(), cleanUrl);
       if (location && location.id) {
         setCreatedLocId(location.id);
@@ -130,12 +132,14 @@ export function OnboardingWizard({
             <div className="flex-1 h-0.5 bg-indigo-500/35" />
             <div className="flex items-center space-x-2">
               <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 2 ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-indigo-300'}`}>2</span>
-              <span className="text-xs font-semibold">Import Guests</span>
+              {/* REQUIREMENT 2: Rename Step 2 label to "Add First Guest" */}
+              <span className="text-xs font-semibold">Add First Guest</span>
             </div>
             <div className="flex-1 h-0.5 bg-indigo-500/35" />
             <div className="flex items-center space-x-2">
               <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 3 ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-indigo-300'}`}>3</span>
-              <span className="text-xs font-semibold">All Done!</span>
+              {/* REQUIREMENT 5: Rename Step 3 label to "You’re Live 🎉" */}
+              <span className="text-xs font-semibold">You’re Live 🎉</span>
             </div>
           </div>
         </div>
@@ -183,10 +187,41 @@ export function OnboardingWizard({
                     placeholder="https://g.page/r/your-google-place-id/review"
                     className="w-full text-sm rounded-xl border-slate-200 pl-4 pr-4 py-3 border bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
                   />
+
+                  {/* REQUIREMENT 4: Reassurance caption */}
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    We’ll send guests a friendly review invitation after checkout — fully automated. You can customize the message anytime in Settings.
+                  </p>
+
+                  {/* REQUIREMENT 1: Collapsible 'How do I find this?' section */}
+                  <div className="mt-3 border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setIsHelpOpen(!isHelpOpen)}
+                      className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left text-xs font-bold text-slate-700"
+                    >
+                      <span className="flex items-center space-x-2">
+                        <Map className="h-4 w-4 text-emerald-600" />
+                        <span>How do I find this?</span>
+                      </span>
+                      {isHelpOpen ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                    </button>
+                    {isHelpOpen && (
+                      <div className="p-3 bg-white border-t border-slate-100 text-xs text-slate-600 space-y-1.5 leading-relaxed">
+                        <p className="font-semibold text-slate-700">Follow these 3 simple steps:</p>
+                        <ol className="list-decimal list-inside space-y-1 pl-1">
+                          <li>Open Google Maps and search for your business.</li>
+                          <li>Click the <strong>Write a Review</strong> button on your listing.</li>
+                          <li>Copy the full URL from your browser’s address bar and paste it here stay.</li>
+                        </ol>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <div className="pt-4">
+                {/* REQUIREMENT 3: Change button text to 'Save & Continue →' */}
                 <button
                   type="submit"
                   disabled={loading}
@@ -195,10 +230,7 @@ export function OnboardingWizard({
                   {loading ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
                   ) : (
-                    <>
-                      <span>Next: Queue Invites</span>
-                      <ChevronRight className="h-4.5 w-4.5" />
-                    </>
+                    <span>Save & Continue →</span>
                   )}
                 </button>
               </div>
@@ -245,13 +277,36 @@ export function OnboardingWizard({
                 <div className="mx-auto h-16 w-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 mb-4">
                   <ShieldCheck className="h-8 w-8" />
                 </div>
-                <h3 className="text-lg font-extrabold text-emerald-800">You're all set!</h3>
+                <h3 className="text-lg font-extrabold text-emerald-800">You're live and ready!</h3>
                 <p className="text-sm text-slate-600 leading-relaxed font-medium">
                   MapRated will automatically send review requests every hour.
                 </p>
                 <p className="text-xs text-slate-400">
                   We have fully set up your hourly cron jobs and direct integration portals. Sit back and watch your property's review scores skyrocket!
                 </p>
+
+                {/* REQUIREMENT 5: Visual mockup preview card of invitation email */}
+                <div className="text-left border border-slate-200 rounded-xl bg-slate-50 p-4 shadow-inner space-y-2 mt-4 max-w-sm mx-auto">
+                  <div className="flex items-center space-x-2 text-[10px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                    <Mail className="h-3.5 w-3.5" />
+                    <span>Mock Email Preview</span>
+                  </div>
+                  <div className="bg-white p-3.5 rounded-lg border border-slate-200 text-[11px] leading-relaxed text-slate-600 shadow-sm">
+                    <p className="font-semibold text-slate-800 mb-1 border-b border-slate-100 pb-1.5">
+                      Subject: Review your stay at {propertyName || 'Your Property'}
+                    </p>
+                    <p className="mt-1.5">Hi Alex,</p>
+                    <p className="mt-1">
+                      Thanks for your visit! Please leave us a review on Google Maps to share your experience with other travelers:
+                    </p>
+                    <p className="mt-2 text-indigo-600 underline font-semibold break-all text-[10px]">
+                      {googleUrl || 'https://g.page/r/placeholder-review-url'}
+                    </p>
+                    <p className="mt-3 border-t border-slate-100 pt-2 text-[9px] text-slate-400 leading-normal">
+                      Alternatively, you can share private feedback with us directly. If you'd like to unsubscribe, click here.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="pt-4 max-w-xs mx-auto">
