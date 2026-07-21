@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
 import { format } from 'date-fns';
 import { supabase } from '../integrations/supabase/client';
+import { Link } from 'react-router-dom';
 import { 
   Send, 
   CheckCircle, 
@@ -14,12 +15,14 @@ import {
   UserCheck,
   Sparkles,
   Zap,
-  X
+  X,
+  MapPin
 } from 'lucide-react';
 
 export default function Dashboard() {
   const { 
     activeLocationId, 
+    locations,
     reviewRequests, 
     orders, 
     customers, 
@@ -74,6 +77,30 @@ export default function Dashboard() {
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
         <RefreshCw className="h-8 w-8 text-indigo-600 animate-spin" />
         <p className="text-sm font-medium text-slate-500">Loading dashboard metrics...</p>
+      </div>
+    );
+  }
+
+  // Show supportive empty state when there are no locations in the database yet
+  if (locations.length === 0) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-12 text-center flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto mt-8">
+        <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full">
+          <MapPin className="h-8 w-8" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">Get Started with MapRated</h2>
+          <p className="text-sm text-slate-500 mt-1">
+            You haven't added any physical locations or properties yet. Add your first property in settings to start automating reviews.
+          </p>
+        </div>
+        <Link
+          to="/settings"
+          className="inline-flex items-center space-x-1 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm py-2.5 px-5 rounded-xl shadow-sm transition-all"
+        >
+          <Sparkles className="h-4 w-4" />
+          <span>Add Location in Settings</span>
+        </Link>
       </div>
     );
   }

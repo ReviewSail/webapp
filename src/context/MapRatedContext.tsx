@@ -64,6 +64,7 @@ type MapRatedState = {
 
 type MapRatedContextType = MapRatedState & {
   setActiveLocationId: (id: string) => void;
+  addLocation: (name: string) => Promise<Location | null>;
   addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
   addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
   addOptOut: (email: string) => Promise<void>;
@@ -233,6 +234,41 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
 
   const setActiveLocationId = (id: string) => {
     setState((prev) => ({ ...prev, activeLocationId: id }));
+  };
+
+  const addLocation = async (name: string) => {
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+    if (!userData) return null;
+
+    const { data, error } = await supabase.from('locations').insert({
+      account_id: userData.account_id,
+      name,
+      timezone: 'UTC',
+      enable_email: true,
+      enable_sms: true
+    }).select().single();
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+
+    // Create a default message template for the location
+    await supabase.from('message_templates').insert({
+      location_id: data.id,
+      type: 'email',
+      template_text: 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}'
+    });
+
+    await refreshData();
+    return {
+      id: data.id,
+      name: data.name,
+      googlePlaceUrl: '',
+      timezone: 'UTC',
+      enableEmail: true,
+      enableSms: true
+    };
   };
 
   const addCustomer = async (customer: Omit<Customer, 'id'>) => {
@@ -429,6 +465,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     <MapRatedContext.Provider value={{
       ...state,
       setActiveLocationId,
+      addLocation,
       addCustomer,
       addOrder,
       addOptOut,
