@@ -31,9 +31,7 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={
         <ProtectedRoute>
-          <MapRatedProvider>
-            <Layout />
-          </MapRatedProvider>
+          <Layout />
         </ProtectedRoute>
       }>
         <Route index element={<Navigate to="/dashboard" replace />} />
@@ -48,9 +46,11 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
+      <MapRatedProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </MapRatedProvider>
     </AuthProvider>
   )
 }
