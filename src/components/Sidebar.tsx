@@ -1,15 +1,18 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, FileUp, Users, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
-
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Import Data', href: '/import', icon: FileUp },
-  { name: 'Guests', href: '/guests', icon: Users },
-  { name: 'Settings', href: '/settings', icon: Settings },
-];
+import { useAuth } from '../context/AuthContext';
 
 export function Sidebar() {
+  const { role } = useAuth();
+
+  const navigation = [
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Import Data', href: '/import', icon: FileUp },
+    { name: 'Guests', href: '/guests', icon: Users },
+    ...(role !== 'staff' ? [{ name: 'Settings', href: '/settings', icon: Settings }] : []),
+  ];
+
   return (
     <div className="flex flex-col w-64 bg-slate-950 border-r border-slate-900 text-slate-300 shadow-xl shrink-0">
       <div className="flex h-16 shrink-0 items-center px-6 bg-slate-950 border-b border-slate-900">

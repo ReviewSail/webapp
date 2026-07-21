@@ -23,7 +23,7 @@ serve(async (req) => {
 
     console.log("[setup-db] Running schema migrations...");
     
-    // Add columns to locations table
+    // 1. Add columns to locations table
     await client.queryArray(`
       ALTER TABLE public.locations 
       ADD COLUMN IF NOT EXISTS enable_email BOOLEAN DEFAULT TRUE,
@@ -32,21 +32,80 @@ serve(async (req) => {
       ADD COLUMN IF NOT EXISTS preferred_send_hour INTEGER DEFAULT 10;
     `);
 
-    // Add stripe billing columns to accounts table
+    // 2. Add stripe billing columns to accounts table
     await client.queryArray(`
       ALTER TABLE public.accounts 
       ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
       ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'inactive';
     `);
 
-    // Auto-activate all existing accounts for development and testing purposes
+    // Ensure users table role, email, and full_name columns exist
     await client.queryArray(`
-      UPDATE public.accounts 
-      SET subscription_status = 'active' 
-      WHERE subscription_status IS NULL OR subscription_status = 'inactive';
+      ALTER TABLE public.users
+      ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'admin',
+      ADD COLUMN IF NOT EXISTS email TEXT,
+      ADD COLUMN IF NOT EXISTS full_name TEXT;
     `);
 
-    // Create public feedback table
+    // Default all existing user roles to admin
+    await client.queryArray(`
+      UPDATE public.users SET role = 'admin' WHERE role IS NULL;
+    `);
+
+    // Attempt backfilling emails of existing users from auth.users (if possible via Postgres query)
+    try {
+      await client.queryArray(`
+        UPDATE public.users u
+        SET email = a.email,
+            full_name = COALESCE(a.raw_user_meta_data->>'full_name', a.raw_user_meta_data->>'first_name')
+        FROM auth.users a
+        WHERE u.id = a.id AND (u.email IS NULL OR u.full_name IS NULL);
+      `);
+    } catch (backfillErr) {
+      console.warn("Emails backfill warning (ignored if permissions restrict direct auth.users reads):", backfillErr);
+    }
+
+    // 3. Recreate handle_new_auth_user trigger function to capture email & metadata
+    await client.queryArray(`
+      CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+       RETURNS trigger
+       LANGUAGE plpgsql
+       SECURITY DEFINER
+      AS $$
+      declare
+        new_account_id uuid;
+        new_location_id uuid;
+      begin
+        -- 1. Create a new account for the user
+        insert into public.accounts (name)
+        values (coalesce(new.raw_user_meta_data->>'full_name', 'My Account'))
+        returning id into new_account_id;
+
+        -- 2. Create the user record linked to the account with email & name
+        insert into public.users (id, account_id, role, email, full_name)
+        values (
+          new.id, 
+          new_account_id, 
+          'admin', 
+          new.email, 
+          coalesce(new.raw_user_meta_data->>'full_name', 'New Member')
+        );
+
+        -- 3. Create a default location
+        insert into public.locations (account_id, name, timezone)
+        values (new_account_id, 'Main Location', 'UTC')
+        returning id into new_location_id;
+
+        -- 4. Create a default message template for the location
+        insert into public.message_templates (location_id, type, template_text)
+        values (new_location_id, 'email', 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}');
+
+        return new;
+      end;
+      $$;
+    `);
+
+    // 4. Create public feedback table
     await client.queryArray(`
       CREATE TABLE IF NOT EXISTS public.feedback (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -88,6 +147,58 @@ serve(async (req) => {
         FOR UPDATE USING (true);
       `);
     } catch (_) { /* Policy already exists */ }
+
+    // 5. Update RLS policies to enforce admin role checks on accounts and locations
+    console.log("[setup-db] Updating role-based RLS policies for locations and accounts...");
+    
+    // Drop old policies to rebuild with role checks
+    await client.queryArray(`
+      DROP POLICY IF EXISTS "Users can view their own account" ON public.accounts;
+      DROP POLICY IF EXISTS "Users can manage their account locations" ON public.locations;
+      DROP POLICY IF EXISTS "Users can view account members" ON public.users;
+      DROP POLICY IF EXISTS "Admins can manage account members" ON public.users;
+    `);
+
+    // Create admin-only policy for accounts (staff cannot read/manage accounts)
+    await client.queryArray(`
+      CREATE POLICY "Users can view their own account" ON public.accounts
+      FOR SELECT TO authenticated 
+      USING (
+        id = get_current_account_id() AND 
+        EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
+      );
+    `);
+
+    // Create admin-only policy for locations (staff cannot read/manage locations settings)
+    await client.queryArray(`
+      CREATE POLICY "Users can manage their account locations" ON public.locations
+      FOR ALL TO authenticated 
+      USING (
+        account_id = get_current_account_id() AND 
+        EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
+      );
+    `);
+
+    // Allow account users to select members of their account
+    await client.queryArray(`
+      CREATE POLICY "Users can view account members" ON public.users
+      FOR SELECT TO authenticated
+      USING (account_id = get_current_account_id());
+    `);
+
+    // Allow account admins to insert, update, or delete users belonging to their account (Team Management)
+    await client.queryArray(`
+      CREATE POLICY "Admins can manage account members" ON public.users
+      FOR ALL TO authenticated
+      USING (
+        account_id = get_current_account_id() AND 
+        EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
+      )
+      WITH CHECK (
+        account_id = get_current_account_id() AND 
+        EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin')
+      );
+    `);
 
     // Configure pg_cron job to automatically process reviews hourly
     try {

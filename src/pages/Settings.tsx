@@ -1,6 +1,29 @@
 import { useState, useEffect } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
-import { Settings as SettingsIcon, Mail, Phone, ToggleLeft, ToggleRight, Save, Plus, Home, MapPin, CheckCircle, AlertCircle, Eye, Trash2, X, RefreshCw, Clock } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../integrations/supabase/client';
+import { 
+  Settings as SettingsIcon, 
+  Mail, 
+  Phone, 
+  ToggleLeft, 
+  ToggleRight, 
+  Save, 
+  Plus, 
+  Home, 
+  MapPin, 
+  CheckCircle, 
+  AlertCircle, 
+  Eye, 
+  Trash2, 
+  X, 
+  RefreshCw, 
+  Clock,
+  Users,
+  UserPlus,
+  Shield,
+  UserMinus
+} from 'lucide-react';
 
 const HOURS_DATA = Array.from({ length: 24 }, (_, i) => {
   const ampm = i >= 12 ? 'PM' : 'AM';
@@ -12,7 +35,8 @@ const HOURS_DATA = Array.from({ length: 24 }, (_, i) => {
 });
 
 export default function Settings() {
-  const { activeLocationId, locations, updateLocationSettings, addLocation, deleteLocation } = useMapRated();
+  const { activeLocationId, locations, updateLocationSettings, addLocation, deleteLocation, refreshData } = useMapRated();
+  const { user: currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -23,6 +47,15 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState<'email' | 'sms'>('email');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
+  // Team Management State
+  const [team, setTeam] = useState<any[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'staff'>('staff');
+  const [inviting, setInviting] = useState(false);
+  const [teamSuccess, setTeamSuccess] = useState('');
+  const [teamError, setTeamError] = useState('');
+
   const [formData, setFormData] = useState({
     googlePlaceUrl: '',
     templateText: '',
@@ -32,6 +65,23 @@ export default function Settings() {
     enableSms: true,
     preferredSendHour: 10,
   });
+
+  const loadTeam = async () => {
+    setLoadingTeam(true);
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (!error && data) {
+        setTeam(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingTeam(false);
+    }
+  };
 
   useEffect(() => {
     const loc = locations.find(l => l.id === activeLocationId);
@@ -56,6 +106,7 @@ export default function Settings() {
         preferredSendHour: 10
       });
     }
+    loadTeam();
   }, [activeLocationId, locations]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -128,6 +179,89 @@ export default function Settings() {
       setUiError(err.message || 'Failed to delete property. Please try again.');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // Team management functions (Requirement 4, 5, 6)
+  const handleInviteTeamMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTeamSuccess('');
+    setTeamError('');
+    
+    const emailToInvite = inviteEmail.trim().toLowerCase();
+    if (!emailToInvite) return;
+
+    setInviting(true);
+    try {
+      const activeLoc = locations.find(l => l.id === activeLocationId);
+      const { data: userRecord } = await supabase.from('users').select('account_id').eq('id', currentUser?.id).single();
+      const accountId = userRecord?.account_id;
+
+      if (!accountId) {
+        throw new Error("Could not resolve account owner attributes.");
+      }
+
+      const { data, error } = await supabase.functions.invoke('invite-team-member', {
+        body: {
+          email: emailToInvite,
+          role: inviteRole,
+          accountId,
+          propertyName: activeLoc?.name || 'My Account'
+        }
+      });
+
+      if (error) throw error;
+
+      setTeamSuccess(`Email invitation successfully sent to ${emailToInvite}!`);
+      setInviteEmail('');
+      setTimeout(() => setTeamSuccess(''), 5000);
+    } catch (err: any) {
+      console.error(err);
+      setTeamError(err.message || "Failed to dispatch email invitation.");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleToggleRole = async (userId: string, currentRole: string) => {
+    setTeamSuccess('');
+    setTeamError('');
+    const newRole = currentRole === 'admin' ? 'staff' : 'admin';
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ role: newRole })
+        .eq('id', userId);
+
+      if (error) throw error;
+      setTeamSuccess("User role updated successfully.");
+      loadTeam();
+      setTimeout(() => setTeamSuccess(''), 4000);
+    } catch (err: any) {
+      setTeamError(err.message || "Failed to alter user role.");
+    }
+  };
+
+  const handleRemoveMember = async (userId: string, email: string) => {
+    if (userId === currentUser?.id) {
+      setTeamError("You cannot remove yourself from the team.");
+      return;
+    }
+
+    setTeamSuccess('');
+    setTeamError('');
+    try {
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+      setTeamSuccess(`Successfully removed ${email || 'team member'} from the account.`);
+      loadTeam();
+      setTimeout(() => setTeamSuccess(''), 4000);
+    } catch (err: any) {
+      setTeamError(err.message || "Failed to remove member.");
     }
   };
 
@@ -431,6 +565,140 @@ export default function Settings() {
                   </button>
                 </div>
               </form>
+
+              {/* Requirement 3, 4, 5, 6: Team Management Section */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+                <div className="flex items-center space-x-2 border-b border-slate-100 pb-4">
+                  <Users className="h-5 w-5 text-indigo-600" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-800">Team Management</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Invite new staff, remove users, or adjust security roles.</p>
+                  </div>
+                </div>
+
+                {teamSuccess && (
+                  <div className="bg-emerald-50 text-emerald-800 p-4 rounded-xl border border-emerald-200 flex items-center space-x-2 text-xs">
+                    <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <span>{teamSuccess}</span>
+                  </div>
+                )}
+
+                {teamError && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 flex items-center space-x-2 text-xs">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+                    <span>{teamError}</span>
+                  </div>
+                )}
+
+                {/* Team member list table */}
+                <div className="overflow-x-auto border border-slate-100 rounded-xl shadow-inner">
+                  <table className="min-w-full divide-y divide-slate-100 text-xs">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-bold text-slate-500 uppercase">Member</th>
+                        <th className="px-4 py-3 text-left font-bold text-slate-500 uppercase">Role Badge</th>
+                        <th className="px-4 py-3 text-right font-bold text-slate-500 uppercase">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-100">
+                      {loadingTeam ? (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-8 text-center text-slate-400">Loading team members...</td>
+                        </tr>
+                      ) : team.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-8 text-center text-slate-400">No other team members yet.</td>
+                        </tr>
+                      ) : (
+                        team.map((member) => (
+                          <tr key={member.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              <div className="font-semibold text-slate-800">{member.full_name || 'Team Member'}</div>
+                              <div className="text-slate-400 mt-0.5">{member.email || 'No email registered'}</div>
+                            </td>
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border capitalize ${
+                                member.role === 'admin' 
+                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
+                                  : 'bg-slate-100 text-slate-700 border-slate-200'
+                              }`}>
+                                <Shield className="h-3 w-3 mr-1" />
+                                {member.role}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 whitespace-nowrap text-right space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleRole(member.id, member.role)}
+                                className="text-[10px] font-bold text-indigo-600 hover:underline"
+                              >
+                                Toggle Role
+                              </button>
+                              
+                              {member.id !== currentUser?.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveMember(member.id, member.email)}
+                                  className="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 transition-all inline-flex"
+                                  title="Remove Member"
+                                >
+                                  <UserMinus className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Invite form */}
+                <form onSubmit={handleInviteTeamMember} className="bg-slate-50/50 border border-slate-200 rounded-xl p-4.5 space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <UserPlus className="h-4.5 w-4.5 text-indigo-600" />
+                    <h3 className="text-sm font-bold text-slate-800">Invite Team Member</h3>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
+                      <input 
+                        type="email"
+                        required
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="co-worker@example.com"
+                        className="w-full text-xs rounded-lg border-slate-300 py-2.5 px-3 border bg-white focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <select
+                        value={inviteRole}
+                        onChange={(e: any) => setInviteRole(e.target.value)}
+                        className="w-full text-xs rounded-lg border-slate-300 py-2.5 px-3 border bg-white focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="staff">Staff Role</option>
+                        <option value="admin">Admin Role</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="submit"
+                      disabled={inviting || !inviteEmail.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs py-2 px-4 rounded-lg flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                    >
+                      {inviting ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <UserPlus className="h-3.5 w-3.5" />
+                      )}
+                      <span>{inviting ? 'Sending Invite...' : 'Send Invitation Link'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
 
               {/* Danger Zone: Delete Location */}
               <div className="bg-white rounded-xl border border-red-200 p-6 space-y-4">

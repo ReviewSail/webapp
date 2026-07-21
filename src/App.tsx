@@ -25,6 +25,21 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Admin Only Wrapper
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { role, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen bg-slate-50">Loading...</div>;
+  }
+  
+  if (role === 'staff') {
+    return <Navigate to="/dashboard?access_denied=true" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
 function AppRoutes() {
   return (
     <Routes>
@@ -41,7 +56,11 @@ function AppRoutes() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="import" element={<Import />} />
         <Route path="guests" element={<Guests />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="settings" element={
+          <AdminRoute>
+            <Settings />
+          </AdminRoute>
+        } />
       </Route>
     </Routes>
   );

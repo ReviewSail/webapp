@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
 import { RefreshCw, AlertCircle, FileUp, Sparkles, Send } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { TrialBanner } from '../components/dashboard/TrialBanner';
 import { OnboardingWizard } from '../components/dashboard/OnboardingWizard';
 import { StatsGrid } from '../components/dashboard/StatsGrid';
@@ -26,8 +26,11 @@ export default function Dashboard() {
     respondToFeedback
   } = useMapRated();
   
+  const [searchParams] = useSearchParams();
   const [upgrading, setUpgrading] = useState(false);
   const [error, setError] = useState('');
+
+  const showAccessDenied = searchParams.get('access_denied') === 'true';
 
   const handleUpgrade = async () => {
     setUpgrading(true);
@@ -117,6 +120,17 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      {/* Access Denied Warning Alert */}
+      {showAccessDenied && (
+        <div className="bg-red-50 text-red-800 p-4.5 rounded-2xl border border-red-200 flex items-start space-x-3.5 shadow-sm text-xs animate-fade-in">
+          <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-extrabold text-sm text-red-900 mb-1">Access Denied</h4>
+            <p>You do not have the required permissions to view Settings. Only Admin users can manage team members or configure property settings.</p>
+          </div>
+        </div>
+      )}
+
       {/* Dismissible Non-Intrusive Subscription Banner */}
       <TrialBanner
         isPremium={isPremium}
