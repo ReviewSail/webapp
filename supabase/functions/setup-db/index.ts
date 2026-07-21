@@ -12,7 +12,19 @@ serve(async (req) => {
   }
 
   try {
-    console.log("[setup-db] Connecting to database...");
+    // 1. Strictly validate authorization caller against the secret service key
+    const authHeader = req.headers.get('Authorization');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!authHeader || !serviceRoleKey || authHeader !== `Bearer ${serviceRoleKey}`) {
+      console.error("[setup-db] Security Alert: Unauthenticated schema alter request blocked.");
+      return new Response(JSON.stringify({ error: "Unauthorized: Invalid migration authorization token." }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log("[setup-db] Connection verified. Commencing migrations...");
     const databaseUrl = Deno.env.get('SUPABASE_DB_URL');
     if (!databaseUrl) {
       throw new Error("SUPABASE_DB_URL is not set");
@@ -21,9 +33,7 @@ serve(async (req) => {
     const client = new Client(databaseUrl);
     await client.connect();
 
-    console.log("[setup-db] Running schema migrations...");
-    
-    // 1. Add columns to locations table
+    // 2. Add columns to locations table
     await client.queryArray(`
       ALTER TABLE public.locations 
       ADD COLUMN IF NOT EXISTS enable_email BOOLEAN DEFAULT TRUE,
@@ -32,7 +42,7 @@ serve(async (req) => {
       ADD COLUMN IF NOT EXISTS preferred_send_hour INTEGER DEFAULT 10;
     `);
 
-    // 2. Add stripe billing columns to accounts table
+    // 3. Add stripe billing columns to accounts table
     await client.queryArray(`
       ALTER TABLE public.accounts 
       ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
@@ -65,7 +75,7 @@ serve(async (req) => {
       console.warn("Emails backfill warning (ignored if permissions restrict direct auth.users reads):", backfillErr);
     }
 
-    // 3. Recreate handle_new_auth_user trigger function to capture email & metadata
+    // 4. Recreate handle_new_auth_user trigger function to capture email & metadata
     await client.queryArray(`
       CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
        RETURNS trigger
@@ -105,7 +115,7 @@ serve(async (req) => {
       $$;
     `);
 
-    // 4. Create public feedback table
+    // 5. Create public feedback table
     await client.queryArray(`
       CREATE TABLE IF NOT EXISTS public.feedback (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -117,20 +127,21 @@ serve(async (req) => {
       );
     `);
 
-    // Enable RLS and add Grants
+    // Enable RLS and add secure Grants (Explicit least-privilege)
     await client.queryArray(`
       ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
       
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.feedback TO service_role;
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.feedback TO authenticated;
-      GRANT SELECT, INSERT, UPDATE ON TABLE public.feedback TO anon;
+      GRANT INSERT, UPDATE ON TABLE public.feedback TO anon; -- Anon can ONLY submit or modify own feedback
     `);
 
     // Create Policies safely by checking if they exist first
     try {
       await client.queryArray(`
+        DROP POLICY IF EXISTS "feedback_select_policy" ON public.feedback;
         CREATE POLICY "feedback_select_policy" ON public.feedback
-        FOR SELECT USING (true);
+        FOR SELECT TO authenticated USING (true); -- ONLY authenticated managers can read guest feedback
       `);
     } catch (_) { /* Policy already exists */ }
 
@@ -168,10 +179,12 @@ serve(async (req) => {
       `);
     } catch (_) { /* Policy already exists */ }
 
-    // Ensure opt_outs can be inserted by public users
+    // Revoke general reads on opt_outs to avoid anon PII harvesting!
     await client.queryArray(`
-      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.opt_outs TO anon;
+      REVOKE SELECT, UPDATE, DELETE ON public.opt_outs FROM anon;
+      GRANT INSERT ON public.opt_outs TO anon; -- Anon can ONLY unsubscribe (insert), not harvest emails
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.opt_outs TO authenticated;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.opt_outs TO service_role;
     `);
 
     try {
@@ -181,7 +194,7 @@ serve(async (req) => {
       `);
     } catch (_) { /* Policy already exists */ }
 
-    // 5. Update RLS policies to enforce admin role checks on accounts and locations
+    // 6. Update RLS policies to enforce admin role checks on accounts and locations
     console.log("[setup-db] Updating role-based RLS policies for locations and accounts...");
     
     // Drop old policies to rebuild with role checks
