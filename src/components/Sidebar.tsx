@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileUp, Settings } from 'lucide-react';
+import { LayoutDashboard, FileUp, Users, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Import Data', href: '/import', icon: FileUp },
+  { name: 'Guests', href: '/guests', icon: Users },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

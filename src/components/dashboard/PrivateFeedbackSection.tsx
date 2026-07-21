@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { PrivateFeedback, ReviewRequest, Order, Customer } from '../../context/MapRatedContext';
-import { Star, MessageSquare, Reply, CornerDownRight, CheckCircle } from 'lucide-react';
+import { Star, MessageSquare, Reply, CornerDownRight, CheckCircle, Download } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface PrivateFeedbackSectionProps {
   feedbacks: PrivateFeedback[];
@@ -38,16 +39,69 @@ export function PrivateFeedbackSection({
     }
   };
 
+  // Export Feedback CSV (Requirement 2)
+  const handleExportFeedbackCSV = () => {
+    if (feedbacks.length === 0) return;
+
+    // Headers
+    const headers = ['Guest Name', 'Star Rating', 'Private Comment', 'Submission Date', 'Manager Response'];
+
+    // Map rows
+    const rows = feedbacks.map(fb => {
+      const request = reviewRequests.find(r => r.id === fb.requestId);
+      const order = request ? orders.find(o => o.id === request.orderId) : null;
+      const customer = order ? customers.find(c => c.id === order.customerId) : null;
+      const guestName = customer ? `${customer.firstName} ${customer.lastName}` : 'Confidential Guest';
+
+      return [
+        guestName,
+        fb.rating.toString(),
+        fb.comment || '',
+        fb.createdAt ? format(new Date(fb.createdAt), 'yyyy-MM-dd HH:mm') : '',
+        fb.managerResponse || ''
+      ];
+    });
+
+    // Create CSV String
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(val => `"${val.replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // Trigger Browser Download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `private_feedback_export.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden mt-8">
-      <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-        <h2 className="text-lg font-bold text-slate-900 flex items-center">
-          <MessageSquare className="h-5 w-5 mr-2 text-indigo-600" />
-          <span>Private Feedback & Service Recovery</span>
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Read and respond directly to confidential 1-5 star ratings sent via guest invites.
-        </p>
+      <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900 flex items-center">
+            <MessageSquare className="h-5 w-5 mr-2 text-indigo-600" />
+            <span>Private Feedback & Service Recovery</span>
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Read and respond directly to confidential 1-5 star ratings sent via guest invites.
+          </p>
+        </div>
+
+        {feedbacks.length > 0 && (
+          <button
+            onClick={handleExportFeedbackCSV}
+            className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2 px-3.5 rounded-xl shadow-sm transition-all shrink-0"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Export Feedback CSV</span>
+          </button>
+        )}
       </div>
 
       {feedbacks.length === 0 ? (
