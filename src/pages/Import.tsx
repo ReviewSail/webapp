@@ -1,7 +1,24 @@
 import { useState, useRef } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
 import Papa from 'papaparse';
-import { FileUp, CheckCircle, AlertTriangle, AlertCircle, MapPin, Sparkles, RefreshCw } from 'lucide-react';
+import { 
+  FileUp, 
+  CheckCircle, 
+  AlertTriangle, 
+  AlertCircle, 
+  MapPin, 
+  Sparkles, 
+  RefreshCw, 
+  BookOpen, 
+  X, 
+  ChevronDown, 
+  ChevronUp, 
+  Info,
+  Calendar,
+  Mail,
+  Phone as PhoneIcon,
+  User
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Import() {
@@ -11,6 +28,10 @@ export default function Import() {
   const [uploadResult, setUploadResult] = useState<{ success: boolean; count: number; skipped: number; error?: string } | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   
+  // Modal & Accordion State
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [openSection, setOpenSection] = useState<'booking' | 'airbnb' | 'expedia' | null>('booking');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -19,6 +40,10 @@ export default function Import() {
     email: '',
     phone: '',
   });
+
+  const toggleSection = (section: 'booking' | 'airbnb' | 'expedia') => {
+    setOpenSection(prev => prev === section ? null : section);
+  };
 
   const validateForm = () => {
     if (!formData.firstName.trim()) {
@@ -228,7 +253,19 @@ export default function Import() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">Import Data</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Import Data</h1>
+          <p className="text-sm text-slate-500 mt-1">Register guest checkout entries or ingest bulk files from external PMS networks.</p>
+        </div>
+        <button
+          onClick={() => setIsGuideOpen(true)}
+          className="inline-flex items-center space-x-2 bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 border border-indigo-100 font-semibold text-sm py-2 px-4 rounded-xl transition-colors shadow-sm"
+        >
+          <BookOpen className="h-4 w-4" />
+          <span>Import Guide</span>
+        </button>
+      </div>
 
       {feedback && (
         <div className={`mb-6 p-4 rounded-xl border flex items-start space-x-2.5 shadow-sm text-sm ${
@@ -332,8 +369,7 @@ export default function Import() {
             <div>
               <h2 className="text-lg font-semibold text-slate-800 mb-2">CSV Bulk Import</h2>
               <p className="text-sm text-slate-500 mb-4">
-                Upload a checkout list exported from your property management software. Columns should include: 
-                <span className="font-semibold text-slate-700"> First Name, Last Name, Email, Phone, Checkout Date</span>.
+                Upload a checkout list exported from your booking extranet or PMS software. MapRated will automatically look for standard layout patterns.
               </p>
 
               <div 
@@ -393,13 +429,218 @@ export default function Import() {
               )}
             </div>
 
-            <div className="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-400">
-              <strong>Formatting Tips:</strong> Ensure headers like "Guest First Name", "First Name", or "First" exist. Ensure checkout date matches standard date formats (YYYY-MM-DD). If checkout date is blank, it defaults to today.
+            <div className="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-400 flex items-start space-x-2">
+              <Info className="h-4 w-4 text-indigo-500 mt-0.5 shrink-0" />
+              <span>
+                <strong>Tip:</strong> MapRated automatically reconciles alternative column names. Need templates? Click the <strong>Import Guide</strong> button at the top to see expectations.
+              </span>
             </div>
           </div>
 
         </div>
       )}
+
+      {/* Guide Modal Overlay */}
+      {isGuideOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden my-8">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center space-x-2.5 text-indigo-700">
+                <BookOpen className="h-6 w-6" />
+                <h3 className="text-lg font-bold text-slate-900">Platform Export & Import Guide</h3>
+              </div>
+              <button
+                onClick={() => setIsGuideOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6">
+              
+              {/* Steppers Accordion */}
+              <div>
+                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-3">PMS & Channel Manager Exports</h4>
+                <div className="space-y-3">
+                  
+                  {/* Booking.com */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <button
+                      onClick={() => toggleSection('booking')}
+                      className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-sm text-slate-800"
+                    >
+                      <span className="flex items-center space-x-2">
+                        <span className="h-2 w-2 rounded-full bg-blue-600" />
+                        <span>Booking.com Extranet Instructions</span>
+                      </span>
+                      {openSection === 'booking' ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                    </button>
+                    {openSection === 'booking' && (
+                      <div className="p-4 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 space-y-2.5">
+                        <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
+                          <li>Log in to your <strong>Booking.com Extranet</strong> dashboard.</li>
+                          <li>Navigate to the <strong>Reservations</strong> tab from the top navigation bar.</li>
+                          <li>Apply date range filters to select recent completed checkout stays.</li>
+                          <li>Click the <strong>Download</strong> or <strong>Export to CSV</strong> button in the top right corner of the reservation table.</li>
+                        </ol>
+                        <div className="bg-indigo-50 border border-indigo-100 text-indigo-800 p-2.5 rounded-lg font-medium mt-3">
+                          💡 <strong>Note:</strong> Upload the downloaded CSV file above after export.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Airbnb */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <button
+                      onClick={() => toggleSection('airbnb')}
+                      className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-sm text-slate-800"
+                    >
+                      <span className="flex items-center space-x-2">
+                        <span className="h-2 w-2 rounded-full bg-rose-500" />
+                        <span>Airbnb Host Dashboard Instructions</span>
+                      </span>
+                      {openSection === 'airbnb' ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                    </button>
+                    {openSection === 'airbnb' && (
+                      <div className="p-4 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 space-y-2.5">
+                        <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
+                          <li>Switch your Airbnb account to <strong>Hosting Mode</strong> and go to the <strong>Reservations</strong> manager.</li>
+                          <li>Select the <strong>Completed</strong> tab or configure custom checkout date boundaries.</li>
+                          <li>Click the <strong>Export</strong> button situated above the reservation listings.</li>
+                          <li>Select <strong>CSV</strong> as the target format and save the spreadsheet directly.</li>
+                        </ol>
+                        <div className="bg-indigo-50 border border-indigo-100 text-indigo-800 p-2.5 rounded-lg font-medium mt-3">
+                          💡 <strong>Note:</strong> Upload the downloaded CSV file above after export.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expedia */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <button
+                      onClick={() => toggleSection('expedia')}
+                      className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-sm text-slate-800"
+                    >
+                      <span className="flex items-center space-x-2">
+                        <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                        <span>Expedia Partner Central Instructions</span>
+                      </span>
+                      {openSection === 'expedia' ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                    </button>
+                    {openSection === 'expedia' && (
+                      <div className="p-4 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 space-y-2.5">
+                        <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
+                          <li>Access <strong>Expedia Partner Central</strong> and log in to your property portal.</li>
+                          <li>Head to the <strong>Reservations & Reports</strong> tab.</li>
+                          <li>Set your filter dates to capture recent guest departures.</li>
+                          <li>Click <strong>Export to Excel / CSV</strong> at the top right of the data view.</li>
+                        </ol>
+                        <div className="bg-indigo-50 border border-indigo-100 text-indigo-800 p-2.5 rounded-lg font-medium mt-3">
+                          💡 <strong>Note:</strong> Upload the downloaded CSV file above after export.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Column Mapping Table Guide */}
+              <div>
+                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-3">Expected CSV Column Headers</h4>
+                <p className="text-xs text-slate-500 mb-4">
+                  MapRated accommodates diverse header titles automatically, but ensuring your column labels match or closely resemble the labels below will speed up ingestion:
+                </p>
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm text-xs">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Expected Column Header</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Alias Matches (Auto-Mapped)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white leading-relaxed">
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <User className="h-3.5 w-3.5 text-slate-400" />
+                          <span>First Name</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">First, FirstName, GuestFirstName, Name</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <User className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Last Name</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Last, LastName, GuestLastName, Surname</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <Mail className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Email</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Email, EmailAddress, GuestEmail, Mail</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <PhoneIcon className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Phone</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Phone, PhoneNumber, Mobile, Cell</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Checkout Date</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Checkout, CheckoutDate, DepartureDate</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2 italic">
+                  * Note: In order to successfully contact a guest, you must provide either an active Email Address or Phone Number.
+                </p>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button
+                onClick={() => setIsGuideOpen(false)}
+                className="bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold py-2.5 px-5 rounded-xl transition-all shadow-sm"
+              >
+                Close Guide
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
