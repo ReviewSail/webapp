@@ -27,7 +27,8 @@ serve(async (req) => {
     await client.queryArray(`
       ALTER TABLE public.locations 
       ADD COLUMN IF NOT EXISTS enable_email BOOLEAN DEFAULT TRUE,
-      ADD COLUMN IF NOT EXISTS enable_sms BOOLEAN DEFAULT TRUE;
+      ADD COLUMN IF NOT EXISTS enable_sms BOOLEAN DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;
     `);
 
     // Add stripe billing columns to accounts table

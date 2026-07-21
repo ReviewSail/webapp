@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { format } from 'date-fns';
-import { Inbox } from 'lucide-react';
-import { ReviewRequest, Order, Customer } from '../../context/MapRatedContext';
+import { Inbox, RefreshCw, Send, Eye, Check } from 'lucide-react';
+import { ReviewRequest, Order, Customer, MessageEvent, useMapRated } from '../../context/MapRatedContext';
+import { GuestDetailPanel } from './GuestDetailPanel';
 
 interface RecentRequestsTableProps {
   recentRequests: ReviewRequest[];
@@ -15,12 +17,45 @@ export function RecentRequestsTable({
   customers,
   totalLogs
 }: RecentRequestsTableProps) {
+  const { messageEvents, triggerSingleResend } = useMapRated();
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const [successId, setSuccessId] = useState<string | null>(null);
+
+  const selectedRequest = recentRequests.find(r => r.id === selectedRequestId) || null;
+  const selectedOrder = selectedRequest ? orders.find(o => o.id === selectedRequest.orderId) : null;
+  const selectedCustomer = selectedOrder ? customers.find(c => c.id === selectedOrder.customerId) : null;
+  const selectedEvents = selectedRequestId ? messageEvents.filter(e => e.requestId === selectedRequestId) : [];
+
+  const handleRowClick = (requestId: string) => {
+    setSelectedRequestId(requestId);
+    setIsDrawerOpen(true);
+  };
+
+  const handleResend = async (e: React.MouseEvent, requestId: string) => {
+    e.stopPropagation(); // Avoid opening drawer on button click
+    setSendingId(requestId);
+    setSuccessId(null);
+    try {
+      const res = await triggerSingleResend(requestId);
+      if (res.success) {
+        setSuccessId(requestId);
+        setTimeout(() => setSuccessId(null), 3000);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSendingId(null);
+    }
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
         <div>
           <h2 className="text-lg font-bold text-slate-900">Recent Review Requests</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Showing the latest 10 dispatched or pending invitations.</p>
+          <p className="text-xs text-slate-500 mt-0.5">Showing the latest 10 dispatched or pending invitations. Click on any row to inspect guest delivery logs.</p>
         </div>
         <span className="text-xs font-medium bg-slate-100 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg">
           {totalLogs} Total Logs
@@ -46,6 +81,7 @@ export function RecentRequestsTable({
                 <th className="px-6 py-4.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Checkout Date</th>
                 <th className="px-6 py-4.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Dispatch Date</th>
+                <th className="px-6 py-4.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100">
@@ -54,7 +90,11 @@ export function RecentRequestsTable({
                 const customer = order ? customers.find(c => c.id === order.customerId) : null;
                 
                 return (
-                  <tr key={request.id} className="hover:bg-slate-50/50 transition-colors">
+                  <tr 
+                    key={request.id} 
+                    className="hover:bg-slate-50/75 cursor-pointer transition-colors"
+                    onClick={() => handleRowClick(request.id)}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
                         <div className="h-9 w-9 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600">
@@ -98,6 +138,41 @@ export function RecentRequestsTable({
                         <span className="text-slate-400 italic text-xs">Awaiting process run</span>
                       )}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-xs font-medium" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => handleRowClick(request.id)}
+                          className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+                          title="View Log Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={(e) => handleResend(e, request.id)}
+                          disabled={sendingId === request.id}
+                          className={`p-1.5 rounded-lg border transition-all flex items-center space-x-1 ${
+                            successId === request.id 
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                              : 'bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100/50'
+                          }`}
+                          title="Trigger instant forced message dispatch"
+                        >
+                          {sendingId === request.id ? (
+                            <RefreshCw className="h-4 w-4 animate-spin text-indigo-600" />
+                          ) : successId === request.id ? (
+                            <>
+                              <Check className="h-4 w-4" />
+                              <span className="text-[10px] font-bold">Dispatched</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send className="h-4 w-4" />
+                              <span className="text-[10px] font-bold">Resend</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -105,6 +180,16 @@ export function RecentRequestsTable({
           </table>
         </div>
       )}
+
+      {/* Slide-over Side Drawer File details */}
+      <GuestDetailPanel
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        request={selectedRequest}
+        order={selectedOrder}
+        customer={selectedCustomer}
+        events={selectedEvents}
+      />
     </div>
   );
 }

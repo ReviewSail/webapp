@@ -13,6 +13,21 @@ serve(async (req) => {
   }
 
   try {
+    let specificRequestId: string | null = null;
+    
+    // Check if a specific review_request_id is passed in the request body
+    if (req.method === 'POST') {
+      try {
+        const body = await req.json();
+        if (body && body.review_request_id) {
+          specificRequestId = body.review_request_id;
+          console.log(`[process-reviews] Single request mode triggered for review_request_id: ${specificRequestId}`);
+        }
+      } catch (_) {
+        // No body or invalid JSON, default to processing all
+      }
+    }
+
     console.log("[process-reviews] Starting to process pending review requests & reminders");
     
     // Read secure API keys from master environment variables
@@ -42,7 +57,7 @@ serve(async (req) => {
     console.log(`[process-reviews] Loaded ${optedOutEmails.size} opted-out emails.`);
 
     // --- PHASE 1: PROCESS PENDING REVIEW REQUESTS ---
-    const { data: pendingRequests, error: fetchError } = await supabase
+    let query = supabase
       .from('review_requests')
       .select(`
         id,
@@ -64,19 +79,27 @@ serve(async (req) => {
             phone
           )
         )
-      `)
-      .eq('status', 'pending')
-      .limit(50);
+      `);
+
+    if (specificRequestId) {
+      // If we are targeting a specific request, fetch it directly regardless of its status
+      query = query.eq('id', specificRequestId);
+    } else {
+      // Default behavior: fetch up to 50 pending requests
+      query = query.eq('status', 'pending').limit(50);
+    }
+
+    const { data: pendingRequests, error: fetchError } = await query;
 
     if (fetchError) {
-      console.error("[process-reviews] Error fetching pending requests:", fetchError);
+      console.error("[process-reviews] Error fetching requests:", fetchError);
       throw fetchError;
     }
 
     const processedResults = [];
 
     if (pendingRequests && pendingRequests.length > 0) {
-      console.log(`[process-reviews] Found ${pendingRequests.length} pending requests. Processing...`);
+      console.log(`[process-reviews] Found ${pendingRequests.length} requests to process.`);
 
       for (const request of pendingRequests) {
         const order = request.orders;
@@ -226,192 +249,194 @@ serve(async (req) => {
       }
     }
 
-    // --- PHASE 2: SEND REMINDERS FOR OUTSTANDING DISPATCHED REQUESTS ---
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-    
-    // Fetch requests currently at status 'sent' dispatched more than 3 days ago
-    const { data: sentRequests, error: fetchSentError } = await supabase
-      .from('review_requests')
-      .select(`
-        id,
-        sent_at,
-        orders (
+    // --- PHASE 2: SEND REMINDERS FOR OUTSTANDING DISPATCHED REQUESTS (Skip if targeting a single resend ID) ---
+    if (!specificRequestId) {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      
+      // Fetch requests currently at status 'sent' dispatched more than 3 days ago
+      const { data: sentRequests, error: fetchSentError } = await supabase
+        .from('review_requests')
+        .select(`
           id,
-          locations (
+          sent_at,
+          orders (
             id,
-            name,
-            google_place_url,
-            enable_email,
-            enable_sms,
-            message_templates ( template_text )
-          ),
-          customers (
-            id,
-            first_name,
-            last_name,
-            email,
-            phone
+            locations (
+              id,
+              name,
+              google_place_url,
+              enable_email,
+              enable_sms,
+              message_templates ( template_text )
+            ),
+            customers (
+              id,
+              first_name,
+              last_name,
+              email,
+              phone
+            )
           )
-        )
-      `)
-      .eq('status', 'sent')
-      .lt('sent_at', threeDaysAgo);
+        `)
+        .eq('status', 'sent')
+        .lt('sent_at', threeDaysAgo);
 
-    if (fetchSentError) {
-      console.error("[process-reviews] Error fetching sent requests for reminders:", fetchSentError);
-    } else if (sentRequests && sentRequests.length > 0) {
-      console.log(`[process-reviews] Found ${sentRequests.length} candidate requests for reminders (sent > 3 days ago).`);
+      if (fetchSentError) {
+        console.error("[process-reviews] Error fetching sent requests for reminders:", fetchSentError);
+      } else if (sentRequests && sentRequests.length > 0) {
+        console.log(`[process-reviews] Found ${sentRequests.length} candidate requests for reminders (sent > 3 days ago).`);
 
-      // Extract candidate request IDs to check corresponding events
-      const requestIds = sentRequests.map(r => r.id);
+        // Extract candidate request IDs to check corresponding events
+        const requestIds = sentRequests.map(r => r.id);
 
-      // Query message_events to check if there are already 'clicked' or 'reminder_sent' events for these IDs
-      const { data: events, error: eventsError } = await supabase
-        .from('message_events')
-        .select('request_id, event_type')
-        .in('request_id', requestIds);
+        // Query message_events to check if there are already 'clicked' or 'reminder_sent' events for these IDs
+        const { data: events, error: eventsError } = await supabase
+          .from('message_events')
+          .select('request_id, event_type')
+          .in('request_id', requestIds);
 
-      if (eventsError) {
-        console.error("[process-reviews] Error fetching message events for reminders:", eventsError);
-      } else {
-        // Group events by request ID for efficient lookup
-        const eventsMap = new Map<string, string[]>();
-        (events || []).forEach(evt => {
-          const arr = eventsMap.get(evt.request_id) || [];
-          arr.push(evt.event_type);
-          eventsMap.set(evt.request_id, arr);
-        });
+        if (eventsError) {
+          console.error("[process-reviews] Error fetching message events for reminders:", eventsError);
+        } else {
+          // Group events by request ID for efficient lookup
+          const eventsMap = new Map<string, string[]>();
+          (events || []).forEach(evt => {
+            const arr = eventsMap.get(evt.request_id) || [];
+            arr.push(evt.event_type);
+            eventsMap.set(evt.request_id, arr);
+          });
 
-        for (const request of sentRequests) {
-          const requestEvents = eventsMap.get(request.id) || [];
-          
-          const hasClicked = requestEvents.includes('clicked');
-          const hasReminderSent = requestEvents.includes('reminder_sent');
-
-          // Only proceed if the guest has NOT clicked and NOT received a reminder yet
-          if (!hasClicked && !hasReminderSent) {
-            console.log(`[process-reviews] Request ${request.id} is eligible for a reminder. No click or prior reminder found.`);
+          for (const request of sentRequests) {
+            const requestEvents = eventsMap.get(request.id) || [];
             
-            const order = request.orders;
-            const location = order?.locations;
-            const customer = order?.customers;
+            const hasClicked = requestEvents.includes('clicked');
+            const hasReminderSent = requestEvents.includes('reminder_sent');
 
-            if (!order || !location || !customer) continue;
-
-            const emailLower = customer.email?.toLowerCase();
-
-            // STRICT COMPLIANCE: Skip if opted out
-            if (emailLower && optedOutEmails.has(emailLower)) {
-              console.log(`[process-reviews] STRICT COMPLIANCE (Reminder): Skipping request ${request.id} because ${customer.email} has opted out.`);
+            // Only proceed if the guest has NOT clicked and NOT received a reminder yet
+            if (!hasClicked && !hasReminderSent) {
+              console.log(`[process-reviews] Request ${request.id} is eligible for a reminder. No click or prior reminder found.`);
               
-              await supabase
-                .from('review_requests')
-                .update({ status: 'opted_out' })
-                .eq('id', request.id);
+              const order = request.orders;
+              const location = order?.locations;
+              const customer = order?.customers;
 
-              processedResults.push({ id: request.id, type: 'reminder', status: 'opted_out_skipped' });
-              continue;
-            }
+              if (!order || !location || !customer) continue;
 
-            // Grab delivery templates
-            const isEmailEnabled = location.enable_email !== false;
-            const isSmsEnabled = location.enable_sms !== false;
-            const templates = location.message_templates;
-            const templateText = (Array.isArray(templates) && templates.length > 0)
-              ? templates[0].template_text 
-              : 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}';
+              const emailLower = customer.email?.toLowerCase();
 
-            // Draft reminder text (same template)
-            const cleanEmail = customer.email || '';
-            const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
-            const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
-
-            let message = `[Reminder] ` + templateText
-              .replace(/{firstName}/g, customer.first_name || '')
-              .replace(/{lastName}/g, customer.last_name || '')
-              .replace(/{reviewLink}/g, location.google_place_url || '');
-            
-            message += `\n\nAlternatively, you can share private feedback with us directly here: ${feedbackUrl}`;
-            message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
-
-            let sendSuccess = false;
-
-            // 1. Send Reminder Email via Resend
-            if (isEmailEnabled && customer.email && resendApiKey && resendFromEmail) {
-              try {
-                const emailResponse = await fetch('https://api.resend.com/emails', {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${resendApiKey}`,
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                    from: resendFromEmail,
-                    to: customer.email,
-                    subject: `Reminder: Help us improve! Review your stay at ${location.name}`,
-                    text: message
-                  })
-                });
-
-                if (emailResponse.ok) {
-                  console.log(`[process-reviews] Reminder Resend email sent successfully to ${customer.email}`);
-                  sendSuccess = true;
-                }
-              } catch (err) {
-                console.error("[process-reviews] Error sending reminder email:", err);
-              }
-            }
-
-            // 2. Send Reminder SMS via Twilio
-            if (isSmsEnabled && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
-              try {
-                const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
-                const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+              // STRICT COMPLIANCE: Skip if opted out
+              if (emailLower && optedOutEmails.has(emailLower)) {
+                console.log(`[process-reviews] STRICT COMPLIANCE (Reminder): Skipping request ${request.id} because ${customer.email} has opted out.`);
                 
-                const formData = new URLSearchParams();
-                formData.append('From', twilioFromNumber);
-                formData.append('To', customer.phone);
-                formData.append('Body', message);
+                await supabase
+                  .from('review_requests')
+                  .update({ status: 'opted_out' })
+                  .eq('id', request.id);
 
-                const smsResponse = await fetch(twilioUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Basic ${twilioAuth}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                  },
-                  body: formData.toString()
-                });
-
-                if (smsResponse.ok) {
-                  console.log(`[process-reviews] Reminder Twilio SMS sent successfully to ${customer.phone}`);
-                  sendSuccess = true;
-                }
-              } catch (err) {
-                console.error("[process-reviews] Error sending reminder SMS:", err);
+                processedResults.push({ id: request.id, type: 'reminder', status: 'opted_out_skipped' });
+                continue;
               }
-            }
 
-            // Fallback mock reminder
-            if (!sendSuccess) {
-              console.log(`[process-reviews] =======================================`);
-              console.log(`[process-reviews] MOCK SENDING REMINDER INVITE TO: ${customer.email || customer.phone}`);
-              console.log(`[process-reviews] MESSAGE CONTENT:\n${message}`);
-              console.log(`[process-reviews] =======================================`);
-              sendSuccess = true;
-            }
+              // Grab delivery templates
+              const isEmailEnabled = location.enable_email !== false;
+              const isSmsEnabled = location.enable_sms !== false;
+              const templates = location.message_templates;
+              const templateText = (Array.isArray(templates) && templates.length > 0)
+                ? templates[0].template_text 
+                : 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}';
 
-            if (sendSuccess) {
-              // Log the 'reminder_sent' event in message_events
-              await supabase
-                .from('message_events')
-                .insert({
-                  request_id: request.id,
-                  event_type: 'reminder_sent'
-                });
+              // Draft reminder text (same template)
+              const cleanEmail = customer.email || '';
+              const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
+              const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
 
-              processedResults.push({ id: request.id, type: 'reminder', status: 'reminder_sent' });
-            } else {
-              processedResults.push({ id: request.id, type: 'reminder', status: 'failed' });
+              let message = `[Reminder] ` + templateText
+                .replace(/{firstName}/g, customer.first_name || '')
+                .replace(/{lastName}/g, customer.last_name || '')
+                .replace(/{reviewLink}/g, location.google_place_url || '');
+              
+              message += `\n\nAlternatively, you can share private feedback with us directly here: ${feedbackUrl}`;
+              message += `\n\nTo unsubscribe from future requests, please click here: ${unsubUrl}`;
+
+              let sendSuccess = false;
+
+              // 1. Send Reminder Email via Resend
+              if (isEmailEnabled && customer.email && resendApiKey && resendFromEmail) {
+                try {
+                  const emailResponse = await fetch('https://api.resend.com/emails', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${resendApiKey}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      from: resendFromEmail,
+                      to: customer.email,
+                      subject: `Reminder: Help us improve! Review your stay at ${location.name}`,
+                      text: message
+                    })
+                  });
+
+                  if (emailResponse.ok) {
+                    console.log(`[process-reviews] Reminder Resend email sent successfully to ${customer.email}`);
+                    sendSuccess = true;
+                  }
+                } catch (err) {
+                  console.error("[process-reviews] Error sending reminder email:", err);
+                }
+              }
+
+              // 2. Send Reminder SMS via Twilio
+              if (isSmsEnabled && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
+                try {
+                  const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+                  const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+                  
+                  const formData = new URLSearchParams();
+                  formData.append('From', twilioFromNumber);
+                  formData.append('To', customer.phone);
+                  formData.append('Body', message);
+
+                  const smsResponse = await fetch(twilioUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Basic ${twilioAuth}`,
+                      'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: formData.toString()
+                  });
+
+                  if (smsResponse.ok) {
+                    console.log(`[process-reviews] Reminder Twilio SMS sent successfully to ${customer.phone}`);
+                    sendSuccess = true;
+                  }
+                } catch (err) {
+                  console.error("[process-reviews] Error sending reminder SMS:", err);
+                }
+              }
+
+              // Fallback mock reminder
+              if (!sendSuccess) {
+                console.log(`[process-reviews] =======================================`);
+                console.log(`[process-reviews] MOCK SENDING REMINDER INVITE TO: ${customer.email || customer.phone}`);
+                console.log(`[process-reviews] MESSAGE CONTENT:\n${message}`);
+                console.log(`[process-reviews] =======================================`);
+                sendSuccess = true;
+              }
+
+              if (sendSuccess) {
+                // Log the 'reminder_sent' event in message_events
+                await supabase
+                  .from('message_events')
+                  .insert({
+                    request_id: request.id,
+                    event_type: 'reminder_sent'
+                  });
+
+                processedResults.push({ id: request.id, type: 'reminder', status: 'reminder_sent' });
+              } else {
+                processedResults.push({ id: request.id, type: 'reminder', status: 'failed' });
+              }
             }
           }
         }

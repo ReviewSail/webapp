@@ -11,6 +11,7 @@ export type Location = {
   timezone: string;
   enableEmail: boolean;
   enableSms: boolean;
+  onboardingComplete: boolean;
 };
 
 export type Customer = {
@@ -75,7 +76,7 @@ type MapRatedState = {
 
 type MapRatedContextType = MapRatedState & {
   setActiveLocationId: (id: string) => void;
-  addLocation: (name: string) => Promise<Location | null>;
+  addLocation: (name: string, googleUrl?: string) => Promise<Location | null>;
   deleteLocation: (id: string) => Promise<void>;
   addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
   addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
@@ -86,6 +87,8 @@ type MapRatedContextType = MapRatedState & {
   refreshData: () => Promise<void>;
   bulkImport: (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => Promise<{ success: boolean, count: number, error?: string }>;
   subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
+  completeOnboarding: (locationId: string) => Promise<void>;
+  triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
 };
 
 const initialState: MapRatedState = {
@@ -163,7 +166,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         googlePlaceUrl: l.google_place_url || '',
         timezone: l.timezone || 'UTC',
         enableEmail: l.enable_email !== false, // Default to true if null
-        enableSms: l.enable_sms !== false      // Default to true if null
+        enableSms: l.enable_sms !== false,      // Default to true if null
+        onboardingComplete: l.onboarding_complete === true
       }));
 
       // Fetch message templates for the locations to merge templateText and smsTemplateText
@@ -267,16 +271,18 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     setState((prev) => ({ ...prev, activeLocationId: id }));
   };
 
-  const addLocation = async (name: string) => {
+  const addLocation = async (name: string, googleUrl?: string) => {
     const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
     if (!userData) return null;
 
     const { data, error } = await supabase.from('locations').insert({
       account_id: userData.account_id,
       name,
+      google_place_url: googleUrl || '',
       timezone: 'UTC',
       enable_email: true,
-      enable_sms: true
+      enable_sms: true,
+      onboarding_complete: false
     }).select().single();
 
     if (error) {
@@ -302,10 +308,11 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     return {
       id: data.id,
       name: data.name,
-      googlePlaceUrl: '',
+      googlePlaceUrl: data.google_place_url || '',
       timezone: 'UTC',
       enableEmail: true,
-      enableSms: true
+      enableSms: true,
+      onboardingComplete: false
     };
   };
 
@@ -399,6 +406,32 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     });
     
     await refreshData();
+  };
+
+  const completeOnboarding = async (locationId: string) => {
+    const { error } = await supabase
+      .from('locations')
+      .update({ onboarding_complete: true })
+      .eq('id', locationId);
+    if (error) {
+      console.error('[MapRatedContext] completeOnboarding error:', error);
+      throw error;
+    }
+    await refreshData();
+  };
+
+  const triggerSingleResend = async (requestId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('process-reviews', {
+        body: { review_request_id: requestId }
+      });
+      if (error) throw error;
+      await refreshData();
+      return { success: true };
+    } catch (err: any) {
+      console.error('[MapRatedContext] triggerSingleResend error:', err);
+      return { success: false, error: err.message || 'Resend process failed' };
+    }
   };
 
   const bulkImport = async (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => {
@@ -554,7 +587,9 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       respondToFeedback,
       refreshData,
       bulkImport,
-      subscribe
+      subscribe,
+      completeOnboarding,
+      triggerSingleResend
     }}>
       {children}
     </MapRatedContext.Provider>

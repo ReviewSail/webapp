@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
-import { RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw, AlertCircle, FileUp, Sparkles, Send } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { TrialBanner } from '../components/dashboard/TrialBanner';
 import { OnboardingWizard } from '../components/dashboard/OnboardingWizard';
 import { StatsGrid } from '../components/dashboard/StatsGrid';
@@ -21,10 +22,7 @@ export default function Dashboard() {
     loading, 
     refreshData,
     addLocation,
-    updateLocationSettings,
-    addCustomer,
-    addOrder,
-    addReviewRequest,
+    completeOnboarding,
     respondToFeedback
   } = useMapRated();
   
@@ -58,15 +56,16 @@ export default function Dashboard() {
     );
   }
 
-  // Interactive Onboarding Welcoming Wizard
-  if (locations.length === 0) {
+  const activeLoc = locations.find(l => l.id === activeLocationId);
+
+  // Requirement 1: If zero locations OR if the active location has not completed onboarding, show full screen onboarding wizard
+  const showWizard = locations.length === 0 || (activeLoc && !activeLoc.onboardingComplete);
+
+  if (showWizard) {
     return (
       <OnboardingWizard
         addLocation={addLocation}
-        updateLocationSettings={updateLocationSettings}
-        addCustomer={addCustomer}
-        addOrder={addOrder}
-        addReviewRequest={addReviewRequest}
+        completeOnboarding={completeOnboarding}
         refreshData={refreshData}
       />
     );
@@ -144,15 +143,37 @@ export default function Dashboard() {
         </div>
       </div>
       
-      {/* Analytical Cards */}
-      <StatsGrid
-        totalSent={totalSent}
-        totalPending={totalPending}
-        deliveryRate={deliveryRate}
-        clickRate={clickRate}
-        totalClicked={totalClicked}
-        totalOptedOut={totalOptedOut}
-      />
+      {/* Requirement 2: Friendly Empty State Card if totalSent is 0 */}
+      {totalSent === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center flex flex-col items-center justify-center space-y-5 shadow-sm max-w-xl mx-auto my-8">
+          <div className="h-16 w-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-2">
+            <Send className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-extrabold text-slate-900">No review requests sent yet</h2>
+            <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto">
+              Import your first guests or add stays manually to trigger instant multi-channel emails, text messages, and direct Google rating generation.
+            </p>
+          </div>
+          <Link
+            to="/import"
+            className="inline-flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-5 rounded-xl shadow-md transition-all"
+          >
+            <FileUp className="h-4 w-4" />
+            <span>Import Your First Guests</span>
+          </Link>
+        </div>
+      ) : (
+        /* Analytical Cards Grid */
+        <StatsGrid
+          totalSent={totalSent}
+          totalPending={totalPending}
+          deliveryRate={deliveryRate}
+          clickRate={clickRate}
+          totalClicked={totalClicked}
+          totalOptedOut={totalOptedOut}
+        />
+      )}
 
       {/* Private Feedback Manager Portal Feed */}
       <PrivateFeedbackSection

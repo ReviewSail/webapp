@@ -1,293 +1,271 @@
 import { useState } from 'react';
-import { Sparkles, ChevronRight, Building2, MapPin, UserPlus, RefreshCw, AlertCircle } from 'lucide-react';
+import { Sparkles, ChevronRight, Building2, MapPin, CheckCircle, RefreshCw, AlertCircle, FileUp, ShieldCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface OnboardingWizardProps {
-  addLocation: (name: string) => Promise<any>;
-  updateLocationSettings: (id: string, settings: any) => Promise<any>;
-  addCustomer: (customer: any) => Promise<any>;
-  addOrder: (order: any) => Promise<any>;
-  addReviewRequest: (orderId: string) => Promise<any>;
+  addLocation: (name: string, googleUrl?: string) => Promise<any>;
+  completeOnboarding: (locationId: string) => Promise<any>;
   refreshData: () => Promise<any>;
 }
 
 export function OnboardingWizard({
   addLocation,
-  updateLocationSettings,
-  addCustomer,
-  addOrder,
-  addReviewRequest,
+  completeOnboarding,
   refreshData
 }: OnboardingWizardProps) {
-  const [onboardingStep, setOnboardingStep] = useState(1);
-  const [stepLoading, setStepLoading] = useState(false);
-  const [wizardProperty, setWizardProperty] = useState('');
-  const [wizardUrl, setWizardUrl] = useState('');
-  const [wizardGuest, setWizardGuest] = useState({ firstName: '', lastName: '', email: '', phone: '' });
-  const [wizardCreatedLocId, setWizardCreatedLocId] = useState('');
-  const [wizardError, setWizardError] = useState('');
+  const navigate = useNavigate();
+  const [step, setStep] = useState(1);
+  const [propertyName, setPropertyName] = useState('');
+  const [googleUrl, setGoogleUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [createdLocId, setCreatedLocId] = useState('');
 
-  const handleWizardStep1 = async (e: React.FormEvent) => {
+  const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wizardProperty.trim()) {
-      setWizardError('Please enter a property name.');
+    setError('');
+
+    if (!propertyName.trim()) {
+      setError('Please provide a valid property or resort name.');
       return;
     }
-    setWizardError('');
-    setStepLoading(true);
+
+    const cleanUrl = googleUrl.trim();
+    if (!cleanUrl) {
+      setError('Please provide your Google Review Link.');
+      return;
+    }
+
+    const isValidGoogleLink = cleanUrl.includes('google.com/maps') || cleanUrl.includes('g.page');
+    if (!isValidGoogleLink) {
+      setError('Google Review URL must be valid and contain either "google.com/maps" or "g.page" to trigger direct reviews.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      const loc = await addLocation(wizardProperty.trim());
-      if (loc) {
-        setWizardCreatedLocId(loc.id);
-        setOnboardingStep(2);
+      const location = await addLocation(propertyName.trim(), cleanUrl);
+      if (location && location.id) {
+        setCreatedLocId(location.id);
+        setStep(2);
       } else {
-        setWizardError('Failed to register property location. Please try again.');
+        setError('Failed to configure location parameters. Please try again.');
       }
     } catch (err: any) {
-      setWizardError(err.message || 'Error occurred during registration.');
+      setError(err?.message || 'Error occurred while saving location settings.');
     } finally {
-      setStepLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleWizardStep2 = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wizardUrl.trim() || (!wizardUrl.startsWith('http://') && !wizardUrl.startsWith('https://'))) {
-      setWizardError('Google Review Link must start with http:// or https://');
-      return;
-    }
-    setWizardError('');
-    setStepLoading(true);
+  const handleSkipToStep3 = async () => {
+    setError('');
+    setLoading(true);
     try {
-      await updateLocationSettings(wizardCreatedLocId, { googlePlaceUrl: wizardUrl.trim() });
-      setOnboardingStep(3);
+      // Mark onboarding as complete on the backend
+      await completeOnboarding(createdLocId);
+      setStep(3);
     } catch (err: any) {
-      setWizardError(err.message || 'Failed to save review link.');
+      setError(err?.message || 'Failed to finalize setup.');
     } finally {
-      setStepLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleWizardStep3 = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wizardGuest.firstName.trim() || !wizardGuest.lastName.trim()) {
-      setWizardError('First and last name are required.');
-      return;
-    }
-    if (!wizardGuest.email.trim() && !wizardGuest.phone.trim()) {
-      setWizardError('Please enter either email or phone to invite.');
-      return;
-    }
-    setWizardError('');
-    setStepLoading(true);
+  const handleGoToImport = async () => {
+    setError('');
+    setLoading(true);
     try {
-      const customer = await addCustomer({
-        firstName: wizardGuest.firstName.trim(),
-        lastName: wizardGuest.lastName.trim(),
-        email: wizardGuest.email.trim() || null,
-        phone: wizardGuest.phone.trim() || null
-      });
-
-      if (customer) {
-        const order = await addOrder({
-          customerId: customer.id,
-          locationId: wizardCreatedLocId,
-          checkoutDate: new Date().toISOString(),
-          status: 'completed'
-        });
-
-        if (order) {
-          await addReviewRequest(order.id);
-          await refreshData();
-        } else {
-          setWizardError('Created customer but failed to queue order.');
-        }
-      } else {
-        setWizardError('Failed to create customer record.');
-      }
+      // Mark onboarding as complete first, then redirect to import page
+      await completeOnboarding(createdLocId);
+      await refreshData();
+      navigate('/import');
     } catch (err: any) {
-      setWizardError(err.message || 'Error importing guest.');
+      setError(err?.message || 'Failed to navigate to import.');
     } finally {
-      setStepLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const handleFinishOnboarding = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await refreshData();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to refresh data.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-xl mx-auto mt-8 bg-white border border-slate-200/80 shadow-md rounded-2xl overflow-hidden">
-      <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 p-6 text-white">
-        <div className="flex items-center space-x-2.5">
-          <Sparkles className="h-6 w-6 text-indigo-200" />
-          <h2 className="text-lg font-bold">Welcome to MapRated!</h2>
-        </div>
-        <p className="text-xs text-indigo-100 mt-1">Let's set up your property review automation in under 2 minutes.</p>
+    <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col justify-center items-center p-4 overflow-y-auto">
+      <div className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden my-8 flex flex-col">
         
-        {/* Visual Stepper Indicators */}
-        <div className="flex items-center space-x-2 mt-6">
-          <div className={`flex items-center space-x-1.5 text-xs font-semibold ${onboardingStep >= 1 ? 'text-white' : 'text-indigo-300'}`}>
-            <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] ${onboardingStep === 1 ? 'bg-white text-indigo-700' : 'bg-indigo-500 text-indigo-100'}`}>1</span>
-            <span>Property Name</span>
+        {/* Colorful Gradient Bar */}
+        <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 p-8 text-white relative">
+          <div className="absolute top-6 right-6">
+            <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full text-indigo-100">
+              Step {step} of 3
+            </span>
           </div>
-          <ChevronRight className="h-3 w-3 text-indigo-400" />
-          <div className={`flex items-center space-x-1.5 text-xs font-semibold ${onboardingStep >= 2 ? 'text-white' : 'text-indigo-300'}`}>
-            <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] ${onboardingStep === 2 ? 'bg-white text-indigo-700' : onboardingStep > 2 ? 'bg-indigo-500 text-indigo-100' : 'bg-indigo-700 text-indigo-300'}`}>2</span>
-            <span>Review Link</span>
+
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-white/15 rounded-2xl text-white">
+              <Sparkles className="h-6 w-6 text-indigo-200" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold tracking-tight">Setup MapRated Review Engine</h2>
+              <p className="text-xs text-indigo-100 mt-1">Configure automated hands-free guest review collections in seconds.</p>
+            </div>
           </div>
-          <ChevronRight className="h-3 w-3 text-indigo-400" />
-          <div className={`flex items-center space-x-1.5 text-xs font-semibold ${onboardingStep >= 3 ? 'text-white' : 'text-indigo-300'}`}>
-            <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] ${onboardingStep === 3 ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-indigo-300'}`}>3</span>
-            <span>Add Guest</span>
+
+          {/* Graphical Stepper */}
+          <div className="flex items-center space-x-4 mt-8">
+            <div className="flex items-center space-x-2">
+              <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 1 ? 'bg-white text-indigo-700' : 'bg-indigo-500 text-indigo-100'}`}>1</span>
+              <span className="text-xs font-semibold">Location Details</span>
+            </div>
+            <div className="flex-1 h-0.5 bg-indigo-500/35" />
+            <div className="flex items-center space-x-2">
+              <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 2 ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-indigo-300'}`}>2</span>
+              <span className="text-xs font-semibold">Import Guests</span>
+            </div>
+            <div className="flex-1 h-0.5 bg-indigo-500/35" />
+            <div className="flex items-center space-x-2">
+              <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 3 ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-indigo-300'}`}>3</span>
+              <span className="text-xs font-semibold">All Done!</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="p-6">
-        {wizardError && (
-          <div className="bg-red-50 text-red-800 p-3.5 rounded-xl border border-red-200 flex items-start space-x-2.5 mb-5 text-xs">
-            <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-            <span>{wizardError}</span>
-          </div>
-        )}
-
-        {/* STEP 1: Name Your Property */}
-        {onboardingStep === 1 && (
-          <form onSubmit={handleWizardStep1} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-slate-700">What is the name of your property?</label>
-              <p className="text-xs text-slate-500">This helps guests instantly recognize you (e.g., Beachside Resort, Grand Central Inn).</p>
-              <div className="relative mt-2">
-                <Building2 className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  required
-                  value={wizardProperty}
-                  onChange={e => setWizardProperty(e.target.value)}
-                  placeholder="e.g., Beachfront Resort"
-                  className="w-full text-sm rounded-lg border-slate-300 pl-10 pr-4 py-2.5 border bg-white focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
+        {/* Form Body */}
+        <div className="p-8 flex-1">
+          {error && (
+            <div className="bg-red-50 text-red-800 p-4 rounded-2xl border border-red-200 flex items-start space-x-3 mb-6 text-xs">
+              <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+              <span>{error}</span>
             </div>
-            <button
-              type="submit"
-              disabled={stepLoading}
-              className="w-full flex items-center justify-center space-x-1 bg-indigo-600 text-white py-2.5 px-4 rounded-xl font-semibold text-sm hover:bg-indigo-700 active:bg-indigo-800 transition-colors disabled:opacity-50 shadow-sm"
-            >
-              {stepLoading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <span>Next: Add Review Link</span>
-                  <ChevronRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-          </form>
-        )}
+          )}
 
-        {/* STEP 2: Add Google Review Link */}
-        {onboardingStep === 2 && (
-          <form onSubmit={handleWizardStep2} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-slate-700">Add Your Google Review Link</label>
-              <p className="text-xs text-slate-500">The direct URL where guests submit their reviews. Ensure it starts with http or https.</p>
-              <div className="relative mt-2">
-                <MapPin className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <input
-                  type="url"
-                  required
-                  value={wizardUrl}
-                  onChange={e => setWizardUrl(e.target.value)}
-                  placeholder="https://g.page/r/your-review-url"
-                  className="w-full text-sm rounded-lg border-slate-300 pl-10 pr-4 py-2.5 border bg-white focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={stepLoading}
-              className="w-full flex items-center justify-center space-x-1 bg-indigo-600 text-white py-2.5 px-4 rounded-xl font-semibold text-sm hover:bg-indigo-700 active:bg-indigo-800 transition-colors disabled:opacity-50 shadow-sm"
-            >
-              {stepLoading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <span>Next: Add First Guest</span>
-                  <ChevronRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* STEP 3: Import Your First Guest */}
-        {onboardingStep === 3 && (
-          <form onSubmit={handleWizardStep3} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-semibold text-slate-700">Queue Your First Guest Invitation</label>
-              <p className="text-xs text-slate-500">Test the process with your own contact info to see how beautiful the invites look.</p>
-              
-              <div className="grid grid-cols-2 gap-3 mt-3">
+          {/* STEP 1 */}
+          {step === 1 && (
+            <form onSubmit={handleStep1Submit} className="space-y-6">
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">First Name</label>
+                  <label className="block text-sm font-bold text-slate-800 mb-1 flex items-center space-x-2">
+                    <Building2 className="h-4.5 w-4.5 text-indigo-500" />
+                    <span>Property Name</span>
+                  </label>
+                  <p className="text-xs text-slate-500 mb-2">How should guests recognize your business in review requests?</p>
                   <input
                     type="text"
                     required
-                    value={wizardGuest.firstName}
-                    onChange={e => setWizardGuest(prev => ({ ...prev, firstName: e.target.value }))}
-                    placeholder="Jane"
-                    className="w-full text-sm rounded-lg border-slate-300 px-3 py-2 border bg-white focus:ring-indigo-500 focus:border-indigo-500"
+                    value={propertyName}
+                    onChange={e => setPropertyName(e.target.value)}
+                    placeholder="e.g., Beachside Resort & Spa"
+                    className="w-full text-sm rounded-xl border-slate-200 pl-4 pr-4 py-3 border bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Last Name</label>
+                  <label className="block text-sm font-bold text-slate-800 mb-1 flex items-center space-x-2">
+                    <MapPin className="h-4.5 w-4.5 text-indigo-500" />
+                    <span>Direct Google Review URL</span>
+                  </label>
+                  <p className="text-xs text-slate-500 mb-2">The direct link for submitting Google Maps reviews. Must contain <strong className="text-slate-800">google.com/maps</strong> or <strong className="text-slate-800">g.page</strong>.</p>
                   <input
-                    type="text"
+                    type="url"
                     required
-                    value={wizardGuest.lastName}
-                    onChange={e => setWizardGuest(prev => ({ ...prev, lastName: e.target.value }))}
-                    placeholder="Doe"
-                    className="w-full text-sm rounded-lg border-slate-300 px-3 py-2 border bg-white focus:ring-indigo-500 focus:border-indigo-500"
+                    value={googleUrl}
+                    onChange={e => setGoogleUrl(e.target.value)}
+                    placeholder="https://g.page/r/your-google-place-id/review"
+                    className="w-full text-sm rounded-xl border-slate-200 pl-4 pr-4 py-3 border bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm"
                   />
                 </div>
               </div>
 
-              <div className="mt-3">
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Email Address</label>
-                <input
-                  type="email"
-                  value={wizardGuest.email}
-                  onChange={e => setWizardGuest(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="jane@example.com"
-                  className="w-full text-sm rounded-lg border-slate-300 px-3 py-2 border bg-white focus:ring-indigo-500 focus:border-indigo-500"
-                />
+              <div className="pt-4">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-indigo-600 text-white font-bold text-sm py-3 px-6 rounded-2xl hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-lg shadow-indigo-100 flex items-center justify-center space-x-1.5 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Next: Queue Invites</span>
+                      <ChevronRight className="h-4.5 w-4.5" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* STEP 2 */}
+          {step === 2 && (
+            <div className="space-y-6 text-center">
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="mx-auto h-16 w-16 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 mb-4">
+                  <FileUp className="h-8 w-8" />
+                </div>
+                <h3 className="text-lg font-extrabold text-slate-900">Queue Your First Guest Review Requests</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  We've successfully registered your property. Next, upload a CSV list of guests or enter checkouts manually to kickstart direct review generations.
+                </p>
               </div>
 
-              <div className="mt-3">
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Phone Number (Optional)</label>
-                <input
-                  type="tel"
-                  value={wizardGuest.phone}
-                  onChange={e => setWizardGuest(prev => ({ ...prev, phone: e.target.value }))}
-                  placeholder="+15551234567"
-                  className="w-full text-sm rounded-lg border-slate-300 px-3 py-2 border bg-white focus:ring-indigo-500 focus:border-indigo-500"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto pt-4">
+                <button
+                  onClick={handleGoToImport}
+                  disabled={loading}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm py-3 px-6 rounded-2xl flex items-center justify-center space-x-1.5 transition-all shadow-md"
+                >
+                  <FileUp className="h-4.5 w-4.5" />
+                  <span>Import Guests Now</span>
+                </button>
+                <button
+                  onClick={handleSkipToStep3}
+                  disabled={loading}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm py-3 px-6 rounded-2xl transition-all"
+                >
+                  <span>Skip for now</span>
+                </button>
               </div>
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={stepLoading}
-              className="w-full flex items-center justify-center space-x-1.5 bg-emerald-600 text-white py-2.5 px-4 rounded-xl font-semibold text-sm hover:bg-emerald-700 active:bg-emerald-800 transition-colors disabled:opacity-50 shadow-sm"
-            >
-              {stepLoading ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <UserPlus className="h-4 w-4" />
-                  <span>Complete Stepper & Enter Dashboard</span>
-                </>
-              )}
-            </button>
-          </form>
-        )}
+          {/* STEP 3 */}
+          {step === 3 && (
+            <div className="space-y-6 text-center">
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="mx-auto h-16 w-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 mb-4">
+                  <ShieldCheck className="h-8 w-8" />
+                </div>
+                <h3 className="text-lg font-extrabold text-emerald-800">You're all set!</h3>
+                <p className="text-sm text-slate-600 leading-relaxed font-medium">
+                  MapRated will automatically send review requests every hour.
+                </p>
+                <p className="text-xs text-slate-400">
+                  We have fully set up your hourly cron jobs and direct integration portals. Sit back and watch your property's review scores skyrocket!
+                </p>
+              </div>
+
+              <div className="pt-4 max-w-xs mx-auto">
+                <button
+                  onClick={handleFinishOnboarding}
+                  disabled={loading}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm py-3 px-6 rounded-2xl transition-all shadow-md"
+                >
+                  <span>Enter My Dashboard</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
