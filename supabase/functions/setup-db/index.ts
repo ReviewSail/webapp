@@ -44,6 +44,44 @@ serve(async (req) => {
       WHERE subscription_status IS NULL OR subscription_status = 'inactive';
     `);
 
+    // Configure pg_cron job to automatically process reviews hourly
+    try {
+      console.log("[setup-db] Creating automated hourly background cron job via pg_cron...");
+      
+      // We wrap this inside pg_cron check to avoid breaking environments where pg_cron isn't enabled globally yet
+      await client.queryArray(`
+        CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+      `);
+      
+      await client.queryArray(`
+        CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA public;
+      `);
+
+      // Unschedule existing job if it exists to avoid duplication
+      await client.queryArray(`
+        SELECT cron.unschedule('invoke-process-reviews') FROM cron.job WHERE jobname = 'invoke-process-reviews';
+      `);
+
+      // Schedule new job
+      await client.queryArray(`
+        SELECT cron.schedule(
+          'invoke-process-reviews',
+          '0 * * * *',
+          $$
+          SELECT public.http_post(
+            'https://vqjzscdlfhgzzqhmkchw.supabase.co/functions/v1/process-reviews',
+            '{}',
+            'application/json',
+            '{}'
+          )
+          $$
+        );
+      `);
+      console.log("[setup-db] Hourly cron scheduled successfully.");
+    } catch (cronErr) {
+      console.warn("[setup-db] pg_cron configuration skipped or not supported on this tenant:", cronErr);
+    }
+
     console.log("[setup-db] Database migrations completed successfully!");
     await client.end();
 

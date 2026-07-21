@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
 import Papa from 'papaparse';
-import { FileUp, CheckCircle, AlertTriangle, AlertCircle, MapPin, Sparkles } from 'lucide-react';
+import { FileUp, CheckCircle, AlertTriangle, AlertCircle, MapPin, Sparkles, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Import() {
@@ -318,9 +318,10 @@ export default function Import() {
                 <button 
                   type="submit" 
                   disabled={loading}
-                  className="w-full bg-indigo-600 text-white px-4 py-2.5 rounded-md text-sm font-semibold hover:bg-indigo-700 active:bg-indigo-800 transition-colors disabled:opacity-50 shadow-sm"
+                  className="w-full bg-indigo-600 text-white px-4 py-2.5 rounded-md text-sm font-semibold hover:bg-indigo-700 active:bg-indigo-800 transition-colors disabled:opacity-50 shadow-sm flex items-center justify-center space-x-2"
                 >
-                  {loading ? 'Adding...' : 'Add Record & Queue Request'}
+                  {loading && <RefreshCw className="h-4 w-4 animate-spin" />}
+                  <span>{loading ? 'Adding...' : 'Add Record & Queue Request'}</span>
                 </button>
               </div>
             </form>

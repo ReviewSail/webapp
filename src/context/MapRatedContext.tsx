@@ -7,6 +7,7 @@ export type Location = {
   name: string;
   googlePlaceUrl: string;
   templateText?: string;
+  smsTemplateText?: string;
   timezone: string;
   enableEmail: boolean;
   enableSms: boolean;
@@ -65,6 +66,7 @@ type MapRatedState = {
 type MapRatedContextType = MapRatedState & {
   setActiveLocationId: (id: string) => void;
   addLocation: (name: string) => Promise<Location | null>;
+  deleteLocation: (id: string) => Promise<void>;
   addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
   addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
   addOptOut: (email: string) => Promise<void>;
@@ -152,12 +154,17 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         enableSms: l.enable_sms !== false      // Default to true if null
       }));
 
-      // Fetch message templates for the locations to merge templateText
+      // Fetch message templates for the locations to merge templateText and smsTemplateText
       const { data: templatesData } = await supabase.from('message_templates').select('*');
       
       const locations = parsedLocations.map(loc => {
-        const t = templatesData?.find(t => t.location_id === loc.id);
-        return { ...loc, templateText: t?.template_text || '' };
+        const emailTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'email');
+        const smsTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'sms');
+        return { 
+          ...loc, 
+          templateText: emailTemplate?.template_text || 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}', 
+          smsTemplateText: smsTemplate?.template_text || 'Hi {firstName}, please share your experience at {reviewLink}' 
+        };
       });
 
       // Fetch customers
@@ -253,11 +260,18 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       return null;
     }
 
-    // Create a default message template for the location
+    // Create a default email template
     await supabase.from('message_templates').insert({
       location_id: data.id,
       type: 'email',
       template_text: 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}'
+    });
+
+    // Create a default SMS template
+    await supabase.from('message_templates').insert({
+      location_id: data.id,
+      type: 'sms',
+      template_text: 'Hi {firstName}, please share your experience with us at {reviewLink}'
     });
 
     await refreshData();
@@ -271,11 +285,29 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     };
   };
 
+  const deleteLocation = async (id: string) => {
+    const { error } = await supabase.from('locations').delete().eq('id', id);
+    if (error) {
+      console.error(error);
+      throw error;
+    }
+    // Switch active property if active was deleted
+    setState(prev => {
+      const filtered = prev.locations.filter(l => l.id !== id);
+      return {
+        ...prev,
+        locations: filtered,
+        activeLocationId: prev.activeLocationId === id ? (filtered.length > 0 ? filtered[0].id : null) : prev.activeLocationId
+      };
+    });
+    await refreshData();
+  };
+
   const addCustomer = async (customer: Omit<Customer, 'id'>) => {
     const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
     if (!userData) return null;
 
-    const { data, error } = await supabase.from('customers').insert({
+    const { data, error = null } = await supabase.from('customers').insert({
       account_id: userData.account_id,
       first_name: customer.firstName,
       last_name: customer.lastName,
@@ -435,12 +467,23 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       await supabase.from('locations').update(updateData).eq('id', id);
     }
     
+    // Save email template
     if (settings.templateText !== undefined) {
-      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).single();
+      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'email').maybeSingle();
       if (existing) {
         await supabase.from('message_templates').update({ template_text: settings.templateText }).eq('id', existing.id);
       } else {
         await supabase.from('message_templates').insert({ location_id: id, template_text: settings.templateText, type: 'email' });
+      }
+    }
+
+    // Save SMS template
+    if (settings.smsTemplateText !== undefined) {
+      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'sms').maybeSingle();
+      if (existing) {
+        await supabase.from('message_templates').update({ template_text: settings.smsTemplateText }).eq('id', existing.id);
+      } else {
+        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.smsTemplateText, type: 'sms' });
       }
     }
     
@@ -466,6 +509,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       ...state,
       setActiveLocationId,
       addLocation,
+      deleteLocation,
       addCustomer,
       addOrder,
       addOptOut,
