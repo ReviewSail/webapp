@@ -135,9 +135,11 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // Trigger database schema migration in the background so it never blocks key queries
-      supabase.functions.invoke('setup-db').catch((err) => {
-        console.warn('DB setup background invocation skipped or failed:', err);
-      });
+      if (supabase && supabase.functions) {
+        supabase.functions.invoke('setup-db').catch((err) => {
+          console.warn('DB setup background invocation skipped or failed:', err);
+        });
+      }
 
       // Fetch user account info
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
