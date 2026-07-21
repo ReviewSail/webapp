@@ -134,12 +134,10 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
-      // Trigger database schema migration just in case columns do not exist yet
-      try {
-        await supabase.functions.invoke('setup-db');
-      } catch (err) {
-        console.warn('DB setup invocation skipped or failed', err);
-      }
+      // Trigger database schema migration in the background so it never blocks key queries
+      supabase.functions.invoke('setup-db').catch((err) => {
+        console.warn('DB setup background invocation skipped or failed:', err);
+      });
 
       // Fetch user account info
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
@@ -253,7 +251,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       }));
 
     } catch (e) {
-      console.error('Failed to fetch from supabase', e);
+      console.error('Failed to fetch from supabase:', e);
       setState(prev => ({ ...prev, loading: false }));
     }
   };
@@ -463,8 +461,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       });
 
       const { error: rrError } = await supabase
-        .from('review_requests')
-        .insert(requestsToInsert);
+        .from('review_requests').insert(requestsToInsert);
 
       if (rrError) {
         throw rrError;
