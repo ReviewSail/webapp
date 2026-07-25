@@ -171,7 +171,9 @@ export default function Guests() {
                             {statusLabel(latestRequest.status)}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400">No requests</span                        </td>
+                          <span className="text-xs text-slate-400">No requests</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         {latestRequest && (
                           <button
