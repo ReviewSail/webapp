@@ -118,7 +118,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     setState(prev => ({ ...prev, loading: true }));
     
     try {
-      // Detect mock subscription parameters in URL
       const urlParams = new URLSearchParams(window.location.search);
       const isMockSuccess = urlParams.get('mock_checkout_success') === 'true';
       const mockAccountId = urlParams.get('account_id');
@@ -133,19 +132,16 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         if (mockUpdateError) {
           console.error('[MapRatedContext] Mock activation error:', mockUpdateError);
         } else {
-          // Remove query params from URL
           window.history.replaceState({}, document.title, window.location.pathname);
         }
       }
 
-      // Trigger database schema migration in the background so it never blocks key queries
       if (supabase && supabase.functions) {
         supabase.functions.invoke('setup-db').catch((err) => {
           console.warn('DB setup background invocation skipped or failed:', err);
         });
       }
 
-      // Fetch user account info
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
       let subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null = 'inactive';
       let stripeCustomerId = null;
@@ -158,7 +154,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
-      // Fetch locations
       const { data: locData } = await supabase.from('locations').select('*');
       
       const parsedLocations: Location[] = (locData || []).map(l => ({
@@ -166,13 +161,12 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         name: l.name,
         googlePlaceUrl: l.google_place_url || '',
         timezone: l.timezone || 'UTC',
-        enableEmail: l.enable_email !== false, // Default to true if null
-        enableSms: l.enable_sms !== false,      // Default to true if null
+        enableEmail: l.enable_email !== false,
+        enableSms: l.enable_sms !== false,
         onboardingComplete: l.onboarding_complete === true,
         preferredSendHour: l.preferred_send_hour !== null && l.preferred_send_hour !== undefined ? l.preferred_send_hour : 10
       }));
 
-      // Fetch message templates for the locations to merge templateText and smsTemplateText
       const { data: templatesData } = await supabase.from('message_templates').select('*');
       
       const locations = parsedLocations.map(loc => {
@@ -185,7 +179,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         };
       });
 
-      // Fetch customers
       const { data: custData } = await supabase.from('customers').select('*');
       const customers: Customer[] = (custData || []).map(c => ({
         id: c.id,
@@ -195,7 +188,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         phone: c.phone
       }));
 
-      // Fetch orders
       const { data: orderData } = await supabase.from('orders').select('*');
       const orders: Order[] = (orderData || []).map(o => ({
         id: o.id,
@@ -205,7 +197,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         status: o.status as 'pending' | 'completed' | 'cancelled'
       }));
 
-      // Fetch review requests
       const { data: rrData } = await supabase.from('review_requests').select('*');
       const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
         id: r.id,
@@ -214,7 +205,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         sentAt: r.sent_at
       }));
       
-      // Fetch optouts
       const { data: optData } = await supabase.from('opt_outs').select('*');
       const optOuts: OptOut[] = (optData || []).map(o => ({
         id: o.id,
@@ -223,7 +213,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         optOutDate: o.opt_out_date
       }));
 
-      // Fetch message events
       const { data: eventData } = await supabase.from('message_events').select('*');
       const messageEvents: MessageEvent[] = (eventData || []).map(e => ({
         id: e.id,
@@ -232,7 +221,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         createdAt: e.created_at
       }));
 
-      // Fetch private feedbacks
       const { data: fbData } = await supabase.from('feedback').select('*');
       const feedbacks: PrivateFeedback[] = (fbData || []).map(f => ({
         id: f.id,
@@ -266,7 +254,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     refreshData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user]);
 
   const setActiveLocationId = (id: string) => {
@@ -293,14 +280,12 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       return null;
     }
 
-    // Create a default email template
     await supabase.from('message_templates').insert({
       location_id: data.id,
       type: 'email',
       template_text: 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}'
     });
 
-    // Create a default SMS template
     await supabase.from('message_templates').insert({
       location_id: data.id,
       type: 'sms',
@@ -326,7 +311,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       console.error(error);
       throw error;
     }
-    // Switch active property if active was deleted
     setState(prev => {
       const filtered = prev.locations.filter(l => l.id !== id);
       return {
@@ -426,7 +410,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
 
   const triggerSingleResend = async (requestId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('process-reviews', {
+      const { error } = await supabase.functions.invoke('process-reviews', {
         body: { review_request_id: requestId }
       });
       if (error) throw error;
@@ -450,7 +434,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       }
       const accountId = userData.account_id;
 
-      // 1. Bulk insert customers
       const { data: insertedCustomers, error: custError } = await supabase
         .from('customers')
         .insert(rows.map(r => ({
@@ -466,7 +449,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         throw custError || new Error("Failed to bulk insert customers");
       }
 
-      // 2. Bulk insert orders
       const ordersToInsert = insertedCustomers.map((cust, idx) => {
         const originalRow = rows[idx];
         return {
@@ -486,7 +468,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         throw orderError || new Error("Failed to bulk insert orders");
       }
 
-      // 3. Bulk insert review requests
       const { data: optOuts } = await supabase.from('opt_outs').select('email');
       const optedOutEmails = new Set((optOuts || []).map(o => o.email?.toLowerCase()));
 
@@ -528,7 +509,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       await supabase.from('locations').update(updateData).eq('id', id);
     }
     
-    // Save email template
     if (settings.templateText !== undefined) {
       const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'email').maybeSingle();
       if (existing) {
@@ -538,7 +518,6 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    // Save SMS template
     if (settings.smsTemplateText !== undefined) {
       const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'sms').maybeSingle();
       if (existing) {
