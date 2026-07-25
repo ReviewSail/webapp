@@ -7,6 +7,7 @@ type AuthContextType = {
   user: User | null;
   role: 'admin' | 'staff' | null;
   loading: boolean;
+  error: Error | null;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -14,6 +15,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   role: null,
   loading: true,
+  error: null,
 });
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -21,6 +23,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<'admin' | 'staff' | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   const fetchUserRole = async (userId: string) => {
     try {
@@ -33,10 +36,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!error && data) {
         setRole(data.role as 'admin' | 'staff');
       } else {
-        setRole('admin'); // Fallback default
+        console.warn('[AuthContext] Using fallback role, failed to fetch user role:', error);
+        setRole('admin');
       }
     } catch (err) {
-      console.warn('Failed to load user role:', err);
+      console.error('[AuthContext] fetchUserRole failed:', err);
       setRole('admin');
     }
   };
@@ -47,62 +51,89 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     
     if (inviteAccountId) {
       try {
-        // Check if user record already exists
-        const { data: existingUser } = await supabase
+        const { data: existingUser, error: checkError } = await supabase
           .from('users')
           .select('id')
           .eq('id', userId)
           .maybeSingle();
 
+        if (checkError) throw checkError;
+
         if (!existingUser) {
           console.log('[AuthContext] Auto-joining user to invited account:', inviteAccountId);
-          await supabase.from('users').insert({
+          const { error: joinError } = await supabase.from('users').insert({
             id: userId,
             account_id: inviteAccountId,
             role: 'staff',
             email: email,
             full_name: userMetadata?.full_name || 'New Member'
           });
+          if (joinError) throw joinError;
         }
       } catch (err) {
         console.error('[AuthContext] Failed to auto-join invited user:', err);
+        setError(new Error('Failed to process account invitation'));
       } finally {
-        // Strip the URL parameter to prevent replay loops
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
   };
 
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+  const initializeAuth = async () => {
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+
       setSession(session);
       setUser(session?.user ?? null);
+      setError(null);
+
       if (session?.user) {
-        await handleInviteJoin(session.user.id, session.user.email || '', session.user.user_metadata);
-        await fetchUserRole(session.user.id);
+        await Promise.all([
+          handleInviteJoin(session.user.id, session.user.email || '', session.user.user_metadata),
+          fetchUserRole(session.user.id),
+        ]);
       } else {
         setRole(null);
       }
+    } catch (err) {
+      console.error('[AuthContext] initializeAuth failed:', err);
+      setError(err instanceof Error ? err : new Error('Failed to initialize authentication'));
+    } finally {
       setLoading(false);
-    });
+    }
+  };
+
+  useEffect(() => {
+    initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await handleInviteJoin(session.user.id, session.user.email || '', session.user.user_metadata);
-        await fetchUserRole(session.user.id);
-      } else {
-        setRole(null);
+      try {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setError(null);
+
+        if (session?.user) {
+          await Promise.all([
+            handleInviteJoin(session.user.id, session.user.email || '', session.user.user_metadata),
+            fetchUserRole(session.user.id),
+          ]);
+        } else {
+          setRole(null);
+        }
+      } catch (err) {
+        console.error('[AuthContext] authStateChange failed:', err);
+        setError(err instanceof Error ? err : new Error('Authentication state change error'));
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, user, role, loading }}>
+    <AuthContext.Provider value={{ session, user, role, loading, error }}>
       {children}
     </AuthContext.Provider>
   );

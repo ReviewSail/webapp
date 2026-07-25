@@ -4,4 +4,14 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = "https://vqjzscdlfhgzzqhmkchw.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxanpzY2RsZmhnenpxaG1rY2h3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1MTUyOTUsImV4cCI6MjEwMDA5MTI5NX0.bmK62UIfR9W6MLaaTGZ44DkuHEo9hydj9KY1PEDAUx4";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// Validate Supabase configuration
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  throw new Error('Missing Supabase configuration. Please check your environment variables.');
+}
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+});
