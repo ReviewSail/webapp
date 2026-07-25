@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
-import { RefreshCw, AlertCircle, FileUp, Send } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { TrialBanner } from '../components/dashboard/TrialBanner';
 import { OnboardingWizard } from '../components/dashboard/OnboardingWizard';
 import { StatsGrid } from '../components/dashboard/StatsGrid';
@@ -11,11 +11,9 @@ import { PrivateFeedbackSection } from '../components/dashboard/PrivateFeedbackS
 export default function Dashboard() {
   const {
     activeLocationId,
-    locations,
     reviewRequests,
     orders,
     customers,
-    messageEvents,
     feedbacks,
     subscriptionStatus,
     subscribe,

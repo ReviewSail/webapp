@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMapRated } from '../context/MapRatedContext';
-import { Search, User, Mail, Phone, Calendar, Eye } from 'lucide-react';
+import { Search, User, Mail, Phone, Eye } from 'lucide-react';
 import { GuestDetailPanel } from '../components/dashboard/GuestDetailPanel';
 import { format } from 'date-fns';
 
@@ -9,8 +9,6 @@ export default function Guests() {
   const [search, setSearch] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [sendingId, setSendingId] = useState<string | null>(null);
-  const [successId, setSuccessId] = useState<string | null>(null);
 
   const selectedRequest = reviewRequests.find(r => r.id === selectedRequestId) || null;
   const selectedOrder = selectedRequest ? (orders.find(o => o.id === selectedRequest.orderId) || null) : null;
@@ -28,13 +26,7 @@ export default function Guests() {
   };
 
   const handleResend = async (requestId: string): Promise<boolean> => {
-    setSendingId(requestId);
     const result = await triggerSingleResend(requestId);
-    if (result.success) {
-      setSuccessId(requestId);
-      setTimeout(() => setSuccessId(null), 3000);
-    }
-    setSendingId(null);
     return result.success;
   };
 
@@ -105,7 +97,6 @@ export default function Guests() {
               ) : (
                 filteredCustomers.map((customer) => {
                   const latestRequest = customerRequestMap.get(customer.id);
-                  const order = latestRequest ? orders.find(o => o.id === latestRequest.orderId) : null;
 
                   const statusLabel = (status: string) => {
                     switch (status) {

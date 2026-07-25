@@ -3,12 +3,10 @@ import { useMapRated } from '../context/MapRatedContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../integrations/supabase/client';
 import {
-  Settings as SettingsIcon,
   MapPin,
   Plus,
   Trash2,
   Save,
-  Bell,
   Mail,
   MessageSquare,
   Clock,
@@ -26,7 +24,8 @@ export default function Settings() {
     locations,
     updateLocationSettings,
     addLocation,
-    deleteLocation
+    deleteLocation,
+    setActiveLocationId
   } = useMapRated();
   const { user: currentUser } = useAuth();
 
@@ -218,12 +217,7 @@ export default function Settings() {
         {locations.map((loc) => (
           <button
             key={loc.id}
-            onClick={() => {
-              // The context handles activeLocationId switching
-              const { setActiveLocationId } = useMapRated();
-              // We can't call hooks conditionally, so use the activeLoc logic
-              window.location.hash = ''; // trigger re-render
-            }}
+            onClick={() => setActiveLocationId(loc.id)}
             className={`shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${
               activeLoc?.id === loc.id
                 ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { X, Mail, Phone, Calendar, Clock, User, RefreshCw, Send, MousePointerClick } from 'lucide-react';
+import { X, Mail, Phone, Calendar, Clock, RefreshCw, Send, MousePointerClick } from 'lucide-react';
 import { ReviewRequest, Order, Customer, MessageEvent } from '../../context/MapRatedContext';
 
 interface GuestDetailPanelProps {
