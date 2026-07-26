@@ -34,6 +34,7 @@ export default function Settings() {
   // Property tab state
   const [name, setName] = useState('');
   const [googleUrl, setGoogleUrl] = useState('');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
   const [timezone, setTimezone] = useState('UTC');
   const [preferredHour, setPreferredHour] = useState(10);
   const [enableEmail, setEnableEmail] = useState(true);
@@ -66,6 +67,7 @@ export default function Settings() {
     if (activeLoc) {
       setName(activeLoc.name);
       setGoogleUrl(activeLoc.googlePlaceUrl || '');
+      setRecoveryEmail(activeLoc.recoveryEmail || '');
       setTimezone(activeLoc.timezone || 'UTC');
       setPreferredHour(activeLoc.preferredSendHour ?? 10);
       setEnableEmail(activeLoc.enableEmail);
@@ -93,6 +95,7 @@ export default function Settings() {
       await updateLocationSettings(activeLoc.id, {
         name,
         googlePlaceUrl: googleUrl,
+        recoveryEmail,
         timezone,
         preferredSendHour: preferredHour,
         enableEmail,
@@ -287,6 +290,21 @@ export default function Settings() {
                 placeholder="https://maps.google.com/..."
                 className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
               />
+            </div>
+
+            {/* Guest Recovery Email */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Guest Recovery Email</label>
+              <input
+                type="email"
+                value={recoveryEmail}
+                onChange={(e) => setRecoveryEmail(e.target.value)}
+                placeholder="recovery@yourhotel.com"
+                className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                A dedicated email address for guests with complaints to contact you directly. If left empty, the recovery section will not appear on the feedback page.
+              </p>
             </div>
 
             {/* Timezone */}

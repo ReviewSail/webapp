@@ -1,0 +1,1 @@
+ALTER TABLE public.locations ADD COLUMN recovery_email text DEFAULT '';

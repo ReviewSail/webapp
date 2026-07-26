@@ -117,27 +117,33 @@ export function PrivateFeedbackSection({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center space-x-3">
                     <div className="h-9 w-9 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center">
-                      {customer ? `${customer.firstName[0]}${customer.lastName[0]}` : '??'}
+                      {fb.guestName ? fb.guestName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : customer ? `${customer.firstName[0]}${customer.lastName[0]}` : '??'}
                     </div>
                     <div>
                       <h4 className="text-sm font-semibold text-slate-800">
-                        {customer ? `${customer.firstName} ${customer.lastName}` : 'Confidential Guest'}
+                        {fb.guestName || (customer ? `${customer.firstName} ${customer.lastName}` : 'Confidential Guest')}
                       </h4>
                       <p className="text-xs text-slate-400">
-                        {customer?.email || 'No email registered'}
+                        {fb.guestEmail || customer?.email || 'No email registered'}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center space-x-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`h-4.5 w-4.5 ${
-                          star <= fb.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
-                        }`}
-                      />
-                    ))}
+                    {!fb.rating || fb.rating === 0 ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                        Recovery Message
+                      </span>
+                    ) : (
+                      [1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`h-4.5 w-4.5 ${
+                            star <= fb.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
+                          }`}
+                        />
+                      ))
+                    )}
                   </div>
                 </div>
 

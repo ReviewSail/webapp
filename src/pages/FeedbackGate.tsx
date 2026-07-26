@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../integrations/supabase/client';
-import { Star, Send, CheckCircle2, MapPin } from 'lucide-react';
+import { Star, Send, CheckCircle2, MapPin, Mail, MessageCircle } from 'lucide-react';
 
 export default function FeedbackGate() {
   const [searchParams] = useSearchParams();
@@ -20,6 +20,15 @@ export default function FeedbackGate() {
   const [error, setError] = useState('');
   const [isDemo, setIsDemo] = useState(false);
 
+  // Recovery section state
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [lowRatingSubmitted, setLowRatingSubmitted] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [recoveryName, setRecoveryName] = useState('');
+  const [recoveryGuestEmail, setRecoveryGuestEmail] = useState('');
+  const [recoverySubmitting, setRecoverySubmitting] = useState(false);
+  const [recoverySubmitted, setRecoverySubmitted] = useState(false);
+
   useEffect(() => {
     if (!requestId) {
       setLoading(false);
@@ -33,11 +42,12 @@ export default function FeedbackGate() {
       setLocationName('The Grand Hotel');
       setGoogleUrl('');
       setLocationId('');
+      setRecoveryEmail('recovery@grandhotel.com');
       setLoading(false);
       return;
     }
 
-    // Fetch request details: location name, google_place_url, location_id
+    // Fetch request details: location name, google_place_url, location_id, recovery_email
     const fetchDetails = async () => {
       try {
         const { data, error } = await supabase
@@ -49,7 +59,8 @@ export default function FeedbackGate() {
               locations (
                 id,
                 name,
-                google_place_url
+                google_place_url,
+                recovery_email
               )
             )
           `)
@@ -64,6 +75,7 @@ export default function FeedbackGate() {
           setLocationName(location.name || 'Our Property');
           setGoogleUrl(location.google_place_url || '');
           setLocationId(location.id);
+          setRecoveryEmail(location.recovery_email || '');
         }
       } catch (err: any) {
         console.error(err);
@@ -136,11 +148,43 @@ export default function FeedbackGate() {
       }
 
       setSubmitted(true);
+      setLowRatingSubmitted(true);
     } catch (err: any) {
       console.error(err);
       setError('Failed to submit feedback. Please try again.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSubmitRecoveryMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recoveryMessage.trim()) return;
+    setRecoverySubmitting(true);
+
+    try {
+      if (!isDemo) {
+        const { error } = await supabase.from('private_feedback').insert({
+          request_id: requestId || null,
+          location_id: locationId || null,
+          star_rating: null,
+          feedback_text: recoveryMessage.trim(),
+          guest_name: recoveryName.trim() || null,
+          guest_email: recoveryGuestEmail.trim() || null,
+          is_read: false,
+        });
+
+        if (error) throw error;
+      } else {
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      setRecoverySubmitted(true);
+    } catch (err: any) {
+      console.error(err);
+      setError('Failed to send your message. Please try again or email us directly.');
+    } finally {
+      setRecoverySubmitting(false);
     }
   };
 
@@ -286,16 +330,109 @@ export default function FeedbackGate() {
 
         {submitted && (
           /* Thank-you screen */
-          <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 sm:p-10 text-center space-y-6">
-            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-emerald-100 text-emerald-600">
-              <CheckCircle2 className="h-8 w-8" />
+          <div className="space-y-0">
+            <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 sm:p-10 text-center space-y-6">
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-emerald-100 text-emerald-600">
+                <CheckCircle2 className="h-8 w-8" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Thank you!</h2>
+                <p className="text-sm text-slate-500 mt-2 leading-relaxed">
+                  Your feedback has been received. Our team will review it and work to improve.
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900">Thank you!</h2>
-              <p className="text-sm text-slate-500 mt-2 leading-relaxed">
-                Your feedback has been received. Our team will review it and work to improve.
-              </p>
-            </div>
+
+            {/* Recovery section — shown only for 1-3 star submitters when recovery email is configured */}
+            {lowRatingSubmitted && recoveryEmail && !recoverySubmitted && (
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-6 sm:p-8 space-y-5">
+                  <div className="text-center">
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      We're sorry your stay didn't meet expectations. We'd love the chance to make it right.
+                    </p>
+                  </div>
+
+                  {/* Email CTA */}
+                  <a
+                    href={`mailto:${recoveryEmail}`}
+                    className="flex items-center justify-center space-x-2 w-full border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-sm py-2.5 px-4 rounded-xl transition-colors"
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span>Contact the hotel directly</span>
+                  </a>
+
+                  {/* Divider with "or" */}
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-1 h-px bg-slate-100" />
+                    <span className="text-xs text-slate-400 font-medium">or send us a message directly</span>
+                    <div className="flex-1 h-px bg-slate-100" />
+                  </div>
+
+                  {/* Direct message form */}
+                  <form onSubmit={handleSubmitRecoveryMessage} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Your name (optional)</label>
+                        <input
+                          type="text"
+                          value={recoveryName}
+                          onChange={(e) => setRecoveryName(e.target.value)}
+                          placeholder="Jane Smith"
+                          className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Email (optional)</label>
+                        <input
+                          type="email"
+                          value={recoveryGuestEmail}
+                          onChange={(e) => setRecoveryGuestEmail(e.target.value)}
+                          placeholder="guest@example.com"
+                          className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border bg-white"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Message (required)</label>
+                      <textarea
+                        rows={3}
+                        required
+                        value={recoveryMessage}
+                        onChange={(e) => setRecoveryMessage(e.target.value)}
+                        placeholder="Tell us how we can make things right..."
+                        className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border bg-white"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={recoverySubmitting || !recoveryMessage.trim()}
+                      className="w-full bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      <span>{recoverySubmitting ? 'Sending...' : 'Send Message'}</span>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Recovery submitted success state */}
+            {lowRatingSubmitted && recoveryEmail && recoverySubmitted && (
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-6 sm:p-8 text-center space-y-4">
+                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 text-indigo-600">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Message Sent</h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      Your message has been delivered to the hotel. A team member will follow up with you soon.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
