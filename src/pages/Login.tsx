@@ -30,6 +30,7 @@ export default function Login() {
           <Auth
             supabaseClient={supabase}
             providers={[]}
+            redirectTo={window.location.origin + '/reset-password'}
             appearance={{ theme: ThemeSupa }}
             theme="light"
           />
