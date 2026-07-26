@@ -6,16 +6,17 @@ import { supabase } from '../integrations/supabase/client';
 import {
   MapPin, Plus, Trash2, Save, Mail, MessageSquare, Users,
   UserPlus, RefreshCw, AlertCircle, CheckCircle, BedDouble,
-  User, Lock, CreditCard, Building2, Smartphone
+  User, Lock, CreditCard, Building2, Smartphone, Clock
 } from 'lucide-react';
 
-type TabId = 'property' | 'messaging' | 'team' | 'account';
+type TabId = 'property' | 'messaging' | 'team' | 'subscription' | 'account';
 
 const TABS: { key: TabId; label: string; icon: typeof MapPin; description: string }[] = [
   { key: 'property', label: 'Property', icon: Building2, description: 'Manage your property details, timezone, and communication channels.' },
   { key: 'messaging', label: 'Messaging', icon: Mail, description: 'Customize your email and SMS message templates.' },
   { key: 'team', label: 'Team', icon: Users, description: 'Invite and manage team members.' },
-  { key: 'account', label: 'Account', icon: User, description: 'Manage your profile, security, and subscription.' },
+  { key: 'subscription', label: 'Subscription', icon: CreditCard, description: 'View and manage your subscription plan and billing status.' },
+  { key: 'account', label: 'Account', icon: User, description: 'Manage your profile, security, and account settings.' },
 ];
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -76,6 +77,11 @@ export default function Settings() {
   const [inviting, setInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState(false);
   const [inviteError, setInviteError] = useState('');
+
+  // Account deletion state
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // General UI state
   const [saving, setSaving] = useState(false);
@@ -200,6 +206,26 @@ export default function Settings() {
     const result = await subscribe();
     if (result.url) { window.location.href = result.url; }
     else { setError(result.error || 'Failed to start subscription'); }
+  };
+
+  const handleDeleteAccount = () => {
+    setError('');
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') return;
+    setDeletingAccount(true); setError('');
+    try {
+      const { error: fnError } = await supabase.functions.invoke('delete-account');
+      if (fnError) throw fnError;
+      // Sign out on success
+      await supabase.auth.signOut();
+      window.location.href = '/login';
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete account. Please try again or contact support.');
+      setDeletingAccount(false);
+    }
   };
 
   const subLabel = subscriptionStatus === 'active' ? 'Active'
@@ -523,34 +549,6 @@ export default function Settings() {
               </div>
             </section>
 
-            {/* Subscription */}
-            <section>
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
-                  <CreditCard className="h-5 w-5 text-slate-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Subscription</h3>
-                  <p className="text-sm text-slate-500">Your current plan and billing status.</p>
-                </div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">Status</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Your subscription plan</p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${subColor}`}>{subLabel}</span>
-                </div>
-                {(subscriptionStatus === 'inactive' || subscriptionStatus === 'canceled') && (
-                  <button onClick={handleSubscribe}
-                    className="w-full bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center space-x-2">
-                    <CreditCard className="h-4 w-4" /> <span>Subscribe Now</span>
-                  </button>
-                )}
-              </div>
-            </section>
-
             {/* Properties */}
             <section>
               <div className="flex items-center space-x-3 mb-4">
@@ -591,6 +589,129 @@ export default function Settings() {
                 </div>
               </div>
             </section>
+
+            {/* Danger Zone */}
+            <section>
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Danger Zone</h3>
+                  <p className="text-sm text-slate-500">Irreversible account actions.</p>
+                </div>
+              </div>
+              <div className="bg-red-50 rounded-xl p-5 border border-red-200 space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-red-800">Delete Account</p>
+                    <p className="text-xs text-red-600">Permanently delete your account and all associated data. This action cannot be undone.</p>
+                  </div>
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={deletingAccount}
+                    className="shrink-0 bg-red-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center space-x-2 text-sm"
+                  >
+                    {deletingAccount ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    <span>{deletingAccount ? 'Deleting...' : 'Delete Account'}</span>
+                  </button>
+                </div>
+
+                {showDeleteConfirm && (
+                  <div className="bg-white rounded-xl p-4 border border-red-200 space-y-3">
+                    <p className="text-sm font-semibold text-red-800">Are you absolutely sure?</p>
+                    <p className="text-xs text-slate-600">
+                      This will permanently delete your account, all properties, guest data, review requests,
+                      and settings. Type <span className="font-bold text-red-700">DELETE</span> below to confirm.
+                    </p>
+                    <input
+                      type="text"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder="Type DELETE to confirm"
+                      className="w-full rounded-xl border-red-300 shadow-sm focus:border-red-500 focus:ring-red-500 text-sm py-2 px-3 border bg-white"
+                    />
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}
+                        className="flex-1 bg-white text-slate-700 font-semibold py-2 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors text-sm"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleConfirmDeleteAccount}
+                        disabled={deleteConfirmText !== 'DELETE' || deletingAccount}
+                        className="flex-1 bg-red-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 text-sm"
+                      >
+                        {deletingAccount ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        <span>{deletingAccount ? 'Deleting...' : 'Yes, Delete Everything'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* ===== Subscription Tab ===== */}
+        {activeTab === 'subscription' && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Subscription</h3>
+              <p className="text-sm text-slate-500 mt-0.5">Your current plan and billing status.</p>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-6 border border-slate-100 space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
+                    <CreditCard className="h-6 w-6 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-slate-900">Current Plan</p>
+                    <p className="text-sm text-slate-500">ReviewSail subscription</p>
+                  </div>
+                </div>
+                <span className={`px-4 py-1.5 rounded-full text-sm font-semibold border ${subColor}`}>{subLabel}</span>
+              </div>
+
+              <div className="border-t border-slate-200 pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-xl p-4 border border-slate-200">
+                    <p className="text-xs font-medium text-slate-500">Status</p>
+                    <p className="text-sm font-bold text-slate-900 mt-1 capitalize">{subscriptionStatus || 'Inactive'}</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 border border-slate-200">
+                    <p className="text-xs font-medium text-slate-500">Billing</p>
+                    <p className="text-sm font-bold text-slate-900 mt-1">
+                      {subscriptionStatus === 'active' ? 'Active' : subscriptionStatus === 'trialing' ? 'Trial Period' : 'No Active Plan'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {(subscriptionStatus === 'inactive' || subscriptionStatus === 'canceled') && (
+                <button onClick={handleSubscribe}
+                  className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center space-x-2 text-base">
+                  <CreditCard className="h-5 w-5" /> <span>Subscribe Now</span>
+                </button>
+              )}
+
+              {subscriptionStatus === 'active' && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center space-x-3">
+                  <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <p className="text-sm text-emerald-800">Your subscription is active. All features are available.</p>
+                </div>
+              )}
+
+              {subscriptionStatus === 'trialing' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center space-x-3">
+                  <Clock className="h-5 w-5 text-blue-600 shrink-0" />
+                  <p className="text-sm text-blue-800">You're on a free trial. Subscribe to continue after the trial ends.</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
