@@ -2,11 +2,11 @@ import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, FileUp, Users, Settings, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
-import { useMapRated } from '../context/MapRatedContext';
+import { useReviewSail } from '../context/ReviewSailContext';
 
 export function Sidebar() {
   const { role } = useAuth();
-  const { unreadPrivateFeedbackCount } = useMapRated();
+  const { unreadPrivateFeedbackCount } = useReviewSail();
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -20,8 +20,8 @@ export function Sidebar() {
     <div className="flex flex-col w-64 bg-slate-950 border-r border-slate-900 text-slate-300 shadow-xl shrink-0">
       <div className="flex h-16 shrink-0 items-center px-6 bg-slate-950 border-b border-slate-900">
         <span className="text-xl font-bold text-white tracking-tight flex items-center space-x-1.5">
-          <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-sm font-black">M</span>
-          <span>MapRated</span>
+          <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-sm font-black">R</span>
+          <span>ReviewSail</span>
         </span>
       </div>
       <div className="flex flex-1 flex-col overflow-y-auto">

@@ -1,16 +1,16 @@
-# MapRated Marketing Website Concept & Feature Blueprint
+# ReviewSail Marketing Website Concept & Feature Blueprint
 
-This document outlines the core concept, key features, and page structure of the MapRated marketing website to serve as a conceptual blueprint for Figma wireframing and design.
+This document outlines the core concept, key features, and page structure of the ReviewSail marketing website to serve as a conceptual blueprint for Figma wireframing and design.
 
 ---
 
 ## 1. Core Brand Concept & Value Proposition
 
-MapRated is an **automated guest feedback and review-acceleration engine** designed specifically for hospitality providers, vacation rental hosts (Airbnb, VRBO), boutique hotels, and physical service locations.
+ReviewSail is an **automated guest feedback and review-acceleration engine** designed specifically for hospitality providers, vacation rental hosts (Airbnb, VRBO), boutique hotels, and physical service locations.
 
 ### The Problem it Solves (The Hook)
 *   **The Review Gap:** Happy guests rarely leave reviews, while unhappy guests leave negative public ratings on Google Maps.
-*   **The Solution:** MapRated intercepts guest feedback by giving them a private, direct channel to share comments with management first. If they are highly satisfied, it directs them to post publicly on Google Maps.
+*   **The Solution:** ReviewSail intercepts guest feedback by giving them a private, direct channel to share comments with management first. If they are highly satisfied, it directs them to post publicly on Google Maps.
 
 ---
 
@@ -20,7 +20,7 @@ A high-converting single-page layout structure consists of the following concept
 
 ### A. The Hero Section (Above the Fold)
 *   **Core Headline Idea:** "Skyrocket Your Google Reviews, Automate Guest Feedback."
-*   **Supporting Sub-headline:** "Connect MapRated with your checkout workflow. Automatically send friendly email and SMS invites that drive public Google stars while capturing private complaints directly."
+*   **Supporting Sub-headline:** "Connect ReviewSail with your checkout workflow. Automatically send friendly email and SMS invites that drive public Google stars while capturing private complaints directly."
 *   **Primary Call-to-Action (CTA):** "Start Free Trial" (Redirects to App Sign-Up).
 *   **Visual Asset Placeholder:** A side-by-side mockup of the desktop dashboard alongside a smartphone screen receiving an SMS invite.
 

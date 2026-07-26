@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../context/AuthContext';
-import { MapRatedState, Location, Customer, Order, ReviewRequest, OptOut, MessageEvent, PrivateFeedback } from '../types/mapRated';
+import { ReviewSailState, Location, Customer, Order, ReviewRequest, OptOut, MessageEvent, PrivateFeedback } from '../types/reviewSail';
 
-const initialState: MapRatedState = {
+const initialState: ReviewSailState = {
   locations: [],
   customers: [],
   orders: [],
@@ -17,9 +17,9 @@ const initialState: MapRatedState = {
   loading: true,
 };
 
-export function useMapRatedCore() {
+export function useReviewSailCore() {
   const { session } = useAuth();
-  const [state, setState] = useState<MapRatedState>(initialState);
+  const [state, setState] = useState<ReviewSailState>(initialState);
 
   const refreshData = useCallback(async () => {
     if (!session?.user) return;
@@ -49,7 +49,7 @@ export function useMapRatedCore() {
 
       // Fetch user account data
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-      let subscriptionStatus: MapRatedState['subscriptionStatus'] = 'inactive';
+      let subscriptionStatus: ReviewSailState['subscriptionStatus'] = 'inactive';
       let stripeCustomerId = null;
       if (userData?.account_id) {
         const { data: accData } = await supabase.from('accounts')

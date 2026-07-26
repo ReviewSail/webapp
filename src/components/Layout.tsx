@@ -1,11 +1,11 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
-import { useMapRated } from '../context/MapRatedContext';
+import { useReviewSail } from '../context/ReviewSailContext';
 import { MapPin, LogOut } from 'lucide-react';
 import { supabase } from '../integrations/supabase/client';
 
 export function Layout() {
-  const { locations, activeLocationId, setActiveLocationId } = useMapRated();
+  const { locations, activeLocationId, setActiveLocationId } = useReviewSail();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
 import { X, Mail, Phone, Calendar, Clock, RefreshCw, Send, MousePointerClick } from 'lucide-react';
-import { ReviewRequest, Order, Customer, MessageEvent } from '../../context/MapRatedContext';
+import { ReviewRequest, Order, Customer, MessageEvent } from '../../context/ReviewSailContext';
 
 interface GuestDetailPanelProps {
   request: ReviewRequest | null;

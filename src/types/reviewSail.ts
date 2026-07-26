@@ -58,7 +58,7 @@ export type PrivateFeedback = {
   createdAt: string;
 };
 
-export type MapRatedState = {
+export type ReviewSailState = {
   locations: Location[];
   customers: Customer[];
   orders: Order[];
@@ -72,7 +72,7 @@ export type MapRatedState = {
   loading: boolean;
 };
 
-export type MapRatedContextType = MapRatedState & {
+export type ReviewSailContextType = ReviewSailState & {
   setActiveLocationId: (id: string) => void;
   addLocation: (name: string, googleUrl?: string) => Promise<Location | null>;
   deleteLocation: (id: string) => Promise<void>;
@@ -83,7 +83,7 @@ export type MapRatedContextType = MapRatedState & {
   updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
   respondToFeedback: (id: string, text: string) => Promise<void>;
   refreshData: () => Promise<void>;
-  bulkImport: (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => Promise<{ success: boolean, count: number, error?: string }>;
+  bulkImport: (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string }>) => Promise<{ success: boolean; count: number; error?: string }>;
   subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
   completeOnboarding: (locationId: string) => Promise<void>;
   triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;

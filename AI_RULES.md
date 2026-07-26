@@ -1,6 +1,6 @@
 # AI Development Rules & Guidelines
 
-Welcome to the **React SPA Application Workspace**! This guide outlines our core tech stack, architectural conventions, and library selection rules. Please adhere to these guidelines strictly when adding features, fixing bugs, or refactoring.
+Welcome to the **ReviewSail Application Workspace**! This guide outlines our core tech stack, architectural conventions, and library selection rules. Please adhere to these guidelines strictly when adding features, fixing bugs, or refactoring.
 
 ---
 

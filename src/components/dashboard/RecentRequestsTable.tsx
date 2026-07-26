@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Inbox, RefreshCw, Send, Eye, Check } from 'lucide-react';
-import { ReviewRequest, Order, Customer, useMapRated } from '../../context/MapRatedContext';
+import { ReviewRequest, Order, Customer, useReviewSail } from '../../context/ReviewSailContext';
 import { GuestDetailPanel } from './GuestDetailPanel';
 import { format } from 'date-fns';
 
@@ -17,7 +17,7 @@ export function RecentRequestsTable({
   customers,
   totalLogs
 }: RecentRequestsTableProps) {
-  const { messageEvents, triggerSingleResend } = useMapRated();
+  const { messageEvents, triggerSingleResend } = useReviewSail();
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);

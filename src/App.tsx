@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
-import { MapRatedProvider } from "./context/MapRatedContext"
+import { ReviewSail<dyad-write path="src/App.tsx" description="Update imports and provider/hook names to ReviewSail">
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
+import { ReviewSailProvider } from "./context/ReviewSailContext"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { Layout } from "./components/Layout"
 import Dashboard from "./pages/Dashboard"
@@ -75,11 +77,11 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <MapRatedProvider>
+      <ReviewSailProvider>
         <Router>
           <AppRoutes />
         </Router>
-      </MapRatedProvider>
+      </ReviewSailProvider>
     </AuthProvider>
   )
 }

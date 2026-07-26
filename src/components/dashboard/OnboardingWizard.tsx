@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Sparkles, Building2, MapPin, RefreshCw, AlertCircle, FileUp, ShieldCheck, ChevronDown, ChevronUp, Map } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useMapRated } from '../../context/MapRatedContext';
+import { useReviewSail } from '../../context/ReviewSailContext';
 
 export function OnboardingWizard() {
-  const { locations, updateLocationSettings, completeOnboarding } = useMapRated();
+  const { locations, updateLocationSettings, completeOnboarding } = useReviewSail();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [showGoogleHelp, setShowGoogleHelp] = useState(false);
@@ -70,7 +70,7 @@ export function OnboardingWizard() {
               <Building2 className="h-8 w-8 text-indigo-600" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Welcome to MapRated!</h3>
+              <h3 className="text-lg font-bold text-slate-900">Welcome to ReviewSail!</h3>
               <p className="text-sm text-slate-500 mt-1">Let's get your property set up in just a few steps.</p>
             </div>
             <button

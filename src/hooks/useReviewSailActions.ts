@@ -1,15 +1,15 @@
 import { useCallback } from 'react';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../context/AuthContext';
-import { MapRatedState, Location, Customer, Order } from '../types/mapRated';
+import { ReviewSailState, Location, Customer, Order } from '../types/reviewSail';
 
 type ActionsDeps = {
-  state: MapRatedState;
-  setState: React.Dispatch<React.SetStateAction<MapRatedState>>;
+  state: ReviewSailState;
+  setState: React.Dispatch<React.SetStateAction<ReviewSailState>>;
   refreshData: () => Promise<void>;
 };
 
-export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps) {
+export function useReviewSailActions({ state, setState, refreshData }: ActionsDeps) {
   const { session } = useAuth();
 
   const addLocation = useCallback(async (name: string, googleUrl?: string) => {
@@ -99,24 +99,97 @@ export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps
     }
   }, [refreshData]);
 
-  const bulkImport = useCallback(async (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => {
+  const bulkImport = useCallback(async (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string }>) => {
     if (!state.activeLocationId) return { success: false, count: 0, error: 'No active location selected' };
     if (!session?.user) return { success: false, count: 0, error: 'Not authenticated' };
     try {
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
-      if (!userData) return { success: false, count: 0, error: 'No user account linked<dyad-write path="src/hooks/useMapRatedActions.ts" description="Complete the useMapRatedActions hook with recovery email support">
+      if (!userData) return { success: false, count: 0, error: 'No user account linked' };
+      const accountId = userData.account_id;
+      const { data: insertedCustomers, error: custError } = await supabase
+        .from('customers')
+        .insert(rows.map(r => ({ account_id: accountId, first_name: r.firstName, last_name: r.lastName, email: r.email, phone: r.phone || null })))
+        .select();
+      if (custError || !insertedCustomers) throw custError || new Error('Failed to bulk insert customers');
+      const ordersToInsert = insertedCustomers.map((cust: any, idx: number) => ({
+        location_id: state.activeLocationId,
+        customer_id: cust.id,
+        checkout_date: rows[idx] ? new Date(rows[idx].checkoutDate).toISOString() : new Date().toISOString(),
+        status: 'completed',
+      }));
+      const { data: insertedOrders, error: orderError } = await supabase.from('orders').insert(ordersToInsert).select();
+      if (orderError || !insertedOrders) throw orderError || new Error('Failed to bulk insert orders');
+      const { data: optOuts } = await supabase.from('opt_outs').select('email');
+      const optedOutEmails = new Set((optOuts || []).map((o: any) => o.email?.toLowerCase()));
+      const requestsToInsert = insertedOrders.map((order: any) => {
+        const customer = insertedCustomers.find((c: any) => c.id === order.customer_id);
+        const isOptedOut = customer?.email && optedOutEmails.has(customer.email.toLowerCase());
+        return { order_id: order.id, status: isOptedOut ? 'opted_out' : 'pending' };
+      });
+      await supabase.from('review_requests').insert(requestsToInsert);
+      await refreshData();
+      return { success: true, count: rows.length };
+    } catch (e: any) {
+      console.error(e);
+      return { success: false, count: 0, error: e.message || 'Failed to bulk import data' };
+    }
+  }, [state.activeLocationId, session, refreshData]);
+
+  const updateLocationSettings = useCallback(async (id: string, settings: Partial<Location>) => {
+    const updateData: Record<string, any> = {};
+    if (settings.name !== undefined) updateData.name = settings.name;
+    if (settings.googlePlaceUrl !== undefined) updateData.google_place_url = settings.googlePlaceUrl;
+    if (settings.timezone !== undefined) updateData.timezone = settings.timezone;
+    if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
+    if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
+    if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
+    if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;
+    if (Object.keys(updateData).length > 0) {
+      await supabase.from('locations').update(updateData).eq('id', id);
+    }
+    if (settings.templateText !== undefined) {
+      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'email').maybeSingle();
+      if (existing) {
+        await supabase.from('message_templates').update({ template_text: settings.templateText }).eq('id', existing.id);
+      } else {
+        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.templateText, type: 'email' });
+      }
+    }
+    if (settings.smsTemplateText !== undefined) {
+      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'sms').maybeSingle();
+      if (existing) {
+        await supabase.from('message_templates').update({ template_text: settings.smsTemplateText }).eq('id', existing.id);
+      } else {
+        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.smsTemplateText, type: 'sms' });
+      }
+    }
+    await refreshData();
+  }, [refreshData]);
+
+  const respondToFeedback = useCallback(async (id: string, text: string) => {
+    const { error } = await supabase.from('feedback').update({ manager_response: text }).eq('id', id);
+    if (error) throw error;
+    await refreshData();
+  }, [refreshData]);
+
+  const subscribe = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout-session');
+      if (error) throw error;
+      if (data && data.url) return { success: true, url: data.url };
+<dyad-write path="src/hooks/useReviewSailActions.ts" description="Complete the useReviewSailActions hook">
 import { useCallback } from 'react';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../context/AuthContext';
-import { MapRatedState, Location, Customer, Order } from '../types/mapRated';
+import { ReviewSailState, Location, Customer, Order } from '../types/reviewSail';
 
 type ActionsDeps = {
-  state: MapRatedState;
-  setState: React.Dispatch<React.SetStateAction<MapRatedState>>;
+  state: ReviewSailState;
+  setState: React.Dispatch<React.SetStateAction<ReviewSailState>>;
   refreshData: () => Promise<void>;
 };
 
-export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps) {
+export function useReviewSailActions({ state, setState, refreshData }: ActionsDeps) {
   const { session } = useAuth();
 
   const addLocation = useCallback(async (name: string, googleUrl?: string) => {

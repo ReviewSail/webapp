@@ -62,7 +62,7 @@ export type PrivateFeedback = {
   createdAt: string;
 };
 
-type MapRatedState = {
+type ReviewSailState = {
   locations: Location[];
   customers: Customer[];
   orders: Order[];
@@ -76,7 +76,7 @@ type MapRatedState = {
   loading: boolean;
 };
 
-type MapRatedContextType = MapRatedState & {
+type ReviewSailContextType = ReviewSailState & {
   setActiveLocationId: (id: string) => void;
   addLocation: (name: string, googleUrl?: string) => Promise<Location | null>;
   deleteLocation: (id: string) => Promise<void>;
@@ -93,7 +93,7 @@ type MapRatedContextType = MapRatedState & {
   triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
 };
 
-const initialState: MapRatedState = {
+const initialState: ReviewSailState = {
   locations: [],
   customers: [],
   orders: [],
@@ -107,11 +107,11 @@ const initialState: MapRatedState = {
   loading: true,
 };
 
-const MapRatedContext = createContext<MapRatedContextType | undefined>(undefined);
+const ReviewSailContext = createContext<ReviewSailContextType | undefined>(undefined);
 
-export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
+export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
   const { session } = useAuth();
-  const [state, setState] = useState<MapRatedState>(initialState);
+  const [state, setState] = useState<ReviewSailState>(initialState);
 
   const refreshData = async () => {
     if (!session?.user) return;
@@ -509,7 +509,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <MapRatedContext.Provider
+    <ReviewSailContext.Provider
       value={{
         ...state,
         setActiveLocationId,
@@ -529,14 +529,14 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       }}
     >
       {children}
-    </MapRatedContext.Provider>
+    </ReviewSailContext.Provider>
   );
 };
 
-export const useMapRated = () => {
-  const context = useContext(MapRatedContext);
+export const useReviewSail = () => {
+  const context = useContext(ReviewSailContext);
   if (context === undefined) {
-    throw new Error('useMapRated must be used within a MapRatedProvider');
+    throw new Error('useReviewSail must be used within a ReviewSailProvider');
   }
   return context;
 };
