@@ -1,19 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useReviewSail } from '../context/ReviewSailContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../integrations/supabase/client';
 import {
-  MapPin, Plus, Trash2, Save, Mail, MessageSquare, Users,
+  MapPin, Plus, Trash2, Save, Mail, Users,
   UserPlus, RefreshCw, AlertCircle, CheckCircle, BedDouble,
-  User, Lock, CreditCard, Building2, Smartphone, Clock, Settings2
+  User, Lock, CreditCard, Building2, Smartphone, Clock, Settings2, Code, RotateCcw
 } from 'lucide-react';
 
 type TabId = 'property' | 'messaging' | 'team' | 'subscription' | 'account';
 
 const TABS: { key: TabId; label: string; icon: typeof MapPin; description: string }[] = [
   { key: 'property', label: 'Property', icon: Building2, description: 'Manage your properties and configure their settings.' },
-  { key: 'messaging', label: 'Messaging', icon: Mail, description: 'Customize your email and SMS message templates.' },
+  { key: 'messaging', label: 'Messaging', icon: Mail, description: 'Customize email and SMS templates with live preview and placeholder insert.' },
   { key: 'team', label: 'Team', icon: Users, description: 'Invite and manage team members.' },
   { key: 'subscription', label: 'Subscription', icon: CreditCard, description: 'View and manage your subscription plan and billing status.' },
   { key: 'account', label: 'Account', icon: User, description: 'Manage your profile, security, and account settings.' },
@@ -98,6 +98,40 @@ export default function Settings() {
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState('');
 
+  // Template editor refs
+  const emailRef = useRef<HTMLTextAreaElement>(null);
+  const smsRef = useRef<HTMLTextAreaElement>(null);
+
+  const EMAIL_DEFAULT = 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}';
+  const SMS_DEFAULT = 'Hi {firstName}, please share your experience with us at {reviewLink}';
+
+  const insertPlaceholder = (placeholder: string, ref: React.RefObject<HTMLTextAreaElement | null>) => {
+    const textarea = ref.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const updated = text.substring(0, start) + placeholder + text.substring(end);
+    if (ref === emailRef) setEmailTemplate(updated);
+    else setSmsTemplate(updated);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const pos = start + placeholder.length;
+      textarea.setSelectionRange(pos, pos);
+    });
+  };
+
+  const resetEmail = () => setEmailTemplate(EMAIL_DEFAULT);
+  const resetSms = () => setSmsTemplate(SMS_DEFAULT);
+
+  const renderPreview = (template: string): string => {
+    return template
+      .replace(/\{firstName\}/g, 'John')
+      .replace(/\{lastName\}/g, 'Doe')
+      .replace(/\{reviewLink\}/g, 'reviewsail.app/review/abc123')
+      .replace(/\{propertyName\}/g, activeLoc?.name || 'Your Property');
+  };
+
   const loadActiveLocation = () => {
     if (activeLoc) {
       setName(activeLoc.name);
@@ -108,8 +142,8 @@ export default function Settings() {
       setEnableEmail(activeLoc.enableEmail);
       setEnableSms(activeLoc.enableSms);
       setMidstayEnabled(activeLoc.midstayEnabled);
-      setEmailTemplate(activeLoc.templateText || 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}');
-      setSmsTemplate(activeLoc.smsTemplateText || 'Hi {firstName}, please share your experience with us at {reviewLink}');
+      setEmailTemplate(activeLoc.templateText || EMAIL_DEFAULT);
+      setSmsTemplate(activeLoc.smsTemplateText || SMS_DEFAULT);
     }
   };
 
@@ -438,29 +472,114 @@ export default function Settings() {
 
         {/* ===== Messaging Tab ===== */}
         {activeTab === 'messaging' && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Message Templates</h3>
               <p className="text-sm text-slate-500 mt-0.5">
-                Customize the messages sent to guests. Use placeholders like {'{firstName}'}, {'{lastName}'}, and {'{reviewLink}'}.
+                Customize the messages sent to guests. Click a <span className="font-mono text-indigo-600 bg-indigo-50 px-1 rounded">{'{placeholder}'}</span> to insert it — it will be replaced with real data when sent.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-700 flex items-center space-x-2">
-                  <Mail className="h-4 w-4 text-slate-400" /> <span>Email Template</span>
-                </label>
-                <textarea rows={6} value={emailTemplate} onChange={(e) => setEmailTemplate(e.target.value)}
-                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white resize-y" />
+            {/* Email Template Card */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex items-center space-x-3">
+                  <div className="h-9 w-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                    <Mail className="h-4 w-4 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">Email Template</h4>
+                    <p className="text-xs text-slate-400">Sent when a review invite is triggered via email</p>
+                  </div>
+                </div>
+                <button onClick={resetEmail}
+                  className="text-xs text-slate-500 hover:text-slate-700 flex items-center space-x-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                  title="Reset to default">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Reset</span>
+                </button>
               </div>
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-700 flex items-center space-x-2">
-                  <MessageSquare className="h-4 w-4 text-slate-400" /> <span>SMS Template</span>
-                </label>
-                <textarea rows={6} value={smsTemplate} onChange={(e) => setSmsTemplate(e.target.value)}
-                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white resize-y" />
-                <p className="text-xs text-slate-400">SMS messages are limited to 160 characters. Be concise.</p>
+              <div className="p-5 space-y-3">
+                {/* Placeholder chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  {['{firstName}', '{lastName}', '{reviewLink}', '{propertyName}'].map((p) => (
+                    <button key={p} onClick={() => insertPlaceholder(p, emailRef)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors">
+                      <Code className="h-3 w-3" />{p}
+                    </button>
+                  ))}
+                  <span className="text-[11px] text-slate-400 self-center ml-1">Click to insert</span>
+                </div>
+                <textarea ref={emailRef} rows={5} value={emailTemplate}
+                  onChange={(e) => setEmailTemplate(e.target.value)}
+                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white resize-y font-mono leading-relaxed" />
+                {/* Live preview */}
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Preview</p>
+                  <p className="text-sm text-slate-700 leading-relaxed">{renderPreview(emailTemplate) || <span className="italic text-slate-300">Empty template</span>}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* SMS Template Card */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex items-center space-x-3">
+                  <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <Smartphone className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">SMS Template</h4>
+                    <p className="text-xs text-slate-400">Sent when a review invite is triggered via text message</p>
+                  </div>
+                </div>
+                <button onClick={resetSms}
+                  className="text-xs text-slate-500 hover:text-slate-700 flex items-center space-x-1 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                  title="Reset to default">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <div className="p-5 space-y-3">
+                {/* Placeholder chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  {['{firstName}', '{reviewLink}', '{propertyName}'].map((p) => (
+                    <button key={p} onClick={() => insertPlaceholder(p, smsRef)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors">
+                      <Code className="h-3 w-3" />{p}
+                    </button>
+                  ))}
+                  <span className="text-[11px] text-slate-400 self-center ml-1">Click to insert</span>
+                </div>
+                <textarea ref={smsRef} rows={4} value={smsTemplate}
+                  onChange={(e) => setSmsTemplate(e.target.value)}
+                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white resize-y font-mono leading-relaxed" />
+                {/* Character counter */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 flex-1">
+                    <div className="flex-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          smsTemplate.length > 160 ? 'bg-red-500' : smsTemplate.length > 120 ? 'bg-amber-400' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${Math.min((smsTemplate.length / 160) * 100, 100)}%` }}
+                      />
+                    </div>
+                    <span className={`text-xs font-medium shrink-0 ${
+                      smsTemplate.length > 160 ? 'text-red-600' : smsTemplate.length > 120 ? 'text-amber-600' : 'text-slate-500'
+                    }`}>
+                      {smsTemplate.length}/160
+                    </span>
+                  </div>
+                  {smsTemplate.length > 160 && (
+                    <span className="text-[11px] text-red-600 ml-3">Message exceeds limit</span>
+                  )}
+                </div>
+                {/* Live preview */}
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Preview</p>
+                  <p className="text-sm text-slate-700 leading-relaxed">{renderPreview(smsTemplate) || <span className="italic text-slate-300">Empty template</span>}</p>
+                </div>
               </div>
             </div>
 
