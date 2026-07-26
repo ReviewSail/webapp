@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMapRated } from '../context/MapRatedContext';
+import { useReviewSail } from '../context/ReviewSailContext';
 import { AlertCircle, MessageSquare, BarChart3 } from 'lucide-react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -21,7 +21,7 @@ export default function Dashboard() {
     subscribe,
     respondToFeedback,
     unreadPrivateFeedbackCount
-  } = useMapRated();
+  } = useReviewSail();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
