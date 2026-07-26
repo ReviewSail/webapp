@@ -6,13 +6,13 @@ import { supabase } from '../integrations/supabase/client';
 import {
   MapPin, Plus, Trash2, Save, Mail, MessageSquare, Users,
   UserPlus, RefreshCw, AlertCircle, CheckCircle, BedDouble,
-  User, Lock, CreditCard, Building2, Smartphone, Clock
+  User, Lock, CreditCard, Building2, Smartphone, Clock, Settings2
 } from 'lucide-react';
 
 type TabId = 'property' | 'messaging' | 'team' | 'subscription' | 'account';
 
 const TABS: { key: TabId; label: string; icon: typeof MapPin; description: string }[] = [
-  { key: 'property', label: 'Property', icon: Building2, description: 'Manage your property details, timezone, and communication channels.' },
+  { key: 'property', label: 'Property', icon: Building2, description: 'Manage your properties and configure their settings.' },
   { key: 'messaging', label: 'Messaging', icon: Mail, description: 'Customize your email and SMS message templates.' },
   { key: 'team', label: 'Team', icon: Users, description: 'Invite and manage team members.' },
   { key: 'subscription', label: 'Subscription', icon: CreditCard, description: 'View and manage your subscription plan and billing status.' },
@@ -296,11 +296,67 @@ export default function Settings() {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         {/* ===== Property Tab ===== */}
         {activeTab === 'property' && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Property Settings</h3>
-              <p className="text-sm text-slate-500 mt-0.5">Configure how this property operates.</p>
-            </div>
+          <div className="space-y-8">
+            {/* Properties Management */}
+            <section>
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <Building2 className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Properties</h3>
+                  <p className="text-sm text-slate-500">Add, switch between, and manage your properties.</p>
+                </div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                <div className="space-y-2">
+                  {locations.map((loc) => (
+                    <div key={loc.id} className={`flex items-center justify-between bg-white p-3 rounded-xl border transition-colors ${
+                      activeLoc?.id === loc.id ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200'
+                    }`}>
+                      <button
+                        onClick={() => setActiveLocationId(loc.id)}
+                        className="flex items-center space-x-3 flex-1 text-left"
+                      >
+                        <MapPin className="h-4 w-4 text-slate-400" />
+                        <span className="text-sm font-medium text-slate-700">{loc.name}</span>
+                        {activeLoc?.id === loc.id && (
+                          <span className="text-[10px] font-semibold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Active</span>
+                        )}
+                      </button>
+                      <button onClick={() => handleDeleteLocation(loc.id)}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete property">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-dashed border-slate-200 space-y-3">
+                  <input id="new-location-input" type="text" value={newLocationName}
+                    onChange={(e) => setNewLocationName(e.target.value)} placeholder="New property name"
+                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border bg-white" />
+                  <input type="text" value={newLocationUrl} onChange={(e) => setNewLocationUrl(e.target.value)}
+                    placeholder="Google Maps URL (optional)"
+                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border bg-white" />
+                  <button onClick={handleAddLocation} disabled={saving || !newLocationName.trim()}
+                    className="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2">
+                    <Plus className="h-4 w-4" /> <span>{saving ? 'Adding...' : 'Add Property'}</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {/* Property Settings */}
+            <section>
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
+                  <Settings2 className="h-5 w-5 text-slate-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Current Property Settings</h3>
+                  <p className="text-sm text-slate-500">Configure how <span className="font-semibold text-slate-700">{activeLoc?.name || 'this property'}</span> operates.</p>
+                </div>
+              </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
@@ -376,6 +432,7 @@ export default function Settings() {
               {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               <span>{saving ? 'Saving...' : 'Save Property Settings'}</span>
             </button>
+            </section>
           </div>
         )}
 
@@ -546,47 +603,6 @@ export default function Settings() {
                   {passwordSaving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
                   <span>{passwordSaving ? 'Updating...' : 'Change Password'}</span>
                 </button>
-              </div>
-            </section>
-
-            {/* Properties */}
-            <section>
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
-                  <MapPin className="h-5 w-5 text-slate-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Properties</h3>
-                  <p className="text-sm text-slate-500">Manage your properties.</p>
-                </div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
-                <div className="space-y-2">
-                  {locations.map((loc) => (
-                    <div key={loc.id} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
-                      <div className="flex items-center space-x-3">
-                        <MapPin className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm font-medium text-slate-700">{loc.name}</span>
-                      </div>
-                      <button onClick={() => handleDeleteLocation(loc.id)}
-                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete property">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <div className="bg-white rounded-xl p-4 border border-dashed border-slate-200 space-y-3">
-                  <input id="new-location-input" type="text" value={newLocationName}
-                    onChange={(e) => setNewLocationName(e.target.value)} placeholder="New property name"
-                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border bg-white" />
-                  <input type="text" value={newLocationUrl} onChange={(e) => setNewLocationUrl(e.target.value)}
-                    placeholder="Google Maps URL (optional)"
-                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2 px-3 border bg-white" />
-                  <button onClick={handleAddLocation} disabled={saving || !newLocationName.trim()}
-                    className="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2">
-                    <Plus className="h-4 w-4" /> <span>{saving ? 'Adding...' : 'Add Property'}</span>
-                  </button>
-                </div>
               </div>
             </section>
 
