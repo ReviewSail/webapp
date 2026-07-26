@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useMapRated, PrivateFeedback } from '../../context/MapRatedContext';
+import { useReviewSail } from '../../context/ReviewSailContext';
 import { Star, MessageSquare, Eye, Check, ExternalLink, Trash2, Search } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function PrivateFeedbackInbox() {
-  const { feedbacks, reviewRequests, orders, customers, locations, markPrivateFeedbackRead, loading } = useMapRated();
-  const [selectedFeedback, setSelectedFeedback] = useState<PrivateFeedback | null>(null);
+  const { feedbacks, reviewRequests, orders, customers, locations, markPrivateFeedbackRead, loading } = useReviewSail();
+  const [selectedFeedback, setSelectedFeedback] = useState<any>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -13,7 +13,7 @@ export function PrivateFeedbackInbox() {
     await markPrivateFeedbackRead(id);
   };
 
-  const handleView = (fb: PrivateFeedback) => {
+  const handleView = (fb: any) => {
     setSelectedFeedback(fb);
     if (!fb.isRead) {
       handleMarkRead(fb.id);
@@ -25,9 +25,8 @@ export function PrivateFeedbackInbox() {
     return loc?.name || 'Unknown Location';
   };
 
-  const getGuestName = (fb: PrivateFeedback) => {
+  const getGuestName = (fb: any) => {
     if (fb.guestName) return fb.guestName;
-    // Try to find from request -> order -> customer
     const req = reviewRequests.find(r => r.id === fb.requestId);
     if (req) {
       const order = orders.find(o => o.id === req.orderId);
@@ -39,19 +38,21 @@ export function PrivateFeedbackInbox() {
     return 'Anonymous';
   };
 
-  const filteredFeedbacks = feedbacks.filter(fb => {
+  // Filter and sort
+  const filteredFeedbacks = (feedbacks || []).filter(fb => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const name = getGuestName(fb).toLowerCase();
     const location = getLocationName(fb.locationId).toLowerCase();
-    const text = (fb.feedbackText || '').toLowerCase();
+    const text = (fb.feedbackText || fb.comment || '').toLowerCase();
     const email = (fb.guestEmail || '').toLowerCase();
     return name.includes(q) || location.includes(q) || text.includes(q) || email.includes(q);
   });
 
-  // Sort: unread first, then by date desc
   const sortedFeedbacks = [...filteredFeedbacks].sort((a, b) => {
-    if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
+    const aRead = a.isRead ?? true;
+    const bRead = b.isRead ?? true;
+    if (aRead !== bRead) return aRead ? 1 : -1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
@@ -68,7 +69,6 @@ export function PrivateFeedbackInbox() {
 
   return (
     <div className="space-y-4">
-      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
         <input
@@ -104,10 +104,12 @@ export function PrivateFeedbackInbox() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {sortedFeedbacks.map((fb) => {
+                {sortedFeedbacks.map((fb: any) => {
                   const isUnread = !fb.isRead;
                   const guestName = getGuestName(fb);
                   const locationName = getLocationName(fb.locationId);
+                  const starRating = fb.starRating ?? fb.rating ?? 0;
+                  const feedbackText = fb.feedbackText ?? fb.comment ?? '';
 
                   return (
                     <tr key={fb.id} className={`hover:bg-slate-50/50 transition-colors ${isUnread ? 'bg-indigo-50/30' : ''}`}>
@@ -138,7 +140,7 @@ export function PrivateFeedbackInbox() {
                             <Star
                               key={star}
                               className={`h-3.5 w-3.5 ${
-                                star <= fb.starRating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
+                                star <= starRating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
                               }`}
                             />
                           ))}
@@ -146,9 +148,9 @@ export function PrivateFeedbackInbox() {
                       </td>
                       <td className="px-6 py-4 max-w-xs">
                         <p className="text-xs text-slate-600 line-clamp-2">
-                          {fb.feedbackText || 'No text provided.'}
+                          {feedbackText || 'No text provided.'}
                         </p>
-                        {fb.feedbackText && fb.feedbackText.length > 100 && (
+                        {feedbackText.length > 100 && (
                           <button
                             onClick={() => setExpandedId(expandedId === fb.id ? null : fb.id)}
                             className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold mt-1"
@@ -158,7 +160,7 @@ export function PrivateFeedbackInbox() {
                         )}
                         {expandedId === fb.id && (
                           <div className="mt-2 p-3 bg-slate-50 rounded-lg text-xs text-slate-700 border border-slate-100">
-                            {fb.feedbackText}
+                            {feedbackText}
                           </div>
                         )}
                       </td>

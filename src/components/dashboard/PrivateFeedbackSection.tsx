@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { PrivateFeedback, ReviewRequest, Order, Customer } from '../../context/MapRatedContext';
 import { Star, MessageSquare, Reply, CornerDownRight, CheckCircle, Download } from 'lucide-react';
 import { format } from 'date-fns';
+import { useReviewSail } from '../../context/ReviewSailContext';
 
 interface PrivateFeedbackSectionProps {
-  feedbacks: PrivateFeedback[];
-  reviewRequests: ReviewRequest[];
-  orders: Order[];
-  customers: Customer[];
+  feedbacks: any[];
+  reviewRequests: any[];
+  orders: any[];
+  customers: any[];
   onRespond: (id: string, response: string) => Promise<void>;
 }
 
@@ -39,36 +39,31 @@ export function PrivateFeedbackSection({
     }
   };
 
-  // Export Feedback CSV (Requirement 2)
   const handleExportFeedbackCSV = () => {
     if (feedbacks.length === 0) return;
 
-    // Headers
     const headers = ['Guest Name', 'Star Rating', 'Private Comment', 'Submission Date', 'Manager Response'];
 
-    // Map rows
-    const rows = feedbacks.map(fb => {
-      const request = reviewRequests.find(r => r.id === fb.requestId);
-      const order = request ? orders.find(o => o.id === request.orderId) : null;
-      const customer = order ? customers.find(c => c.id === order.customerId) : null;
+    const rows = feedbacks.map((fb: any) => {
+      const request = reviewRequests.find((r: any) => r.id === fb.requestId);
+      const order = request ? orders.find((o: any) => o.id === request.orderId) : null;
+      const customer = order ? customers.find((c: any) => c.id === order.customerId) : null;
       const guestName = customer ? `${customer.firstName} ${customer.lastName}` : 'Confidential Guest';
 
       return [
         guestName,
         fb.rating.toString(),
-        fb.comment || '',
+        fb.comment || fb.feedbackText || '',
         fb.createdAt ? format(new Date(fb.createdAt), 'yyyy-MM-dd HH:mm') : '',
         fb.managerResponse || ''
       ];
     });
 
-    // Create CSV String
     const csvContent = [
       headers.join(','),
       ...rows.map(r => r.map(val => `"${val.replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
-    // Trigger Browser Download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -112,10 +107,10 @@ export function PrivateFeedbackSection({
         </div>
       ) : (
         <div className="divide-y divide-slate-100">
-          {feedbacks.map((fb) => {
-            const request = reviewRequests.find(r => r.id === fb.requestId);
-            const order = request ? orders.find(o => o.id === request.orderId) : null;
-            const customer = order ? customers.find(c => c.id === order.customerId) : null;
+          {feedbacks.map((fb: any) => {
+            const request = reviewRequests.find((r: any) => r.id === fb.requestId);
+            const order = request ? orders.find((o: any) => o.id === request.orderId) : null;
+            const customer = order ? customers.find((c: any) => c.id === order.customerId) : null;
 
             return (
               <div key={fb.id} className="p-6 hover:bg-slate-50/30 transition-colors space-y-4">
@@ -134,7 +129,6 @@ export function PrivateFeedbackSection({
                     </div>
                   </div>
 
-                  {/* Stars display */}
                   <div className="flex items-center space-x-1">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <Star
@@ -147,12 +141,10 @@ export function PrivateFeedbackSection({
                   </div>
                 </div>
 
-                {/* Private comment body */}
                 <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-700 leading-relaxed border border-slate-100">
-                  <p className="italic">"{fb.comment || 'No written message.'}"</p>
+                  <p className="italic">"{fb.comment || fb.feedbackText || 'No written message.'}"</p>
                 </div>
 
-                {/* Manager Response area */}
                 {fb.managerResponse ? (
                   <div className="pl-6 flex items-start space-x-2.5">
                     <CornerDownRight className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
