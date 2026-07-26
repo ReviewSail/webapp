@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useReviewSail } from '../context/ReviewSailContext';
 import { AlertCircle, MessageSquare, BarChart3 } from 'lucide-react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { TrialBanner } from '../components/dashboard/TrialBanner';
 import { OnboardingWizard } from '../components/dashboard/OnboardingWizard';
@@ -24,7 +24,6 @@ export default function Dashboard() {
   } = useReviewSail();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [upgrading, setUpgrading] = useState(false);
 
   const activeTab = searchParams.get('tab') || 'overview';
@@ -62,7 +61,6 @@ export default function Dashboard() {
   const totalLogs = activeLocRequests.length;
 
   const accessDenied = searchParams.get('access_denied') === 'true';
-  const hasPrivateFeedback = feedbacks.length > 0;
 
   const tabs = [
     { key: 'overview', label: 'Overview', icon: BarChart3 },

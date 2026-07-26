@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useReviewSail } from '../../context/ReviewSailContext';
-import { Star, MessageSquare, Eye, Check, ExternalLink, Trash2, Search } from 'lucide-react';
+import { Star, MessageSquare, Eye, Check, Search } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function PrivateFeedbackInbox() {
   const { feedbacks, reviewRequests, orders, customers, locations, markPrivateFeedbackRead, loading } = useReviewSail();
-  const [selectedFeedback, setSelectedFeedback] = useState<any>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -14,7 +13,6 @@ export function PrivateFeedbackInbox() {
   };
 
   const handleView = (fb: any) => {
-    setSelectedFeedback(fb);
     if (!fb.isRead) {
       handleMarkRead(fb.id);
     }
@@ -43,7 +41,7 @@ export function PrivateFeedbackInbox() {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const name = getGuestName(fb).toLowerCase();
-    const location = getLocationName(fb.locationId).toLowerCase();
+    const location = getLocationName(fb.locationId ?? null).toLowerCase();
     const text = (fb.feedbackText || fb.comment || '').toLowerCase();
     const email = (fb.guestEmail || '').toLowerCase();
     return name.includes(q) || location.includes(q) || text.includes(q) || email.includes(q);
@@ -121,7 +119,7 @@ export function PrivateFeedbackInbox() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-3">
                           <div className="h-8 w-8 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center">
-                            {guestName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            {guestName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                           </div>
                           <div>
                             <p className="text-sm font-semibold text-slate-800">{guestName}</p>

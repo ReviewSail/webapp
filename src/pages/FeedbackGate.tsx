@@ -96,7 +96,7 @@ export default function FeedbackGate() {
         event_type: 'clicked',
       }).then(() => {
         supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
-      }).catch(console.error);
+      }).catch((err: any) => console.error(err));
     }
   }, [requestId, loading, isDemo]);
 

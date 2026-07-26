@@ -10,7 +10,18 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
   const actions = useReviewSailActions({ state, setState, refreshData });
 
   const contextValue: ReviewSailContextType = {
-    ...state,
+    locations: state.locations,
+    customers: state.customers,
+    orders: state.orders,
+    reviewRequests: state.reviewRequests,
+    optOuts: state.optOuts,
+    messageEvents: state.messageEvents,
+    feedbacks: state.feedbacks,
+    activeLocationId: state.activeLocationId,
+    subscriptionStatus: state.subscriptionStatus,
+    stripeCustomerId: state.stripeCustomerId,
+    loading: state.loading,
+    unreadPrivateFeedbackCount: state.unreadPrivateFeedbackCount,
     setActiveLocationId,
     refreshData,
     ...actions,
