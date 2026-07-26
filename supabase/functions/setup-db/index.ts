@@ -39,7 +39,8 @@ serve(async (req) => {
       ADD COLUMN IF NOT EXISTS enable_email BOOLEAN DEFAULT TRUE,
       ADD COLUMN IF NOT EXISTS enable_sms BOOLEAN DEFAULT TRUE,
       ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS preferred_send_hour INTEGER DEFAULT 10;
+      ADD COLUMN IF NOT EXISTS preferred_send_hour INTEGER DEFAULT 10,
+      ADD COLUMN IF NOT EXISTS recovery_email TEXT;
     `);
 
     // 3. Add stripe billing columns to accounts table
@@ -194,7 +195,7 @@ serve(async (req) => {
       `);
     } catch (_) { /* Policy already exists */ }
 
-    // 6. Update RLS policies to enforce admin role checks on accounts and locations
+    // 6. Update RLS policies to enforce admin role checks on locations and accounts
     console.log("[setup-db] Updating role-based RLS policies for locations and accounts...");
     
     // Drop old policies to rebuild with role checks

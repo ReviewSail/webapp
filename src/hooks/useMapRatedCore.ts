@@ -72,6 +72,7 @@ export function useMapRatedCore() {
         enableSms: l.enable_sms !== false,
         onboardingComplete: l.onboarding_complete === true,
         preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
+        recoveryEmail: l.recovery_email || '',
       }));
 
       // Fetch message templates

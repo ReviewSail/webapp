@@ -20,6 +20,7 @@ export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps
       account_id: userData.account_id, name,
       google_place_url: googleUrl || '', timezone: 'UTC',
       enable_email: true, enable_sms: true, onboarding_complete: false, preferred_send_hour: 10,
+      recovery_email: '',
     }).select().single();
     if (error) { console.error(error); return null; }
     await supabase.from('message_templates').insert([
@@ -27,7 +28,7 @@ export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps
       { location_id: data.id, type: 'sms', template_text: 'Hi {firstName}, please share your experience with us at {reviewLink}' },
     ]);
     await refreshData();
-    return { id: data.id, name: data.name, googlePlaceUrl: data.google_place_url || '', timezone: 'UTC', enableEmail: true, enableSms: true, onboardingComplete: false, preferredSendHour: 10 };
+    return { id: data.id, name: data.name, googlePlaceUrl: data.google_place_url || '', timezone: 'UTC', enableEmail: true, enableSms: true, onboardingComplete: false, preferredSendHour: 10, recoveryEmail: '' };
   }, [session, refreshData]);
 
   const deleteLocation = useCallback(async (id: string) => {
@@ -103,6 +104,113 @@ export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps
     if (!session?.user) return { success: false, count: 0, error: 'Not authenticated' };
     try {
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+      if (!userData) return { success: false, count: 0, error: 'No user account linked<dyad-write path="src/hooks/useMapRatedActions.ts" description="Complete the useMapRatedActions hook with recovery email support">
+import { useCallback } from 'react';
+import { supabase } from '../integrations/supabase/client';
+import { useAuth } from '../context/AuthContext';
+import { MapRatedState, Location, Customer, Order } from '../types/mapRated';
+
+type ActionsDeps = {
+  state: MapRatedState;
+  setState: React.Dispatch<React.SetStateAction<MapRatedState>>;
+  refreshData: () => Promise<void>;
+};
+
+export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps) {
+  const { session } = useAuth();
+
+  const addLocation = useCallback(async (name: string, googleUrl?: string) => {
+    if (!session?.user) return null;
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+    if (!userData) return null;
+    const { data, error } = await supabase.from('locations').insert({
+      account_id: userData.account_id, name,
+      google_place_url: googleUrl || '', timezone: 'UTC',
+      enable_email: true, enable_sms: true, onboarding_complete: false, preferred_send_hour: 10,
+      recovery_email: '',
+    }).select().single();
+    if (error) { console.error(error); return null; }
+    await supabase.from('message_templates').insert([
+      { location_id: data.id, type: 'email', template_text: 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}' },
+      { location_id: data.id, type: 'sms', template_text: 'Hi {firstName}, please share your experience with us at {reviewLink}' },
+    ]);
+    await refreshData();
+    return { id: data.id, name: data.name, googlePlaceUrl: data.google_place_url || '', timezone: 'UTC', enableEmail: true, enableSms: true, onboardingComplete: false, preferredSendHour: 10, recoveryEmail: '' };
+  }, [session, refreshData]);
+
+  const deleteLocation = useCallback(async (id: string) => {
+    const { error } = await supabase.from('locations').delete().eq('id', id);
+    if (error) throw error;
+    setState(prev => ({
+      ...prev,
+      locations: prev.locations.filter(l => l.id !== id),
+      activeLocationId: prev.activeLocationId === id ? (prev.locations.length > 1 ? prev.locations.find(l => l.id !== id)?.id || null : null) : prev.activeLocationId,
+    }));
+    await refreshData();
+  }, [setState, refreshData]);
+
+  const addCustomer = useCallback(async (customer: Omit<Customer, 'id'>) => {
+    if (!session?.user) return null;
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+    if (!userData) return null;
+    const { data, error } = await supabase.from('customers').insert({
+      account_id: userData.account_id,
+      first_name: customer.firstName, last_name: customer.lastName,
+      email: customer.email, phone: customer.phone,
+    }).select().single();
+    if (error) { console.error(error); return null; }
+    await refreshData();
+    return { id: data.id, firstName: data.first_name, lastName: data.last_name, email: data.email, phone: data.phone };
+  }, [session, refreshData]);
+
+  const addOrder = useCallback(async (order: Omit<Order, 'id'>) => {
+    const { data, error } = await supabase.from('orders').insert({
+      location_id: order.locationId, customer_id: order.customerId,
+      checkout_date: order.checkoutDate, status: order.status,
+    }).select().single();
+    if (error) { console.error(error); return null; }
+    await refreshData();
+    return { id: data.id, customerId: data.customer_id, locationId: data.location_id, checkoutDate: data.checkout_date, status: data.status as Order['status'] };
+  }, [refreshData]);
+
+  const addOptOut = useCallback(async (email: string) => {
+    await supabase.from('opt_outs').insert({ email });
+    await refreshData();
+  }, [refreshData]);
+
+  const addReviewRequest = useCallback(async (orderId: string) => {
+    const order = state.orders.find(o => o.id === orderId);
+    const customer = order ? state.customers.find(c => c.id === order.customerId) : null;
+    let status = 'pending';
+    if (customer && state.optOuts.some(o => o.email === customer.email)) {
+      status = 'opted_out';
+    }
+    await supabase.from('review_requests').insert({ order_id: orderId, status });
+    await refreshData();
+  }, [state.orders, state.customers, state.optOuts, refreshData]);
+
+  const completeOnboarding = useCallback(async (locationId: string) => {
+    const { error } = await supabase.from('locations').update({ onboarding_complete: true }).eq('id', locationId);
+    if (error) throw error;
+    await refreshData();
+  }, [refreshData]);
+
+  const triggerSingleResend = useCallback(async (requestId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke('process-reviews', { body: { review_request_id: requestId } });
+      if (error) throw error;
+      await refreshData();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Resend process failed' };
+    }
+  }, [refreshData]);
+
+  const bulkImport = useCallback(async (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string }>) => {
+    if (!state.activeLocationId) return { success: false, count: 0, error: 'No active location selected' };
+    if (!session?.user) return { success: false, count: 0, error: 'Not authenticated' };
+    try {
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
       if (!userData) return { success: false, count: 0, error: 'No user account linked' };
       const accountId = userData.account_id;
       const { data: insertedCustomers, error: custError } = await supabase
@@ -142,6 +250,7 @@ export function useMapRatedActions({ state, setState, refreshData }: ActionsDeps
     if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
     if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
     if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
+    if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;
     if (Object.keys(updateData).length > 0) {
       await supabase.from('locations').update(updateData).eq('id', id);
     }

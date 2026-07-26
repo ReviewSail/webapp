@@ -13,6 +13,7 @@ export type Location = {
   enableSms: boolean;
   onboardingComplete: boolean;
   preferredSendHour: number;
+  recoveryEmail: string;
 };
 
 export type Customer = {
@@ -164,7 +165,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
         enableEmail: l.enable_email !== false,
         enableSms: l.enable_sms !== false,
         onboardingComplete: l.onboarding_complete === true,
-        preferredSendHour: l.preferred_send_hour !== null && l.preferred_send_hour !== undefined ? l.preferred_send_hour : 10
+        preferredSendHour: l.preferred_send_hour !== null && l.preferred_send_hour !== undefined ? l.preferred_send_hour : 10,
+        recoveryEmail: l.recovery_email || '',
       }));
 
       const { data: templatesData } = await supabase.from('message_templates').select('*');
@@ -272,7 +274,8 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       enable_email: true,
       enable_sms: true,
       onboarding_complete: false,
-      preferred_send_hour: 10
+      preferred_send_hour: 10,
+      recovery_email: '',
     }).select().single();
 
     if (error) {
@@ -301,7 +304,326 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
       enableEmail: true,
       enableSms: true,
       onboardingComplete: false,
-      preferredSendHour: 10
+      preferredSendHour: 10,
+      recoveryEmail: '',
+    };
+  };
+
+  const deleteLocation = async (id: string) => {
+    const { error } = await supabase.from('locations').delete().eq('id', id);
+    if (error) {
+      console.error(error);
+      throw error;
+    }
+    set<dyad-write path="src/context/MapRatedContext.tsx" description="Complete the MapRatedContext with recoveryEmail support">
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../integrations/supabase/client';
+import { useAuth } from './AuthContext';
+
+export type Location = {
+  id: string;
+  name: string;
+  googlePlaceUrl: string;
+  templateText?: string;
+  smsTemplateText?: string;
+  timezone: string;
+  enableEmail: boolean;
+  enableSms: boolean;
+  onboardingComplete: boolean;
+  preferredSendHour: number;
+  recoveryEmail: string;
+};
+
+export type Customer = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone?: string | null;
+};
+
+export type Order = {
+  id: string;
+  customerId: string;
+  locationId: string;
+  checkoutDate: string;
+  status: 'pending' | 'completed' | 'cancelled';
+};
+
+export type ReviewRequest = {
+  id: string;
+  orderId: string;
+  status: 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed';
+  sentAt?: string;
+};
+
+export type OptOut = {
+  id: string;
+  email: string | null;
+  phone?: string | null;
+  optOutDate: string;
+};
+
+export type MessageEvent = {
+  id: string;
+  requestId: string;
+  eventType: string;
+  createdAt: string;
+};
+
+export type PrivateFeedback = {
+  id: string;
+  requestId: string | null;
+  rating: number;
+  comment: string | null;
+  managerResponse: string | null;
+  createdAt: string;
+};
+
+type MapRatedState = {
+  locations: Location[];
+  customers: Customer[];
+  orders: Order[];
+  reviewRequests: ReviewRequest[];
+  optOuts: OptOut[];
+  messageEvents: MessageEvent[];
+  feedbacks: PrivateFeedback[];
+  activeLocationId: string | null;
+  subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null;
+  stripeCustomerId: string | null;
+  loading: boolean;
+};
+
+type MapRatedContextType = MapRatedState & {
+  setActiveLocationId: (id: string) => void;
+  addLocation: (name: string, googleUrl?: string) => Promise<Location | null>;
+  deleteLocation: (id: string) => Promise<void>;
+  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
+  addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
+  addOptOut: (email: string) => Promise<void>;
+  addReviewRequest: (orderId: string) => Promise<void>;
+  updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
+  respondToFeedback: (id: string, text: string) => Promise<void>;
+  refreshData: () => Promise<void>;
+  bulkImport: (rows: Array<{ firstName: string, lastName: string, email: string | null, phone?: string | null, checkoutDate: string }>) => Promise<{ success: boolean, count: number, error?: string }>;
+  subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
+  completeOnboarding: (locationId: string) => Promise<void>;
+  triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
+};
+
+const initialState: MapRatedState = {
+  locations: [],
+  customers: [],
+  orders: [],
+  reviewRequests: [],
+  optOuts: [],
+  messageEvents: [],
+  feedbacks: [],
+  activeLocationId: null,
+  subscriptionStatus: 'inactive',
+  stripeCustomerId: null,
+  loading: true,
+};
+
+const MapRatedContext = createContext<MapRatedContextType | undefined>(undefined);
+
+export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
+  const { session } = useAuth();
+  const [state, setState] = useState<MapRatedState>(initialState);
+
+  const refreshData = async () => {
+    if (!session?.user) return;
+    
+    setState(prev => ({ ...prev, loading: true }));
+    
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isMockSuccess = urlParams.get('mock_checkout_success') === 'true';
+      const mockAccountId = urlParams.get('account_id');
+
+      if (isMockSuccess && mockAccountId) {
+        console.log('[MapRatedContext] Intercepted mock checkout success. Activating subscription...');
+        const { error: mockUpdateError } = await supabase
+          .from('accounts')
+          .update({ subscription_status: 'active' })
+          .eq('id', mockAccountId);
+        
+        if (mockUpdateError) {
+          console.error('[MapRatedContext] Mock activation error:', mockUpdateError);
+        } else {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+
+      if (supabase && supabase.functions) {
+        supabase.functions.invoke('setup-db').catch((err) => {
+          console.warn('DB setup background invocation skipped or failed:', err);
+        });
+      }
+
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+      let subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null = 'inactive';
+      let stripeCustomerId = null;
+      
+      if (userData?.account_id) {
+        const { data: accData } = await supabase.from('accounts').select('subscription_status, stripe_customer_id').eq('id', userData.account_id).single();
+        if (accData) {
+          subscriptionStatus = (accData.subscription_status as any) || 'inactive';
+          stripeCustomerId = accData.stripe_customer_id || null;
+        }
+      }
+
+      const { data: locData } = await supabase.from('locations').select('*');
+      
+      const parsedLocations: Location[] = (locData || []).map(l => ({
+        id: l.id,
+        name: l.name,
+        googlePlaceUrl: l.google_place_url || '',
+        timezone: l.timezone || 'UTC',
+        enableEmail: l.enable_email !== false,
+        enableSms: l.enable_sms !== false,
+        onboardingComplete: l.onboarding_complete === true,
+        preferredSendHour: l.preferred_send_hour !== null && l.preferred_send_hour !== undefined ? l.preferred_send_hour : 10,
+        recoveryEmail: l.recovery_email || '',
+      }));
+
+      const { data: templatesData } = await supabase.from('message_templates').select('*');
+      
+      const locations = parsedLocations.map(loc => {
+        const emailTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'email');
+        const smsTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'sms');
+        return { 
+          ...loc, 
+          templateText: emailTemplate?.template_text || 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}', 
+          smsTemplateText: smsTemplate?.template_text || 'Hi {firstName}, please share your experience at {reviewLink}' 
+        };
+      });
+
+      const { data: custData } = await supabase.from('customers').select('*');
+      const customers: Customer[] = (custData || []).map(c => ({
+        id: c.id,
+        firstName: c.first_name,
+        lastName: c.last_name,
+        email: c.email,
+        phone: c.phone
+      }));
+
+      const { data: orderData } = await supabase.from('orders').select('*');
+      const orders: Order[] = (orderData || []).map(o => ({
+        id: o.id,
+        customerId: o.customer_id,
+        locationId: o.location_id,
+        checkoutDate: o.checkout_date,
+        status: o.status as 'pending' | 'completed' | 'cancelled'
+      }));
+
+      const { data: rrData } = await supabase.from('review_requests').select('*');
+      const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
+        id: r.id,
+        orderId: r.order_id,
+        status: r.status as 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed',
+        sentAt: r.sent_at
+      }));
+      
+      const { data: optData } = await supabase.from('opt_outs').select('*');
+      const optOuts: OptOut[] = (optData || []).map(o => ({
+        id: o.id,
+        email: o.email,
+        phone: o.phone,
+        optOutDate: o.opt_out_date
+      }));
+
+      const { data: eventData } = await supabase.from('message_events').select('*');
+      const messageEvents: MessageEvent[] = (eventData || []).map(e => ({
+        id: e.id,
+        requestId: e.request_id,
+        eventType: e.event_type,
+        createdAt: e.created_at
+      }));
+
+      const { data: fbData } = await supabase.from('feedback').select('*');
+      const feedbacks: PrivateFeedback[] = (fbData || []).map(f => ({
+        id: f.id,
+        requestId: f.request_id,
+        rating: f.rating,
+        comment: f.comment,
+        managerResponse: f.manager_response,
+        createdAt: f.created_at
+      }));
+
+      setState(prev => ({
+        ...prev,
+        locations,
+        customers,
+        orders,
+        reviewRequests,
+        optOuts,
+        messageEvents,
+        feedbacks,
+        subscriptionStatus,
+        stripeCustomerId,
+        activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
+        loading: false
+      }));
+
+    } catch (e) {
+      console.error('Failed to fetch from supabase:', e);
+      setState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  useEffect(() => {
+    refreshData();
+  }, [session?.user]);
+
+  const setActiveLocationId = (id: string) => {
+    setState((prev) => ({ ...prev, activeLocationId: id }));
+  };
+
+  const addLocation = async (name: string, googleUrl?: string) => {
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+    if (!userData) return null;
+
+    const { data, error } = await supabase.from('locations').insert({
+      account_id: userData.account_id,
+      name,
+      google_place_url: googleUrl || '',
+      timezone: 'UTC',
+      enable_email: true,
+      enable_sms: true,
+      onboarding_complete: false,
+      preferred_send_hour: 10,
+      recovery_email: '',
+    }).select().single();
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+
+    await supabase.from('message_templates').insert({
+      location_id: data.id,
+      type: 'email',
+      template_text: 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}'
+    });
+
+    await supabase.from('message_templates').insert({
+      location_id: data.id,
+      type: 'sms',
+      template_text: 'Hi {firstName}, please share your experience with us at {reviewLink}'
+    });
+
+    await refreshData();
+    return {
+      id: data.id,
+      name: data.name,
+      googlePlaceUrl: data.google_place_url || '',
+      timezone: 'UTC',
+      enableEmail: true,
+      enableSms: true,
+      onboardingComplete: false,
+      preferredSendHour: 10,
+      recoveryEmail: '',
     };
   };
 
@@ -504,6 +826,7 @@ export const MapRatedProvider = ({ children }: { children: ReactNode }) => {
     if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
     if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
     if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
+    if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;
 
     if (Object.keys(updateData).length > 0) {
       await supabase.from('locations').update(updateData).eq('id', id);

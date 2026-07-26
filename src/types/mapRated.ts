@@ -9,6 +9,7 @@ export type Location = {
   enableSms: boolean;
   onboardingComplete: boolean;
   preferredSendHour: number;
+  recoveryEmail: string;
 };
 
 export type Customer = {
