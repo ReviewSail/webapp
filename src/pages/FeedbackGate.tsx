@@ -18,11 +18,22 @@ export default function FeedbackGate() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
+  const [isDemo, setIsDemo] = useState(false);
 
   useEffect(() => {
     if (!requestId) {
       setLoading(false);
       setError('Missing request ID.');
+      return;
+    }
+
+    // Demo mode: show gate with placeholder data
+    if (requestId === 'demo') {
+      setIsDemo(true);
+      setLocationName('The Grand Hotel');
+      setGoogleUrl('');
+      setLocationId('');
+      setLoading(false);
       return;
     }
 
@@ -65,9 +76,9 @@ export default function FeedbackGate() {
     fetchDetails();
   }, [requestId]);
 
-  // Log click event when page loads
+  // Log click event (skip for demo)
   useEffect(() => {
-    if (requestId && !loading) {
+    if (requestId && !loading && !isDemo) {
       supabase.from('message_events').insert({
         request_id: requestId,
         event_type: 'clicked',
@@ -75,15 +86,16 @@ export default function FeedbackGate() {
         supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
       }).catch(console.error);
     }
-  }, [requestId, loading]);
+  }, [requestId, loading, isDemo]);
 
   const handleStarSelect = async (rating: number) => {
     setSelectedStars(rating);
 
     if (rating >= 4) {
-      // Happy guest: redirect to Google
-      // Update review request status to 'clicked'
-      await supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
+      // Happy guest: redirect to Google (skip for demo)
+      if (!isDemo) {
+        await supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
+      }
       if (googleUrl) {
         window.location.href = googleUrl;
       } else {
@@ -103,20 +115,25 @@ export default function FeedbackGate() {
     setError('');
 
     try {
-      const { error } = await supabase.from('private_feedback').insert({
-        request_id: requestId || null,
-        location_id: locationId || null,
-        star_rating: selectedStars,
-        feedback_text: feedbackText.trim(),
-        guest_name: guestName.trim() || null,
-        guest_email: guestEmail.trim() || null,
-        is_read: false,
-      });
+      if (!isDemo) {
+        const { error } = await supabase.from('private_feedback').insert({
+          request_id: requestId || null,
+          location_id: locationId || null,
+          star_rating: selectedStars,
+          feedback_text: feedbackText.trim(),
+          guest_name: guestName.trim() || null,
+          guest_email: guestEmail.trim() || null,
+          is_read: false,
+        });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      // Update review request status
-      await supabase.from('review_requests').update({ status: 'private_feedback' }).eq('id', requestId);
+        // Update review request status
+        await supabase.from('review_requests').update({ status: 'private_feedback' }).eq('id', requestId);
+      } else {
+        // Demo mode: simulate a brief delay
+        await new Promise(r => setTimeout(r, 500));
+      }
 
       setSubmitted(true);
     } catch (err: any) {
@@ -151,6 +168,14 @@ export default function FeedbackGate() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-indigo-50 px-4 py-12">
       <div className="w-full max-w-lg mx-auto">
+        {isDemo && (
+          <div className="text-center mb-4">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+              Preview Mode — Demo Data
+            </span>
+          </div>
+        )}
+        
         {!showPrivateForm && !submitted && (
           /* Initial star rating screen */
           <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 sm:p-10 text-center space-y-6">
