@@ -544,100 +544,115 @@ export default function SyncGuests() {
                       className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-sm text-slate-800"
                     >
                       <span className="flex items-center space-x-2">
-                        <span className="h-2 w-2 rounded-full bg-yellow-</div>
+                        <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                        <span>Expedia Partner Central Instructions</span>
+                      </span>
+                      {openSection === 'expedia' ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                    </button>
+                    {openSection === 'expedia' && (
+                      <div className="p-4 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 space-y-2.5">
+                        <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
+                          <li>Log into <strong>Expedia Partner Central</strong> and open the <strong>Reservations</strong> dashboard.</li>
+                          <li>Filter by <strong>Status: Checked Out</strong> to display only completed stays.</li>
+                          <li>Click the <strong>Export</strong> dropdown menu to select the CSV export option.</li>
+                          <li>Save the downloaded CSV report and upload it to ReviewSail.</li>
+                        </ol>
+                        <div className="bg-indigo-50 border border-indigo-100 text-indigo-800 p-2.5 rounded-lg font-medium mt-3">
+                          💡 <strong>Note:</strong> Upload the downloaded CSV file above after export.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
 
+              {/* Column Mapping Table Guide */}
+              <div>
+                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-3">Expected CSV Column Headers</h4>
+                <p className="text-xs text-slate-500 mb-4">
+                  ReviewSail accommodates diverse header titles automatically, but ensuring your column labels match or closely resemble the labels below will speed up ingestion:
+                </p>
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm text-xs">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Expected Column Header</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Alias Matches (Auto-Mapped)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white leading-relaxed">
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <User className="h-3.5 w-3.5 text-slate-400" />
+                          <span>First Name</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">First, FirstName, GuestFirstName, Name</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <User className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Last Name</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Last, LastName, GuestLastName, Surname</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <Mail className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Email</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Email, EmailAddress, GuestEmail, Mail</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <PhoneIcon className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Phone</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Phone, PhoneNumber, Mobile, Cell</td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Checkout Date</span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-slate-500">Checkout, CheckoutDate, DepartureDate</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2 italic">
+                  * Note: In order to successfully contact a guest, you must provide either an active Email Address or Phone Number.
+                </p>
               </div>
             </div>
 
-            {/* Column Mapping Table Guide */}
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-3">Expected CSV Column Headers</h4>
-              <p className="text-xs text-slate-500 mb-4">
-                ReviewSail accommodates diverse header titles automatically, but ensuring your column labels match or closely resemble the labels below will speed up ingestion:
-              </p>
-              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm text-xs">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-700">Expected Column Header</th>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
-                      <th className="px-4 py-3 text-left font-semibold text-slate-700">Alias Matches (Auto-Mapped)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white leading-relaxed">
-                    <tr>
-                      <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                        <User className="h-3.5 w-3.5 text-slate-400" />
-                        <span>First Name</span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-500">First, FirstName, GuestFirstName, Name</td>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                        <User className="h-3.5 w-3.5 text-slate-400" />
-                        <span>Last Name</span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-500">Last, LastName, GuestLastName, Surname</td>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                        <Mail className="h-3.5 w-3.5 text-slate-400" />
-                        <span>Email</span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-500">Email, EmailAddress, GuestEmail, Mail</td>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                        <PhoneIcon className="h-3.5 w-3.5 text-slate-400" />
-                        <span>Phone</span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-500">Phone, PhoneNumber, Mobile, Cell</td>
-                    </tr>
-                    <tr>
-                      <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                        <span>Checkout Date</span>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional</span>
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-500">Checkout, CheckoutDate, DepartureDate</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-2 italic">
-                * Note: In order to successfully contact a guest, you must provide either an active Email Address or Phone Number.
-              </p>
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button
+                onClick={() => setIsGuideOpen(false)}
+                className="bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold py-2.5 px-5 rounded-xl transition-all shadow-sm"
+              >
+                Close Guide
+              </button>
             </div>
-
           </div>
-
-          {/* Modal Footer */}
-          <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end">
-            <button
-              onClick={() => setIsGuideOpen(false)}
-              className="bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold py-2.5 px-5 rounded-xl transition-all shadow-sm"
-            >
-              Close Guide
-            </button>
-          </div>
-
         </div>
       )}
-
     </div>
   );
 }
