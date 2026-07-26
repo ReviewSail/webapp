@@ -1,15 +1,22 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileUp, Users, Settings } from 'lucide-react';
+import { LayoutDashboard, FileUp, Users, Settings, MessageSquare } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { useAuth<dyad-write path="src/components/Sidebar.tsx" description="Add Feedback nav item with unread badge">
+import { NavLink } from 'react-router-dom';
+import { LayoutDashboard, FileUp, Users, Settings, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+import { useMapRated } from '../context/MapRatedContext';
 
 export function Sidebar() {
   const { role } = useAuth();
+  const { unreadPrivateFeedbackCount } = useMapRated();
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Sync Guests', href: '/import', icon: FileUp },
     { name: 'Guests', href: '/guests', icon: Users },
+    { name: 'Feedback', href: '/dashboard?tab=feedback', icon: MessageSquare, badge: unreadPrivateFeedbackCount },
     ...(role !== 'staff' ? [{ name: 'Settings', href: '/settings', icon: Settings }] : []),
   ];
 
@@ -36,8 +43,15 @@ export function Sidebar() {
             >
               {({ isActive }) => (
                 <>
-                  <item.icon className={cn(isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300', 'mr-3 h-5 w-5 flex-shrink-0')} aria-hidden="true" />
-                  <span>{item.name}</span>
+                  <div className="relative flex items-center flex-1">
+                    <item.icon className={cn(isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300', 'mr-3 h-5 w-5 flex-shrink-0')} aria-hidden="true" />
+                    <span>{item.name}</span>
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <span className="ml-auto mr-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white min-w-[20px] h-5">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
+                  </div>
                 </>
               )}
             </NavLink>

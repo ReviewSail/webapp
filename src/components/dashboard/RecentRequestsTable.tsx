@@ -57,6 +57,7 @@ export function RecentRequestsTable({
       case 'opted_out': return 'Opted Out';
       case 'expired': return 'Expired';
       case 'already_reviewed': return 'Reviewed';
+      case 'private_feedback': return 'Private Feedback';
       default: return status;
     }
   };
@@ -69,6 +70,7 @@ export function RecentRequestsTable({
       case 'opted_out': return 'bg-red-50 text-red-600 border-red-200';
       case 'expired': return 'bg-slate-50 text-slate-500 border-slate-200';
       case 'already_reviewed': return 'bg-violet-50 text-violet-700 border-violet-200';
+      case 'private_feedback': return 'bg-slate-50 text-slate-600 border-slate-300';
       default: return 'bg-slate-50 text-slate-600 border-slate-200';
     }
   };
@@ -145,20 +147,22 @@ export function RecentRequestsTable({
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => handleResend(req.id)}
-                          disabled={isSending || isSuccess}
-                          className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
-                          title="Resend invite"
-                        >
-                          {isSending ? (
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                          ) : isSuccess ? (
-                            <Check className="h-4 w-4 text-emerald-500" />
-                          ) : (
-                            <RefreshCw className="h-4 w-4" />
-                          )}
-                        </button>
+                        {req.status !== 'private_feedback' && req.status !== 'clicked' && (
+                          <button
+                            onClick={() => handleResend(req.id)}
+                            disabled={isSending || isSuccess}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
+                            title="Resend invite"
+                          >
+                            {isSending ? (
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                            ) : isSuccess ? (
+                              <Check className="h-4 w-4 text-emerald-500" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

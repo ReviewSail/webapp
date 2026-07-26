@@ -11,6 +11,7 @@ import Login from "./pages/Login"
 import Feedback from "./pages/Feedback"
 import AlreadyReviewed from "./pages/AlreadyReviewed"
 import ResetPassword from "./pages/ResetPassword"
+import FeedbackGate from "./pages/FeedbackGate"
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -48,6 +49,7 @@ function AppRoutes() {
       <Route path="/opt-out" element={<Unsubscribe />} />
       <Route path="/unsubscribe" element={<Unsubscribe />} />
       <Route path="/feedback" element={<Feedback />} />
+      <Route path="/feedback-gate" element={<FeedbackGate />} />
       <Route path="/already-reviewed" element={<AlreadyReviewed />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/login" element={<Login />} />
