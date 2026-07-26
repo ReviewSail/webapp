@@ -1,15 +1,22 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { useReviewSail } from '../context/ReviewSailContext';
+import { useAuth } from '../context/AuthContext';
 import { MapPin, LogOut } from 'lucide-react';
 import { supabase } from '../integrations/supabase/client';
 
 export function Layout() {
   const { locations, activeLocationId, setActiveLocationId } = useReviewSail();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
+
+  const initials = user?.email
+    ? user.email.substring(0, 2).toUpperCase()
+    : 'AD';
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
@@ -31,9 +38,13 @@ export function Layout() {
                 ))}
               </select>
             </div>
-            <div className="h-8 w-8 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 font-medium text-sm">
-              AD
-            </div>
+            <button
+              onClick={() => navigate('/settings?tab=account')}
+              className="h-8 w-8 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 font-medium text-sm hover:bg-indigo-200 hover:border-indigo-300 transition-all cursor-pointer"
+              title="Account settings"
+            >
+              {initials}
+            </button>
             <button
               onClick={handleLogout}
               className="text-slate-400 hover:text-slate-600 transition-colors"
