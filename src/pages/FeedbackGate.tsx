@@ -91,12 +91,18 @@ export default function FeedbackGate() {
   // Log click event (skip for demo)
   useEffect(() => {
     if (requestId && !loading && !isDemo) {
-      supabase.from('message_events').insert({
-        request_id: requestId,
-        event_type: 'clicked',
-      }).then(() => {
-        supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
-      }).catch((err: any) => console.error(err));
+      const recordEvent = async () => {
+        try {
+          await supabase.from('message_events').insert({
+            request_id: requestId,
+            event_type: 'clicked',
+          });
+          await supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
+        } catch (err) {
+          console.error(err);
+        }
+      };
+      recordEvent();
     }
   }, [requestId, loading, isDemo]);
 
