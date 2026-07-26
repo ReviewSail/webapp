@@ -19,7 +19,8 @@ export function useReviewSailActions({ state, setState, refreshData }: ActionsDe
     const { data, error } = await supabase.from('locations').insert({
       account_id: userData.account_id, name,
       google_place_url: googleUrl || '', timezone: 'UTC',
-      enable_email: true, enable_sms: true, onboarding_complete: false, preferred_send_hour: 10,
+      enable_email: true, enable_sms: true, midstay_enabled: true,
+      onboarding_complete: false, preferred_send_hour: 10,
       recovery_email: '',
     }).select().single();
     if (error) { console.error(error); return null; }
@@ -28,7 +29,7 @@ export function useReviewSailActions({ state, setState, refreshData }: ActionsDe
       { location_id: data.id, type: 'sms', template_text: 'Hi {firstName}, please share your experience with us at {reviewLink}' },
     ]);
     await refreshData();
-    return { id: data.id, name: data.name, googlePlaceUrl: data.google_place_url || '', timezone: 'UTC', enableEmail: true, enableSms: true, onboardingComplete: false, preferredSendHour: 10, recoveryEmail: '' };
+    return { id: data.id, name: data.name, googlePlaceUrl: data.google_place_url || '', timezone: 'UTC', enableEmail: true, enableSms: true, midstayEnabled: true, onboardingComplete: false, preferredSendHour: 10, recoveryEmail: '' };
   }, [session, refreshData]);
 
   const deleteLocation = useCallback(async (id: string) => {
@@ -63,7 +64,7 @@ export function useReviewSailActions({ state, setState, refreshData }: ActionsDe
     }).select().single();
     if (error) { console.error(error); return null; }
     await refreshData();
-    return { id: data.id, customerId: data.customer_id, locationId: data.location_id, checkoutDate: data.checkout_date, status: data.status as Order['status'] };
+    return { id: data.id, customerId: data.customer_id, locationId: data.location_id, checkoutDate: data.checkout_date, checkinDate: data.checkin_date || undefined, midstaySent: data.midstay_sent === true, midstaySentAt: data.midstay_sent_at || undefined, status: data.status as Order['status'] };
   }, [refreshData]);
 
   const addOptOut = useCallback(async (email: string) => {
@@ -142,6 +143,7 @@ export function useReviewSailActions({ state, setState, refreshData }: ActionsDe
     if (settings.timezone !== undefined) updateData.timezone = settings.timezone;
     if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
     if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
+    if (settings.midstayEnabled !== undefined) updateData.midstay_enabled = settings.midstayEnabled;
     if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
     if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;
     if (Object.keys(updateData).length > 0) {

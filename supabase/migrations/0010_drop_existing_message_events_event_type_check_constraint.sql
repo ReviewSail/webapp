@@ -1,0 +1,1 @@
+ALTER TABLE public.message_events DROP CONSTRAINT message_events_event_type_check;

@@ -1,0 +1,1 @@
+ALTER TABLE public.locations ADD COLUMN midstay_enabled boolean DEFAULT true;

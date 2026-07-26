@@ -1,0 +1,1 @@
+ALTER TABLE public.orders ADD COLUMN midstay_sent_at timestamptz;

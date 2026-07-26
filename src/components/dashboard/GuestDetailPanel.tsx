@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { X, Mail, Phone, Calendar, Clock, RefreshCw, Send, MousePointerClick } from 'lucide-react';
+import { X, Mail, Phone, Calendar, Clock, RefreshCw, Send, MousePointerClick, BedDouble } from 'lucide-react';
 import { ReviewRequest, Order, Customer, MessageEvent } from '../../context/ReviewSailContext';
 
 interface GuestDetailPanelProps {
@@ -121,13 +121,22 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
         {events.length > 0 && (
           <div className="space-y-3 bg-slate-50 rounded-xl p-4 border border-slate-100 mb-6">
             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Message Events</h4>
-            {events.map((evt) => (
-              <div key={evt.id} className="flex items-center space-x-2.5 text-sm text-slate-600">
-                <MousePointerClick className="h-4 w-4 text-slate-400" />
-                <span className="capitalize">{evt.eventType.replace(/_/g, ' ')}</span>
-                <span className="text-slate-400 text-xs">{format(new Date(evt.createdAt), 'MMM d, h:mm a')}</span>
-              </div>
-            ))}
+            {events.map((evt) => {
+              const isMidstay = evt.eventType === 'midstay_checkin';
+              return (
+                <div key={evt.id} className="flex items-center space-x-2.5 text-sm text-slate-600">
+                  {isMidstay ? (
+                    <BedDouble className="h-4 w-4 text-blue-500" />
+                  ) : (
+                    <MousePointerClick className="h-4 w-4 text-slate-400" />
+                  )}
+                  <span className={isMidstay ? 'text-blue-700 font-medium' : 'capitalize'}>
+                    {isMidstay ? 'Mid-stay check-in sent' : evt.eventType.replace(/_/g, ' ')}
+                  </span>
+                  <span className="text-slate-400 text-xs">{format(new Date(evt.createdAt), 'MMM d, h:mm a')}</span>
+                </div>
+              );
+            })}
           </div>
         )}
 

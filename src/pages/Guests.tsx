@@ -157,13 +157,39 @@ export default function Guests() {
                         {latestRequest?.sentAt ? format(new Date(latestRequest.sentAt), 'MMM d, h:mm a') : '—'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {latestRequest ? (
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusBadge(latestRequest.status)}`}>
-                            {statusLabel(latestRequest.status)}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">No requests</span>
-                        )}
+                        <div className="flex items-center space-x-2">
+                          {latestRequest ? (
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusBadge(latestRequest.status)}`}>
+                              {statusLabel(latestRequest.status)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">No requests</span>
+                          )}
+                          {latestRequest && (() => {
+                            const order = orders.find(o => o.id === latestRequest.orderId);
+                            if (order?.midstaySent) {
+                              return (
+                                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-200">
+                                  🏨 Mid-Stay ✓
+                                </span>
+                              );
+                            }
+                            if (order && order.status === 'completed' && order.checkinDate) {
+                              const checkin = new Date(order.checkinDate);
+                              const checkout = new Date(order.checkoutDate);
+                              const oneDayMs = 24 * 60 * 60 * 1000;
+                              const now = Date.now();
+                              if (checkin.getTime() < now - oneDayMs && checkout.getTime() > now + oneDayMs) {
+                                return (
+                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-500 border-blue-200">
+                                    ⏳ Mid-Stay Pending
+                                  </span>
+                                );
+                              }
+                            }
+                            return null;
+                          })()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         {latestRequest && (

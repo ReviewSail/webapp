@@ -70,6 +70,7 @@ export function useReviewSailCore() {
         timezone: l.timezone || 'UTC',
         enableEmail: l.enable_email !== false,
         enableSms: l.enable_sms !== false,
+        midstayEnabled: l.midstay_enabled !== false,
         onboardingComplete: l.onboarding_complete === true,
         preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
         recoveryEmail: l.recovery_email || '',
@@ -96,7 +97,9 @@ export function useReviewSailCore() {
       const { data: orderData } = await supabase.from('orders').select('*');
       const orders: Order[] = (orderData || []).map(o => ({
         id: o.id, customerId: o.customer_id, locationId: o.location_id,
-        checkoutDate: o.checkout_date, status: o.status as Order['status'],
+        checkoutDate: o.checkout_date, checkinDate: o.checkin_date || undefined,
+        midstaySent: o.midstay_sent === true, midstaySentAt: o.midstay_sent_at || undefined,
+        status: o.status as Order['status'],
       }));
 
       const { data: rrData } = await supabase.from('review_requests').select('*');

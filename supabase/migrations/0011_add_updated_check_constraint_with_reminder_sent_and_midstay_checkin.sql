@@ -1,0 +1,1 @@
+ALTER TABLE public.message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type = ANY (ARRAY['sent', 'delivered', 'opened', 'clicked', 'bounced', 'failed', 'reminder_sent', 'midstay_checkin']));

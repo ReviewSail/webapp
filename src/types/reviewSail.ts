@@ -7,6 +7,7 @@ export type Location = {
   timezone: string;
   enableEmail: boolean;
   enableSms: boolean;
+  midstayEnabled: boolean;
   onboardingComplete: boolean;
   preferredSendHour: number;
   recoveryEmail: string;
@@ -25,6 +26,9 @@ export type Order = {
   customerId: string;
   locationId: string;
   checkoutDate: string;
+  checkinDate?: string;
+  midstaySent?: boolean;
+  midstaySentAt?: string;
   status: 'pending' | 'completed' | 'cancelled';
 };
 

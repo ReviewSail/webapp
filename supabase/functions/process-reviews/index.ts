@@ -437,6 +437,197 @@ serve(async (req) => {
       }
     }
 
+    // --- PHASE 3: MID-STAY CHECK-IN ---
+    if (!specificRequestId) {
+      console.log("[process-reviews] Starting Phase 3: Mid-stay check-in");
+
+      const oneHourMs = 60 * 60 * 1000;
+      const twentyThreeHoursAgo = new Date(Date.now() - 23 * oneHourMs);
+      const twentyFiveHoursAgo = new Date(Date.now() - 25 * oneHourMs);
+      const twentyFourHoursFromNow = new Date(Date.now() + 24 * oneHourMs);
+
+      const { data: midstayCandidates, error: midstayFetchError } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          checkin_date,
+          checkout_date,
+          customer_id,
+          location_id,
+          customers (
+            id,
+            first_name,
+            last_name,
+            email,
+            phone
+          ),
+          locations (
+            id,
+            name,
+            midstay_enabled,
+            enable_email,
+            enable_sms
+          ),
+          review_requests (
+            id
+          )
+        `)
+        .eq('status', 'completed')
+        .eq('midstay_sent', false)
+        .not('checkin_date', 'is', null);
+
+      if (midstayFetchError) {
+        console.error("[process-reviews] Error fetching mid-stay candidates:", midstayFetchError);
+      } else if (midstayCandidates && midstayCandidates.length > 0) {
+        console.log(`[process-reviews] Found ${midstayCandidates.length} mid-stay candidates to evaluate.`);
+
+        for (const order of midstayCandidates) {
+          const customer = (order as any).customers;
+          const location = (order as any).locations;
+          const reviewRequests = (order as any).review_requests;
+
+          if (!customer || !location) {
+            console.warn(`[process-reviews] Mid-stay: Incomplete data for order ${order.id}, skipping.`);
+            continue;
+          }
+
+          const reviewRequest = Array.isArray(reviewRequests) && reviewRequests.length > 0
+            ? reviewRequests[0]
+            : null;
+
+          if (!reviewRequest) {
+            console.warn(`[process-reviews] Mid-stay: No review_request found for order ${order.id}, skipping.`);
+            continue;
+          }
+
+          // Skip if location has mid-stay disabled
+          if (location.midstay_enabled === false) {
+            console.log(`[process-reviews] Mid-stay: Location "${location.name}" has mid-stay disabled, skipping order ${order.id}.`);
+            continue;
+          }
+
+          // Check opted-out
+          const emailLower = customer.email?.toLowerCase();
+          if (emailLower && optedOutEmails.has(emailLower)) {
+            console.log(`[process-reviews] Mid-stay: Customer ${customer.email} is opted out, skipping order ${order.id}.`);
+            continue;
+          }
+
+          // Verify checkin_date is ~24 hours ago (within ±1 hour tolerance)
+          const checkinDate = new Date(order.checkin_date);
+          if (checkinDate < twentyFiveHoursAgo || checkinDate > twentyThreeHoursAgo) {
+            console.log(`[process-reviews] Mid-stay: checkin_date for order ${order.id} is not within the 23-25 hour window.`);
+            continue;
+          }
+
+          // Verify checkout_date is at least 24 hours in the future (multi-night stay)
+          const checkoutDate = new Date(order.checkout_date);
+          if (checkoutDate < twentyFourHoursFromNow) {
+            console.log(`[process-reviews] Mid-stay: checkout_date for order ${order.id} is within 24h, skipping (single-night stay).`);
+            continue;
+          }
+
+          console.log(`[process-reviews] Mid-stay: Sending check-in message for order ${order.id} (guest: ${customer.first_name} ${customer.last_name})`);
+
+          const messageText = `Hi ${customer.first_name}, we hope you're enjoying your stay at ${location.name}! 😊 Is there anything we can do to make your stay even better? Just reply to this message and we'll take care of it right away.`;
+
+          let sendSuccess = false;
+
+          // Email via Resend
+          if (location.enable_email !== false && customer.email && resendApiKey && resendFromEmail) {
+            try {
+              console.log(`[process-reviews] Mid-stay: Sending Resend email to: ${customer.email}`);
+              const emailResponse = await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${resendApiKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  from: `${location.name} <${resendFromEmail}>`,
+                  to: customer.email,
+                  subject: `How's your stay at ${location.name}? 😊`,
+                  text: messageText
+                })
+              });
+
+              if (emailResponse.ok) {
+                console.log(`[process-reviews] Mid-stay: Resend email sent successfully to ${customer.email}`);
+                sendSuccess = true;
+              } else {
+                const errBody = await emailResponse.text();
+                console.error(`[process-reviews] Mid-stay: Resend API Error for ${customer.email}:`, errBody);
+              }
+            } catch (emailErr) {
+              console.error(`[process-reviews] Mid-stay: Resend Fetch Error:`, emailErr);
+            }
+          }
+
+          // SMS via Twilio
+          if (!sendSuccess && location.enable_sms !== false && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
+            try {
+              console.log(`[process-reviews] Mid-stay: Sending Twilio SMS to: ${customer.phone}`);
+              const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+              const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+              const formData = new URLSearchParams();
+              formData.append('From', twilioFromNumber);
+              formData.append('To', customer.phone);
+              formData.append('Body', messageText);
+
+              const smsResponse = await fetch(twilioUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${twilioAuth}`,
+                  'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: formData.toString()
+              });
+
+              if (smsResponse.ok) {
+                console.log(`[process-reviews] Mid-stay: Twilio SMS sent successfully to ${customer.phone}`);
+                sendSuccess = true;
+              } else {
+                const errBody = await smsResponse.text();
+                console.error(`[process-reviews] Mid-stay: Twilio API Error for ${customer.phone}:`, errBody);
+              }
+            } catch (smsErr) {
+              console.error(`[process-reviews] Mid-stay: Twilio Fetch Error:`, smsErr);
+            }
+          }
+
+          // Fallback mock
+          if (!sendSuccess) {
+            console.warn(`[process-reviews] Mid-stay: Mock mode triggered for order ${order.id}.`);
+            console.log(`[process-reviews] =======================================`);
+            console.log(`[process-reviews] MOCK MID-STAY CHECK-IN TO: ${customer.email || customer.phone}`);
+            console.log(`[process-reviews] MESSAGE CONTENT:\n${messageText}`);
+            console.log(`[process-reviews] =======================================`);
+            sendSuccess = true;
+          }
+
+          if (sendSuccess) {
+            const nowIso = new Date().toISOString();
+            await supabase
+              .from('orders')
+              .update({
+                midstay_sent: true,
+                midstay_sent_at: nowIso
+              })
+              .eq('id', order.id);
+
+            await supabase.from('message_events').insert({
+              request_id: reviewRequest.id,
+              event_type: 'midstay_checkin'
+            });
+
+            processedResults.push({ id: order.id, type: 'midstay', status: 'midstay_checkin_sent' });
+          } else {
+            processedResults.push({ id: order.id, type: 'midstay', status: 'failed' });
+          }
+        }
+      }
+    }
+
     console.log(`[process-reviews] Successfully completed processing. Total actions logged: ${processedResults.length}`);
 
     return new Response(JSON.stringify({

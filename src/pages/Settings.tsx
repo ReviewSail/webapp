@@ -15,7 +15,8 @@ import {
   Shield,
   RefreshCw,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  BedDouble
 } from 'lucide-react';
 
 export default function Settings() {
@@ -39,6 +40,7 @@ export default function Settings() {
   const [preferredHour, setPreferredHour] = useState(10);
   const [enableEmail, setEnableEmail] = useState(true);
   const [enableSms, setEnableSms] = useState(true);
+  const [midstayEnabled, setMidstayEnabled] = useState(true);
 
   // Template state
   const [emailTemplate, setEmailTemplate] = useState('');
@@ -72,6 +74,7 @@ export default function Settings() {
       setPreferredHour(activeLoc.preferredSendHour ?? 10);
       setEnableEmail(activeLoc.enableEmail);
       setEnableSms(activeLoc.enableSms);
+      setMidstayEnabled(activeLoc.midstayEnabled);
       setEmailTemplate(activeLoc.templateText || 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}');
       setSmsTemplate(activeLoc.smsTemplateText || 'Hi {firstName}, please share your experience with us at {reviewLink}');
     }
@@ -99,7 +102,8 @@ export default function Settings() {
         timezone,
         preferredSendHour: preferredHour,
         enableEmail,
-        enableSms
+        enableSms,
+        midstayEnabled
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -356,6 +360,18 @@ export default function Settings() {
                   className={`relative w-11 h-6 rounded-full transition-colors ${enableEmail ? 'bg-indigo-600' : 'bg-slate-300'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${enableEmail ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl">
+                <div className="flex items-center space-x-3">
+                  <BedDouble className="h-5 w-5 text-slate-500" />
+                  <span className="text-sm font-medium text-slate-700">Mid-Stay Check-In Messages</span>
+                </div>
+                <button
+                  onClick={() => setMidstayEnabled(!midstayEnabled)}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${midstayEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${midstayEnabled ? 'translate-x-5' : ''}`} />
                 </button>
               </div>
               <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl">

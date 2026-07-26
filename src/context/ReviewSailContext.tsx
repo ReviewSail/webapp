@@ -11,6 +11,7 @@ export type Location = {
   timezone: string;
   enableEmail: boolean;
   enableSms: boolean;
+  midstayEnabled: boolean;
   onboardingComplete: boolean;
   preferredSendHour: number;
   recoveryEmail: string;
@@ -29,6 +30,9 @@ export type Order = {
   customerId: string;
   locationId: string;
   checkoutDate: string;
+  checkinDate?: string;
+  midstaySent?: boolean;
+  midstaySentAt?: string;
   status: 'pending' | 'completed' | 'cancelled';
 };
 
@@ -158,6 +162,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         timezone: l.timezone || 'UTC',
         enableEmail: l.enable_email !== false,
         enableSms: l.enable_sms !== false,
+        midstayEnabled: l.midstay_enabled !== false,
         onboardingComplete: l.onboarding_complete === true,
         preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
         recoveryEmail: l.recovery_email || '',
@@ -189,6 +194,9 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         customerId: o.customer_id,
         locationId: o.location_id,
         checkoutDate: o.checkout_date,
+        checkinDate: o.checkin_date || undefined,
+        midstaySent: o.midstay_sent === true,
+        midstaySentAt: o.midstay_sent_at || undefined,
         status: o.status as 'pending' | 'completed' | 'cancelled',
       }));
 
@@ -290,6 +298,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       timezone: 'UTC',
       enable_email: true,
       enable_sms: true,
+      midstay_enabled: true,
       onboarding_complete: false,
       preferred_send_hour: 10,
       recovery_email: '',
@@ -313,6 +322,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       timezone: 'UTC',
       enableEmail: true,
       enableSms: true,
+      midstayEnabled: true,
       onboardingComplete: false,
       preferredSendHour: 10,
       recoveryEmail: '',
@@ -373,6 +383,9 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       customerId: data.customer_id,
       locationId: data.location_id,
       checkoutDate: data.checkout_date,
+      checkinDate: data.checkin_date || undefined,
+      midstaySent: data.midstay_sent === true,
+      midstaySentAt: data.midstay_sent_at || undefined,
       status: data.status as 'pending' | 'completed' | 'cancelled',
     };
   };
@@ -476,6 +489,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     if (settings.timezone !== undefined) updateData.timezone = settings.timezone;
     if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
     if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
+    if (settings.midstayEnabled !== undefined) updateData.midstay_enabled = settings.midstayEnabled;
     if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
     if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;
 
