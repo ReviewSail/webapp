@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useMapRated } from '../context/MapRatedContext';
+import { useReviewSail } from '../context/ReviewSailContext';
 import { Search, User, Mail, Phone, Eye } from 'lucide-react';
 import { GuestDetailPanel } from '../components/dashboard/GuestDetailPanel';
 import { format } from 'date-fns';
 
 export default function Guests() {
-  const { customers, reviewRequests, orders, messageEvents, triggerSingleResend } = useMapRated();
+  const { customers, reviewRequests, orders, messageEvents, triggerSingleResend } = useReviewSail();
   const [search, setSearch] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMapRated } from '../context/MapRatedContext';
+import { useReviewSail } from '../context/ReviewSailContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../integrations/supabase/client';
 import {
@@ -26,7 +26,7 @@ export default function Settings() {
     addLocation,
     deleteLocation,
     setActiveLocationId
-  } = useMapRated();
+  } = useReviewSail();
   const { user: currentUser } = useAuth();
 
   const activeLoc = locations.find(l => l.id === activeLocationId);
@@ -532,7 +532,3 @@ export default function Settings() {
     </div>
   );
 }
-
-
-// NOTE: The property selector buttons above have a conditional hook call issue.
-// The quick fix is to use the context directly. Let me fix that properly.

@@ -1,6 +1,4 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
-import { ReviewSail<dyad-write path="src/App.tsx" description="Update imports and provider/hook names to ReviewSail">
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 import { ReviewSailProvider } from "./context/ReviewSailContext"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { Layout } from "./components/Layout"
@@ -15,33 +13,31 @@ import AlreadyReviewed from "./pages/AlreadyReviewed"
 import ResetPassword from "./pages/ResetPassword"
 import FeedbackGate from "./pages/FeedbackGate"
 
-// Protected Route Wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { session, loading } = useAuth();
-  
+
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen bg-slate-50">Loading...</div>;
   }
-  
+
   if (!session) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <>{children}</>;
 };
 
-// Admin Only Wrapper
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { role, loading } = useAuth();
-  
+
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen bg-slate-50">Loading...</div>;
   }
-  
+
   if (role === 'staff') {
     return <Navigate to="/dashboard?access_denied=true" replace />;
   }
-  
+
   return <>{children}</>;
 };
 
