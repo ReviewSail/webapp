@@ -11,6 +11,7 @@ import { PrivateFeedbackSection } from '../components/dashboard/PrivateFeedbackS
 import { PrivateFeedbackInbox } from '../components/dashboard/PrivateFeedbackInbox';
 import { TeamRecognitionCard } from '../components/dashboard/TeamRecognitionCard';
 import { useAuth } from '../context/AuthContext';
+import { isAdmin } from '../lib/roles';
 
 export default function Dashboard() {
   const { role } = useAuth();
@@ -34,11 +35,16 @@ export default function Dashboard() {
 
   const handleUpgrade = async () => {
     setUpgrading(true);
-    const result = await subscribe();
-    if (result.success && result.url) {
-      window.location.href = result.url;
+    try {
+      const result = await subscribe();
+      if (result.success && result.url) {
+        window.location.href = result.url;
+      }
+    } catch (err) {
+      console.error('Upgrade failed:', err);
+    } finally {
+      setUpgrading(false);
     }
-    setUpgrading(false);
   };
 
   // Filter for active location
@@ -142,7 +148,7 @@ export default function Dashboard() {
             onRespond={respondToFeedback}
           />
 
-          {role === 'admin' && (
+          {isAdmin(role) && (
             <div className="mt-8">
               <TeamRecognitionCard />
             </div>

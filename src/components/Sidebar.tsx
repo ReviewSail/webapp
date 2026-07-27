@@ -3,6 +3,7 @@ import { LayoutDashboard, FileUp, Users, Settings, MessageSquare, MessageCircle,
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useReviewSail } from '../context/ReviewSailContext';
+import { isStaff } from '../lib/roles';
 
 export function Sidebar() {
   const { role } = useAuth();
@@ -15,7 +16,7 @@ export function Sidebar() {
     { name: 'Guests', href: '/guests', icon: Users },
     { name: 'Feedback', href: '/dashboard?tab=feedback', icon: MessageSquare, badge: unreadPrivateFeedbackCount },
     { name: 'Review Replies', href: '/reply', icon: MessageCircle },
-    ...(role !== 'staff' ? [{ name: 'Settings', href: '/settings', icon: Settings }] : []),
+    ...(isStaff(role) ? [] : [{ name: 'Settings', href: '/settings', icon: Settings }]),
   ];
 
   return (

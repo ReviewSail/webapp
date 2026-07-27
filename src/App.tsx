@@ -14,6 +14,7 @@ import AlreadyReviewed from "./pages/AlreadyReviewed"
 import ResetPassword from "./pages/ResetPassword"
 import FeedbackGate from "./pages/FeedbackGate"
 import ReviewReply from "./pages/ReviewReply"
+import { isStaff } from "./lib/roles"
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { session, loading } = useAuth();
@@ -36,7 +37,7 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     return <div className="flex items-center justify-center min-h-screen bg-slate-50">Loading...</div>;
   }
 
-  if (role === 'staff') {
+  if (isStaff(role)) {
     return <Navigate to="/dashboard?access_denied=true" replace />;
   }
 
