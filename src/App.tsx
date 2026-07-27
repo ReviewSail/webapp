@@ -3,6 +3,7 @@ import { ReviewSailProvider } from "./context/ReviewSailContext"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { Layout } from "./components/Layout"
 import Dashboard from "./pages/Dashboard"
+import Analytics from "./pages/Analytics"
 import SyncGuests from "./pages/SyncGuests"
 import Guests from "./pages/Guests"
 import Settings from "./pages/Settings"
@@ -59,6 +60,7 @@ function AppRoutes() {
       }>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="analytics" element={<Analytics />} />
         <Route path="import" element={<SyncGuests />} />
         <Route path="guests" element={<Guests />} />
         <Route path="reply" element={<ReviewReply />} />
