@@ -108,7 +108,7 @@ serve(async (req) => {
     bodyParams.append('payment_method_types[0]', 'card')
     bodyParams.append('mode', 'subscription')
     bodyParams.append('line_items[0][price_data][currency]', 'usd')
-    bodyParams.append('line_items[0][price_data][product_data][name]', 'MapRated Premium Pro Plan')
+    bodyParams.append('line_items[0][price_data][product_data][name]', 'ReviewSail Premium Pro Plan')
     bodyParams.append('line_items[0][price_data][product_data][description]', 'Unlimited guest feedback review requests, automated multi-channel emails/texts, and full reporting.')
     bodyParams.append('line_items[0][price_data][unit_amount]', '4900') // $49.00
     bodyParams.append('line_items[0][price_data][recurring][interval]', 'month')
@@ -118,7 +118,7 @@ serve(async (req) => {
     }
     bodyParams.append('success_url', `${origin}/dashboard?checkout_success=true`)
     bodyParams.append('cancel_url', `${origin}/settings`)
-    bodyParams.append('subscription_data[metadata][account_id]', accountId)
+    bodyParams.append('subscription_data[metadata][account  bodyParams.append('subscription_data[metadata][account_id]', accountId)
 
     const stripeRes = await fetch(stripeUrl, {
       method: 'POST',

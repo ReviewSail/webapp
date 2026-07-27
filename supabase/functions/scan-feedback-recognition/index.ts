@@ -198,7 +198,7 @@ serve(async (req) => {
     })
 
     if (uniqueCandidates.length === 0) {
-      console.log("[scan-feedback-recognition] No team mentions found")
+      console.log("[scan-feedback-recognition] No team mentions found in feedback")
       return new Response(JSON.stringify({ success: true, message: "No mentions found" }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -219,7 +219,7 @@ serve(async (req) => {
     for (const cand of uniqueCandidates) {
       const isPositive = await classifySentiment(cand.matched_sentence, openAiKey)
       if (!isPositive) {
-        console.log("[scan-feedback-recognition] Rejecting non-positive sentence:", cand.matched_sentence.substring(0, 50))
+        console.log("[scan-feedback-recognition] Rejecting non-positive sentence (length: " + cand.matched_sentence.length + ")")
         continue
       }
 

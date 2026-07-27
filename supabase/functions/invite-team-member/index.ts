@@ -46,8 +46,8 @@ serve(async (req) => {
     }
 
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@maprated.com';
-    const origin = req.headers.get('origin') || 'https://vqjzscdlfhgzzqhmkchw.supabase.co';
+    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@reviewsail.com';
+    const origin = req.headers.get('origin') || supabaseUrl;
 
     // Construct the invite link that passes invite_account_id
     const inviteLink = `${origin}/login?invite_account_id=${accountId}`;
@@ -56,11 +56,11 @@ serve(async (req) => {
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; color: #1e293b;">
         <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
           <div style="background-color: #4f46e5; padding: 24px; text-align: center; color: #ffffff;">
-            <h2 style="margin: 0; font-size: 20px; font-weight: 800;">Join MapRated Team</h2>
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800;">Join ReviewSail Team</h2>
           </div>
           <div style="padding: 32px; text-align: center;">
             <p style="margin-top: 0; font-size: 15px; line-height: 1.6; color: #475569;">
-              You have been invited to join the <strong>${propertyName || 'Property Management'}</strong> team on MapRated as a <strong>${role}</strong>.
+              You have been invited to join the <strong>${propertyName || 'Property Management'}</strong> team on ReviewSail as a <strong>${role}</strong>.
             </p>
             <div style="margin: 24px 0;">
               <a href="${inviteLink}" style="display: inline-block; background-color: #4f46e5; color: #ffffff; font-weight: bold; font-size: 14px; text-decoration: none; padding: 12px 24px; border-radius: 8px;">
@@ -87,7 +87,7 @@ serve(async (req) => {
         body: JSON.stringify({
           from: resendFromEmail,
           to: email,
-          subject: `You've been invited to join MapRated`,
+          subject: `You've been invited to join ReviewSail`,
           html: emailHtml
         })
       });

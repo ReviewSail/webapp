@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { isStaff } from '../lib/roles';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -236,7 +237,7 @@ export default function SettingsPage() {
             </button>
           ))}
         </nav>
-      </div>
+     </div>
 
       {/* Locations Tab */}
       {activeTab === 'locations' && (
@@ -627,7 +628,7 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          {role !== 'staff' && (
+          {!isStaff(role) && (
             <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-6 space-y-4">
               <div className="flex items-center space-x-3">
                 <div className="p-2 bg-red-50 rounded-xl">
