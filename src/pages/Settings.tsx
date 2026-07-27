@@ -1040,7 +1040,11 @@ function TeamRecognitionSettings() {
   );
 }
 
+const { digestSetting, updateDigestSetting } = useReviewSail();
+=======
+
 function DigestSettings() {
+const { digestSetting, updateDigestSetting } = useReviewSail();
 =======
   const { digestSetting, updateDigestSetting } = useReviewSail();
   const { user: currentUser } = useAuth();
