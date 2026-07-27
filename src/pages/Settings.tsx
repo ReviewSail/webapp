@@ -6,18 +6,19 @@ import { supabase } from '../integrations/supabase/client';
 import {
   MapPin, Plus, Trash2, Save, Mail, Users,
   UserPlus, RefreshCw, AlertCircle, CheckCircle, BedDouble,
-  User, Lock, CreditCard, Building2, Smartphone, Clock, Settings2, Code, RotateCcw, Bell
+  User, Lock, CreditCard, Building2, Smartphone, Clock, Settings2, Code, RotateCcw, Bell, UserCheck
 } from 'lucide-react';
 
-type TabId = 'property' | 'messaging' | 'team' | 'subscription' | 'account' | 'digest';
+type TabId = 'property' | 'messaging' | 'staff' | 'subscription' | 'account' | 'digest' | 'recognition';
 
 const TABS: { key: TabId; label: string; icon: typeof MapPin; description: string }[] = [
   { key: 'property', label: 'Property', icon: Building2, description: 'Manage your properties and configure their settings.' },
   { key: 'messaging', label: 'Messaging', icon: Mail, description: 'Customize email and SMS templates with live preview and placeholder insert.' },
-  { key: 'team', label: 'Team', icon: Users, description: 'Invite and manage team members.' },
+  { key: 'staff', label: 'Staff', icon: Users, description: 'Invite and manage team members for account access.' },
   { key: 'subscription', label: 'Subscription', icon: CreditCard, description: 'View and manage your subscription plan and billing status.' },
   { key: 'account', label: 'Account', icon: User, description: 'Manage your profile, security, and account settings.' },
   { key: 'digest', label: 'Digest', icon: Bell, description: 'Configure automated owner digest emails — weekly or monthly performance summaries.' },
+  { key: 'recognition', label: 'Team Recognition', icon: UserCheck, description: 'Add team members for positive mention recognition in guest feedback.' },
 ];
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -592,8 +593,8 @@ export default function Settings() {
           </div>
         )}
 
-        {/* ===== Team Tab ===== */}
-        {activeTab === 'team' && (
+        {/* ===== Staff Tab ===== */}
+        {activeTab === 'staff' && (
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Team Management</h3>
@@ -855,12 +856,192 @@ export default function Settings() {
         {activeTab === 'digest' && (
           <DigestSettings />
         )}
+
+        {/* ===== Team Recognition Tab ===== */}
+        {activeTab === 'recognition' && (
+          <TeamRecognitionSettings />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamRecognitionSettings() {
+  const [teamMembers, setTeamMembers] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  const [newName, setNewName] = useState('');
+  const [newRole, setNewRole] = useState('host');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const { session } = useAuth();
+
+  const fetchTeamMembers = async () => {
+    if (!session?.user) return;
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+    if (!userData?.account_id) return;
+    const { data, error: fetchError } = await supabase
+      .from('team_members')
+      .select('*')
+      .eq('account_id', userData.account_id)
+      .order('created_at', { ascending: false });
+    if (fetchError) throw fetchError;
+    setTeamMembers(data || []);
+  };
+
+  useEffect(() => {
+    fetchTeamMembers().catch(console.error);
+  }, [session]);
+
+  const handleAdd = async () => {
+    if (!newRole) return;
+    setLoading(true);
+    setError('');
+    try {
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session!.user.id).single();
+      if (!userData?.account_id) throw new Error('Account not found');
+      await supabase.from('team_members').insert({
+        account_id: userData.account_id,
+        name: newName.trim() || null,
+        role: newRole,
+      });
+      setNewName('');
+      setNewRole('host');
+      await fetchTeamMembers();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to add team member');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setError('');
+    try {
+      await supabase.from('team_members').delete().eq('id', id);
+      await fetchTeamMembers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete team member');
+    }
+  };
+
+  const roles = [
+    { value: 'host', label: 'Host' },
+    { value: 'cohost', label: 'Co-Host' },
+    { value: 'cleaner', label: 'Cleaner' },
+    { value: 'property_manager', label: 'Property Manager' },
+    { value: 'maintenance', label: 'Maintenance' },
+    { value: 'front_desk', label: 'Front Desk' },
+    { value: 'housekeeping', label: 'Housekeeping' },
+    { value: 'concierge', label: 'Concierge' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-bold text-slate-900">Team Recognition Setup</h3>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Add team members here so ReviewSail can spot positive mentions in guest feedback. Leave names optional for contractors like cleaners — role-based matching will still work.
+        </p>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 text-red-800 p-3 rounded-xl border border-red-200 flex items-start space-x-2">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl border border-emerald-200 flex items-center space-x-2">
+          <CheckCircle className="h-4 w-4 shrink-0" />
+          <span className="text-sm">Team member added successfully!</span>
+        </div>
+      )}
+
+      {/* Add form */}
+      <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Name (optional)</label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g. Maria"
+              className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Role</label>
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
+            >
+              {roles.map(r => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <button
+              onClick={handleAdd}
+              disabled={loading}
+              className="w-full bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              <span>{loading ? 'Adding...' : 'Add Team Member'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Team member list */}
+      <div>
+        <h4 className="text-sm font-bold text-slate-700 mb-3">Current Team</h4>
+        {teamMembers.length === 0 ? (
+          <div className="bg-white rounded-xl p-8 border border-dashed border-slate-200 text-center space-y-2">
+            <UserCheck className="h-6 w-6 text-slate-300 mx-auto" />
+            <p className="text-sm text-slate-500">No team members added yet. Recognition will still work via role-based phrase matching.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {teamMembers.map((member) => (
+              <div key={member.id} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
+                <div className="flex items-center space-x-3">
+                  <div className="h-8 w-8 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                    {member.name ? member.name[0].toUpperCase() : roles.find(r => r.value === member.role)?.label[0] || '?'}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {member.name || 'Unnamed Member'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {roles.find(r => r.value === member.role)?.label || member.role}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDelete(member.id)}
+                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Remove"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 function DigestSettings() {
+=======
   const { digestSetting, updateDigestSetting } = useReviewSail();
   const { user: currentUser } = useAuth();
   const [frequency, setFrequency] = useState<'weekly' | 'monthly'>('weekly');

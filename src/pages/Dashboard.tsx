@@ -9,8 +9,11 @@ import { StatsGrid } from '../components/dashboard/StatsGrid';
 import { RecentRequestsTable } from '../components/dashboard/RecentRequestsTable';
 import { PrivateFeedbackSection } from '../components/dashboard/PrivateFeedbackSection';
 import { PrivateFeedbackInbox } from '../components/dashboard/PrivateFeedbackInbox';
+import { TeamRecognitionCard } from '../components/dashboard/TeamRecognitionCard';
+import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
+  const { role } = useAuth();
   const {
     activeLocationId,
     reviewRequests,
@@ -138,6 +141,12 @@ export default function Dashboard() {
             customers={customers}
             onRespond={respondToFeedback}
           />
+
+          {role === 'admin' && (
+            <div className="mt-8">
+              <TeamRecognitionCard />
+            </div>
+          )}
         </div>
       )}
 
