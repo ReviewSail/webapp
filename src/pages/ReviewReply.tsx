@@ -36,7 +36,7 @@ const TEMPLATES: Record<string, { email: string; sms: string }> = {
     sms: 'Thank you for recognizing our team! We will share your kind words with them. See you again!'
   },
   'cleanliness-praise': {
-    email: 'Acknowledge the guest\\'s appreciation for cleanliness. Explain that hygiene is a top priority. Reassure them that standards remain high.',
+    email: "Acknowledge the guest's appreciation for cleanliness. Explain that hygiene is a top priority. Reassure them that standards remain high.",
     sms: 'Thank you for highlighting our cleanliness. We take great pride in it. Hope to host you again!'
   },
   'location-amenities': {
@@ -56,7 +56,7 @@ const TEMPLATES: Record<string, { email: string; sms: string }> = {
     sms: 'We apologize for the noise disturbance. We take such matters seriously. Please reach out to us so we can learn more.'
   },
   'service-complaint': {
-    email: 'Apologize sincerely for the service shortfall. Acknowledge the guest\\'s frustration. Confirm that the matter has been escalated. Offer offline follow-up.',
+    email: "Apologize sincerely for the service shortfall. Acknowledge the guest's frustration. Confirm that the matter has been escalated. Offer offline follow-up.",
     sms: 'We truly apologize for the poor service. This is not the experience we aim to provide. Please contact us so we can make it right.'
   },
   'inaccurate-unfair': {
