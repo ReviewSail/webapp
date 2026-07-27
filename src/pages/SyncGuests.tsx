@@ -39,6 +39,8 @@ export default function SyncGuests() {
     lastName: '',
     email: '',
     phone: '',
+    checkoutDate: new Date().toISOString().split('T')[0], // today's date
+    checkinDate: '',
   });
 
   const toggleSection = (section: 'booking' | 'airbnb' | 'expedia') => {
@@ -94,13 +96,14 @@ export default function SyncGuests() {
         const order = await addOrder({
           customerId: customer.id,
           locationId: activeLocationId,
-          checkoutDate: new Date().toISOString(),
+          checkoutDate: formData.checkoutDate,
+          checkinDate: formData.checkinDate || undefined,
           status: 'completed',
         });
 
         if (order) {
           await addReviewRequest(order.id);
-          setFormData({ firstName: '', lastName: '', email: '', phone: '' });
+          setFormData({ firstName: '', lastName: '', email: '', phone: '', checkoutDate: new Date().toISOString().split('T')[0], checkinDate: '' });
           setFeedback({ type: 'success', message: `Successfully queued review request for ${customer.firstName} ${customer.lastName}!` });
         } else {
           setFeedback({ type: 'error', message: 'Customer added, but failed to create guest checkout order.' });
@@ -161,498 +164,635 @@ export default function SyncGuests() {
 
         const mappedRows = results.data.map((row: any) => {
           let firstName = '';
-          let lastName = '';
-          let email = '';
-          let phone = '';
-          let checkoutDate = '';
+          let<dyad-write path="src/context/ReviewSailContext.tsx" description="Complete context with checkinDate support in addOrder and bulkImport">
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../integrations/supabase/client';
+import { useAuth } from './AuthContext';
+import type { DigestSetting } from '../types/reviewSail';
 
-          Object.keys(row).forEach(key => {
-            const clean = cleanKey(key);
-            if (clean === 'first' || clean === 'firstname' || clean === 'guestfirstname' || clean.includes('firstname')) {
-              firstName = row[key];
-            } else if (clean === 'last' || clean === 'lastname' || clean === 'guestlastname' || clean.includes('lastname')) {
-              lastName = row[key];
-            } else if (clean === 'email' || clean === 'emailaddress' || clean.includes('email')) {
-              email = row[key];
-            } else if (clean === 'phone' || clean === 'phonenumber' || clean.includes('phone')) {
-              phone = row[key];
-            } else if (clean === 'checkout' || clean === 'checkoutdate' || clean.includes('checkout')) {
-              checkoutDate = row[key];
-            }
-          });
+export type { DigestSetting } from '../types/reviewSail';
 
-          return { firstName, lastName, email, phone, checkoutDate };
-        });
+export type Location = {
+  id: string;
+  name: string;
+  googlePlaceUrl: string;
+  templateText?: string;
+  smsTemplateText?: string;
+  timezone: string;
+  enableEmail: boolean;
+  enableSms: boolean;
+  midstayEnabled: boolean;
+  onboardingComplete: boolean;
+  preferredSendHour: number;
+  recoveryEmail: string;
+};
 
-        // Filter and Validate
-        let skipped = 0;
-        const validRows = mappedRows.filter(r => {
-          const hasContact = (r.email && r.email.trim() !== '') || (r.phone && r.phone.trim() !== '');
-          const hasFirstName = (r.firstName && r.firstName.trim() !== '');
-          
-          if (hasContact && hasFirstName) {
-            if (!r.checkoutDate || isNaN(Date.parse(r.checkoutDate))) {
-              r.checkoutDate = new Date().toISOString();
-            } else {
-              r.checkoutDate = new Date(r.checkoutDate).toISOString();
-            }
-            return true;
-          } else {
-            skipped++;
-            return false;
-          }
-        });
+export type Customer = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone?: string | null;
+};
 
-        if (validRows.length === 0) {
-          setUploadResult({
-            success: false,
-            count: 0,
-            skipped,
-            error: "No valid rows found in the report. Make sure rows contain a First Name and either an Email or Phone."
-          });
-          setLoading(false);
-          return;
-        }
+export type Order = {
+  id: string;
+  customerId: string;
+  locationId: string;
+  checkoutDate: string;
+  checkinDate?: string;
+  midstaySent?: boolean;
+  midstaySentAt?: string;
+  status: 'pending' | 'completed' | 'cancelled';
+};
 
-        const response = await bulkImport(validRows);
-        
-        if (response.success) {
-          setUploadResult({
-            success: true,
-            count: response.count,
-            skipped
-          });
-        } else {
-          setUploadResult({
-            success: false,
-            count: 0,
-            skipped,
-            error: response.error
-          });
-        }
-        setLoading(false);
-      },
-      error: (err) => {
-        console.error(err);
-        setUploadResult({
-          success: false,
-          count: 0,
-          skipped: 0,
-          error: "Failed to parse CSV file."
-        });
-        setLoading(false);
+export type ReviewRequest = {
+  id: string;
+  orderId: string;
+  status: 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed' | 'private_feedback';
+  sentAt?: string;
+};
+
+export type OptOut = {
+  id: string;
+  email: string | null;
+  phone?: string | null;
+  optOutDate: string;
+};
+
+export type MessageEvent = {
+  id: string;
+  requestId: string;
+  eventType: string;
+  createdAt: string;
+};
+
+export type PrivateFeedback = {
+  id: string;
+  requestId: string | null;
+  rating: number;
+  comment: string | null;
+  managerResponse: string | null;
+  createdAt: string;
+  locationId?: string | null;
+  feedbackText?: string | null;
+  guestName?: string | null;
+  guestEmail?: string | null;
+  isRead?: boolean;
+  starRating?: number;
+};
+
+type ReviewSailState = {
+  locations: Location[];
+  customers: Customer[];
+  orders: Order[];
+  reviewRequests: ReviewRequest[];
+  optOuts: OptOut[];
+  messageEvents: MessageEvent[];
+  feedbacks: PrivateFeedback[];
+  activeLocationId: string | null;
+  subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null;
+  stripeCustomerId: string | null;
+  loading: boolean;
+  unreadPrivateFeedbackCount: number;
+  digestSetting: DigestSetting | null;
+};
+
+type ReviewSailContextType = ReviewSailState & {
+  setActiveLocationId: (id: string) => void;
+  addLocation: (name: string, googleUrl?: string) => Promise<Location | null>;
+  deleteLocation: (id: string) => Promise<void>;
+  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
+  addOrder: (order: Omit<Order, 'id'> & { checkinDate?: string }) => Promise<Order | null>;
+  addOptOut: (email: string) => Promise<void>;
+  addReviewRequest: (orderId: string) => Promise<void>;
+  updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
+  respondToFeedback: (id: string, text: string) => Promise<void>;
+  markPrivateFeedbackRead: (id: string) => Promise<void>;
+  refreshData: () => Promise<void>;
+  bulkImport: (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string; checkinDate?: string }>) => Promise<{ success: boolean; count: number; error?: string }>;
+  subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
+  completeOnboarding: (locationId: string) => Promise<void>;
+  triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
+  updateDigestSetting: (frequency: 'weekly' | 'monthly', enabled: boolean) => Promise<void>;
+};
+
+const initialState: ReviewSailState = {
+  locations: [],
+  customers: [],
+  orders: [],
+  reviewRequests: [],
+  optOuts: [],
+  messageEvents: [],
+  feedbacks: [],
+  activeLocationId: null,
+  subscriptionStatus: 'inactive',
+  stripeCustomerId: null,
+  loading: true,
+  unreadPrivateFeedbackCount: 0,
+  digestSetting: null,
+};
+
+const ReviewSailContext = createContext<ReviewSailContextType | undefined>(undefined);
+
+export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
+  const { session } = useAuth();
+  const [state, setState] = useState<ReviewSailState>(initialState);
+
+  const refreshData = async () => {
+    if (!session?.user) return;
+    setState(prev => ({ ...prev, loading: true }));
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isMockSuccess = urlParams.get('mock_checkout_success') === 'true';
+      const mockAccountId = urlParams.get('account_id');
+
+      if (isMockSuccess && mockAccountId) {
+        await supabase.from('accounts').update({ subscription_status: 'active' }).eq('id', mockAccountId);
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
+
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+      let subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null = 'inactive';
+      let stripeCustomerId = null;
+
+      if (userData?.account_id) {
+        const { data: accData } = await supabase.from('accounts').select('subscription_status, stripe_customer_id').eq('id', userData.account_id).single();
+        if (accData) {
+          subscriptionStatus = (accData.subscription_status as any) || 'inactive';
+          stripeCustomerId = accData.stripe_customer_id || null;
+        }
+      }
+
+      const { data: locData } = await supabase.from('locations').select('*');
+      const parsedLocations: Location[] = (locData || []).map(l => ({
+        id: l.id,
+        name: l.name,
+        googlePlaceUrl: l.google_place_url || '',
+        timezone: l.timezone || 'UTC',
+        enableEmail: l.enable_email !== false,
+        enableSms: l.enable_sms !== false,
+        midstayEnabled: l.midstay_enabled !== false,
+        onboardingComplete: l.onboarding_complete === true,
+        preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
+        recoveryEmail: l.recovery_email || '',
+      }));
+
+      const { data: templatesData } = await supabase.from('message_templates').select('*');
+      const locations = parsedLocations.map(loc => {
+        const emailTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'email');
+        const smsTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'sms');
+        return {
+          ...loc,
+          templateText: emailTemplate?.template_text || 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}',
+          smsTemplateText: smsTemplate?.template_text || 'Hi {firstName}, please share your experience at {reviewLink}',
+        };
+      });
+
+      const { data: custData } = await supabase.from('customers').select('*');
+      const customers: Customer[] = (custData || []).map(c => ({
+        id: c.id,
+        firstName: c.first_name,
+        lastName: c.last_name,
+        email: c.email,
+        phone: c.phone,
+      }));
+
+      const { data: orderData } = await supabase.from('orders').select('*');
+      const orders: Order[] = (orderData || []).map(o => ({
+        id: o.id,
+        customerId: o.customer_id,
+        locationId: o.location_id,
+        checkoutDate: o.checkout_date,
+        checkinDate: o.checkin_date || undefined,
+        midstaySent: o.midstay_sent === true,
+        midstaySentAt: o.midstay_sent_at || undefined,
+        status: o.status as 'pending' | 'completed' | 'cancelled',
+      }));
+
+      const { data: rrData } = await supabase.from('review_requests').select('*');
+      const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
+        id: r.id,
+        orderId: r.order_id,
+        status: r.status as ReviewRequest['status'],
+        sentAt: r.sent_at,
+      }));
+
+      const { data: optData } = await supabase.from('opt_outs').select('*');
+      const optOuts: OptOut[] = (optData || []).map(o => ({
+        id: o.id,
+        email: o.email,
+        phone: o.phone,
+        optOutDate: o.opt_out_date,
+      }));
+
+      const { data: eventData } = await supabase.from('message_events').select('*');
+      const messageEvents: MessageEvent[] = (eventData || []).map(e => ({
+        id: e.id,
+        requestId: e.request_id,
+        eventType: e.event_type,
+        createdAt: e.created_at,
+      }));
+
+      // Fetch digest settings for current user
+      let digestSetting: DigestSetting | null = null;
+      try {
+        const { data: dsData } = await supabase
+          .from('digest_settings')
+          .select('*')
+          .eq('user_id', session?.user.id)
+          .maybeSingle();
+        if (dsData) {
+          digestSetting = {
+            id: dsData.id,
+            userId: dsData.user_id,
+            accountId: dsData.account_id,
+            frequency: dsData.frequency as 'weekly' | 'monthly',
+            enabled: dsData.enabled,
+          };
+        }
+      } catch (_) {}
+
+      let feedbacks: PrivateFeedback[] = [];
+      try {
+        const { data: privateFbData } = await supabase.from('private_feedback').select('*');
+        if (privateFbData) {
+          feedbacks = privateFbData.map((f: any) => ({
+            id: f.id,
+            requestId: f.request_id,
+            rating: f.star_rating ?? 0,
+            comment: f.feedback_text ?? null,
+            managerResponse: f.manager_response ?? null,
+            createdAt: f.created_at,
+            locationId: f.location_id,
+            feedbackText: f.feedback_text,
+            guestName: f.guest_name,
+            guestEmail: f.guest_email,
+            isRead: f.is_read ?? true,
+            starRating: f.star_rating,
+          }));
+        }
+      } catch (_) {}
+
+      const { data: fbData } = await supabase.from('feedback').select('*');
+      const publicFeedbacks: PrivateFeedback[] = (fbData || []).map(f => ({
+        id: f.id,
+        requestId: f.request_id,
+        rating: f.rating,
+        comment: f.comment,
+        managerResponse: f.manager_response,
+        createdAt: f.created_at,
+      }));
+
+      const mergedFeedbacks = [...feedbacks, ...publicFeedbacks.filter(pf => !feedbacks.some(f => f.id === pf.id))];
+      const unreadCount = feedbacks.filter(f => f.isRead === false).length;
+
+      setState(prev => ({
+        ...prev,
+        locations,
+        customers,
+        orders,
+        reviewRequests,
+        optOuts,
+        messageEvents,
+        feedbacks: mergedFeedbacks,
+        subscriptionStatus,
+        stripeCustomerId,
+        digestSetting,
+        activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
+        unreadPrivateFeedbackCount: unreadCount,
+        loading: false,
+      }));
+    } catch (e) {
+      console.error('Failed to fetch from supabase:', e);
+      setState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  useEffect(() => {
+    refreshData();
+  }, [session?.user]);
+
+  const setActiveLocationId = (id: string) => {
+    setState(prev => ({ ...prev, activeLocationId: id }));
+  };
+
+  const addLocation = async (name: string, googleUrl?: string) => {
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+    if (!userData) return null;
+
+    const { data, error } = await supabase.from('locations').insert({
+      account_id: userData.account_id,
+      name,
+      google_place_url: googleUrl || '',
+      timezone: 'UTC',
+      enable_email: true,
+      enable_sms: true,
+      midstay_enabled: true,
+      onboarding_complete: false,
+      preferred_send_hour: 10,
+      recovery_email: '',
+    }).select().single();
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+
+    await supabase.from('message_templates').insert([
+      { location_id: data.id, type: 'email', template_text: 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}' },
+      { location_id: data.id, type: 'sms', template_text: 'Hi {firstName}, please share your experience with us at {reviewLink}' },
+    ]);
+
+    await refreshData();
+    return {
+      id: data.id,
+      name: data.name,
+      googlePlaceUrl: data.google_place_url || '',
+      timezone: 'UTC',
+      enableEmail: true,
+      enableSms: true,
+      midstayEnabled: true,
+      onboardingComplete: false,
+      preferredSendHour: 10,
+      recoveryEmail: '',
+    };
+  };
+
+  const deleteLocation = async (id: string) => {
+    const { error } = await supabase.from('locations').delete().eq('id', id);
+    if (error) throw error;
+    setState(prev => {
+      const filtered = prev.locations.filter(l => l.id !== id);
+      return {
+        ...prev,
+        locations: filtered,
+        activeLocationId: prev.activeLocationId === id ? (filtered.length > 0 ? filtered[0].id : null) : prev.activeLocationId,
+      };
     });
+    await refreshData();
   };
 
-  const onButtonClick = () => {
-    fileInputRef.current?.click();
+  const addCustomer = async (customer: Omit<Customer, 'id'>) => {
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+    if (!userData) return null;
+
+    const { data, error } = await supabase.from('customers').insert({
+      account_id: userData.account_id,
+      first_name: customer.firstName,
+      last_name: customer.lastName,
+      email: customer.email,
+      phone: customer.phone,
+    }).select().single();
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+
+    await refreshData();
+    return { id: data.id, firstName: data.first_name, lastName: data.last_name, email: data.email, phone: data.phone };
   };
 
-  const hasNoLocations = locations.length === 0;
+  const addOrder = async (order: Omit<Order, 'id'> & { checkinDate?: string }) => {
+    const { data, error } = await supabase.from('orders').insert({
+      location_id: order.locationId,
+      customer_id: order.customerId,
+      checkout_date: order.checkoutDate,
+      checkin_date: order.checkinDate || null,
+      status: order.status,
+    }).select().single();
+
+    if (error) {
+      console.error(error);
+      return null;
+    }
+
+    await refreshData();
+    return {
+      id: data.id,
+      customerId: data.customer_id,
+      locationId: data.location_id,
+      checkoutDate: data.checkout_date,
+      checkinDate: data.checkin_date || undefined,
+      midstaySent: data.midstay_sent === true,
+      midstaySentAt: data.midstay_sent_at || undefined,
+      status: data.status as 'pending' | 'completed' | 'cancelled',
+    };
+  };
+
+  const addOptOut = async (email: string) => {
+    await supabase.from('opt_outs').insert({ email });
+    await refreshData();
+  };
+
+  const addReviewRequest = async (orderId: string) => {
+    const order = state.orders.find(o => o.id === orderId);
+    const customer = order ? state.customers.find(c => c.id === order.customerId) : null;
+    let status = 'pending';
+    if (customer && state.optOuts.some(o => o.email === customer.email)) {
+      status = 'opted_out';
+    }
+    await supabase.from('review_requests').insert({ order_id: orderId, status });
+    await refreshData();
+  };
+
+  const completeOnboarding = async (locationId: string) => {
+    const { error } = await supabase.from('locations').update({ onboarding_complete: true }).eq('id', locationId);
+    if (error) throw error;
+    await refreshData();
+  };
+
+  const triggerSingleResend = async (requestId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke('process-reviews', { body: { review_request_id: requestId } });
+      if (error) throw error;
+      await refreshData();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Resend process failed' };
+    }
+  };
+
+  const bulkImport = async (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string; checkinDate?: string }>) => {
+    if (!state.activeLocationId) {
+      return { success: false, count: 0, error: 'No active location selected' };
+    }
+
+    try {
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+      if (!userData) {
+        return { success: false, count: 0, error: 'No user account linked' };
+      }
+      const accountId = userData.account_id;
+
+      const { data: insertedCustomers, error: custError } = await supabase
+        .from('customers')
+        .insert(rows.map(r => ({
+          account_id: accountId,
+          first_name: r.firstName,
+          last_name: r.lastName,
+          email: r.email,
+          phone: r.phone || null,
+        })))
+        .select();
+
+      if (custError || !insertedCustomers) {
+        throw custError || new Error('Failed to bulk insert customers');
+      }
+
+      const ordersToInsert = insertedCustomers.map((cust, idx) => ({
+        location_id: state.activeLocationId!,
+        customer_id: cust.id,
+        checkout_date: rows[idx] ? new Date(rows[idx].checkoutDate).toISOString() : new Date().toISOString(),
+        checkin_date: rows[idx]?.checkinDate ? new Date(rows[idx].checkinDate).toISOString() : null,
+        status: 'completed' as const,
+      }));
+
+      const { data: insertedOrders, error: orderError } = await supabase.from('orders').insert(ordersToInsert).select();
+      if (orderError || !insertedOrders) {
+        throw orderError || new Error('Failed to bulk insert orders');
+      }
+
+      const { data: optOuts } = await supabase.from('opt_outs').select('email');
+      const optedOutEmails = new Set((optOuts || []).map(o => o.email?.toLowerCase()));
+
+      const requestsToInsert = insertedOrders.map(order => {
+        const customer = insertedCustomers.find(c => c.id === order.customer_id);
+        const isOptedOut = customer?.email && optedOutEmails.has(customer.email.toLowerCase());
+        return { order_id: order.id, status: isOptedOut ? 'opted_out' : 'pending' };
+      });
+
+      const { error: rrError } = await supabase.from('review_requests').insert(requestsToInsert);
+      if (rrError) throw rrError;
+
+      await refreshData();
+      return { success: true, count: rows.length };
+    } catch (e: any) {
+      console.error(e);
+      return { success: false, count: 0, error: e.message || 'Failed to bulk import data' };
+    }
+  };
+
+  const updateLocationSettings = async (id: string, settings: Partial<Location>) => {
+    const updateData: any = {};
+    if (settings.name !== undefined) updateData.name = settings.name;
+    if (settings.googlePlaceUrl !== undefined) updateData.google_place_url = settings.googlePlaceUrl;
+    if (settings.timezone !== undefined) updateData.timezone = settings.timezone;
+    if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
+    if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
+    if (settings.midstayEnabled !== undefined) updateData.midstay_enabled = settings.midstayEnabled;
+    if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
+    if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;
+
+    if (Object.keys(updateData).length > 0) {
+      const { error } = await supabase.from('locations').update(updateData).eq('id', id);
+      if (error) throw error;
+    }
+
+    if (settings.templateText !== undefined) {
+      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'email').maybeSingle();
+      if (existing) {
+        await supabase.from('message_templates').update({ template_text: settings.templateText }).eq('id', existing.id);
+      } else {
+        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.templateText, type: 'email' });
+      }
+    }
+
+    if (settings.smsTemplateText !== undefined) {
+      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'sms').maybeSingle();
+      if (existing) {
+        await supabase.from('message_templates').update({ template_text: settings.smsTemplateText }).eq('id', existing.id);
+      } else {
+        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.smsTemplateText, type: 'sms' });
+      }
+    }
+
+    await refreshData();
+  };
+
+  const respondToFeedback = async (id: string, text: string) => {
+    const { error } = await supabase.from('feedback').update({ manager_response: text }).eq('id', id);
+    if (error) throw error;
+    await refreshData();
+  };
+
+  const markPrivateFeedbackRead = async (id: string) => {
+    const { error } = await supabase.from('private_feedback').update({ is_read: true }).eq('id', id);
+    if (error) throw error;
+    await refreshData();
+  };
+
+  const subscribe = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout-session');
+      if (error) throw error;
+      if (data && data.url) {
+        return { success: true, url: data.url };
+      }
+      return { success: false, error: 'No checkout session URL returned' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to initiate subscription' };
+    }
+  };
+
+  const updateDigestSetting = async (frequency: 'weekly' | 'monthly', enabled: boolean) => {
+    if (!session?.user) return;
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+    if (!userData?.account_id) return;
+
+    const existing = state.digestSetting;
+    if (existing) {
+      const { error } = await supabase
+        .from('digest_settings')
+        .update({ frequency, enabled, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('digest_settings')
+        .insert({ user_id: session.user.id, account_id: userData.account_id, frequency, enabled });
+      if (error) throw error;
+    }
+
+    setState(prev => ({
+      ...prev,
+      digestSetting: { id: existing?.id || '', userId: session.user.id, accountId: userData.account_id, frequency, enabled },
+    }));
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Sync Guests</h1>
-          <p className="text-sm text-slate-500 mt-1">Register guest checkout entries or ingest bulk files from external PMS networks.</p>
-        </div>
-        <button
-          onClick={() => setIsGuideOpen(true)}
-          className="inline-flex items-center space-x-2 bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 border border-indigo-100 font-semibold text-sm py-2 px-4 rounded-xl transition-colors shadow-sm"
-        >
-          <BookOpen className="h-4 w-4" />
-          <span>Import Guide</span>
-        </button>
-      </div>
-
-      {feedback && (
-        <div className={`p-4 rounded-xl border flex items-start space-x-2.5 shadow-sm text-sm ${
-          feedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
-        }`}>
-          {feedback.type === 'success' ? (
-            <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-          )}
-          <span>{feedback.message}</span>
-        </div>
-      )}
-
-      {hasNoLocations ? (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-12 text-center flex flex-col items-center justify-center space-y-4 max-w-xl mx-auto">
-          <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full">
-            <MapPin className="h-8 w-8" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">No properties linked</h2>
-            <p className="text-sm text-slate-500 mt-1">
-              You must register a location in Settings before you can add guest checkouts or import feedback logs.
-            </p>
-          </div>
-          <Link
-            to="/settings"
-            className="inline-flex items-center space-x-1 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm py-2 px-4 rounded-xl shadow-sm transition-all"
-          >
-            <Sparkles className="h-4 w-4" />
-            <span>Go to Settings</span>
-          </Link>
-        </div>
-      ) : (
-        <div className="space-y-8 max-w-3xl mx-auto">
-          
-          {/* Hero Form: Quick Add a Guest */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-8 space-y-6">
-            <div className="border-b border-slate-100 pb-4">
-              <h2 className="text-xl font-black text-slate-900">Quick Add a Guest</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Perfect for 1-3 daily checkouts — just fill in the details and we handle the rest.
-              </p>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">First Name</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={formData.firstName}
-                    onChange={e => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
-                    placeholder="Jane"
-                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={formData.lastName}
-                    onChange={e => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
-                    placeholder="Doe"
-                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
-                <input 
-                  type="email" 
-                  value={formData.email}
-                  onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
-                  placeholder="guest@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Phone Number (Optional)</label>
-                <input 
-                  type="tel" 
-                  value={formData.phone}
-                  onChange={e => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white" 
-                  placeholder="+15551234567"
-                />
-              </div>
-              
-              <div className="pt-2">
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  className="w-full bg-indigo-600 text-white px-5 py-3.5 rounded-xl text-sm font-extrabold hover:bg-indigo-700 active:bg-indigo-800 transition-colors disabled:opacity-50 shadow-md flex items-center justify-center space-x-2"
-                >
-                  {loading && <RefreshCw className="h-4 w-4 animate-spin" />}
-                  <span>{loading ? 'Adding...' : 'Add Guest & Send Review Request'}</span>
-                </button>
-                <p className="mt-2.5 text-center text-[11px] text-slate-400">
-                  Review invitations send automatically at your preferred time — no action needed after saving.
-                </p>
-              </div>
-            </form>
-          </div>
-
-          {/* Divider 'OR' */}
-          <div className="relative flex py-2 items-center">
-            <div className="flex-grow border-t border-slate-200"></div>
-            <span className="flex-shrink mx-4 text-xs font-black text-slate-400 tracking-widest bg-slate-50 px-3 py-1 border border-slate-200 rounded-full">OR</span>
-            <div className="flex-grow border-t border-slate-200"></div>
-          </div>
-
-          {/* Bottom Card: CSV Checkout Upload */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Upload Checkout Report</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Upload your weekly checkout report exported from Booking.com, Airbnb, or your PMS. ReviewSail handles the rest automatically.
-              </p>
-            </div>
-
-            <div 
-              onDragEnter={handleDrag} 
-              onDragOver={handleDrag} 
-              onDragLeave={handleDrag} 
-              onDrop={handleDrop}
-              onClick={onButtonClick}
-              className={`border-2 border-dashed rounded-xl p-10 text-center transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[180px] ${
-                dragActive ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              <input 
-                ref={fileInputRef}
-                type="file" 
-                accept=".csv"
-                className="hidden" 
-                onChange={handleFileInputChange}
-              />
-              <FileUp className="h-9 w-9 text-slate-400 mb-3" />
-              <p className="text-xs text-slate-600 font-semibold">
-                Drop your checkout report here, or <span className="text-indigo-600 hover:underline">browse</span>
-              </p>
-              <p className="text-[10px] text-slate-400 mt-1.5">Only CSV files accepted</p>
-            </div>
-
-            {uploadResult && (
-              <div className={`p-4 rounded-xl border flex items-start space-x-3 ${
-                uploadResult.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
-              }`}>
-                {uploadResult.success ? (
-                  <>
-                    <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                    <div>
-                      <h4 className="font-semibold text-sm">Bulk Ingestion Complete!</h4>
-                      <p className="text-xs text-green-700 mt-1">
-                        Successfully imported <strong className="text-green-900">{uploadResult.count}</strong> guest checkout records and queued their review requests.
-                      </p>
-                      {uploadResult.skipped > 0 && (
-                        <p className="text-xs text-amber-700 mt-1 flex items-center">
-                          <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                          Skipped {uploadResult.skipped} row(s) due to missing First Name or contact channels.
-                        </p>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
-                    <div>
-                      <h4 className="font-semibold text-sm">Ingestion Failed</h4>
-                      <p className="text-xs text-red-700 mt-1">{uploadResult.error}</p>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-400 flex items-start space-x-2">
-              <Info className="h-4 w-4 text-indigo-500 shrink-0" />
-              <span>
-                <strong>Tip:</strong> ReviewSail automatically reconciles alternative column names. Need templates? Click the <strong>Import Guide</strong> button at the top to see expectations.
-              </span>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* Guide Modal Overlay */}
-      {isGuideOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden my-8">
-            
-            {/* Modal Header */}
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center space-x-2.5 text-indigo-700">
-                <BookOpen className="h-6 w-6" />
-                <h3 className="text-lg font-bold text-slate-900">Platform Export & Import Guide</h3>
-              </div>
-              <button
-                onClick={() => setIsGuideOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-6">
-              
-              {/* Steppers Accordion */}
-              <div>
-                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-3">PMS & Channel Manager Exports</h4>
-                <div className="space-y-3">
-                  
-                  {/* Booking.com */}
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                    <button
-                      onClick={() => toggleSection('booking')}
-                      className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-sm text-slate-800"
-                    >
-                      <span className="flex items-center space-x-2">
-                        <span className="h-2 w-2 rounded-full bg-blue-600" />
-                        <span>Booking.com Extranet Instructions</span>
-                      </span>
-                      {openSection === 'booking' ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-                    </button>
-                    {openSection === 'booking' && (
-                      <div className="p-4 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 space-y-2.5">
-                        <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
-                          <li>Log in to your <strong>Booking.com Extranet</strong> dashboard.</li>
-                          <li>Navigate to the <strong>Reservations</strong> tab from the top navigation bar.</li>
-                          <li>Apply date range filters to select recent completed checkout stays.</li>
-                          <li>Click the <strong>Download</strong> or <strong>Export to CSV</strong> button in the top right corner of the reservation table.</li>
-                        </ol>
-                        <div className="bg-indigo-50 border border-indigo-100 text-indigo-800 p-2.5 rounded-lg font-medium mt-3">
-                          💡 <strong>Note:</strong> Upload the downloaded CSV file above after export.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Airbnb */}
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                    <button
-                      onClick={() => toggleSection('airbnb')}
-                      className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-sm text-slate-800"
-                    >
-                      <span className="flex items-center space-x-2">
-                        <span className="h-2 w-2 rounded-full bg-rose-500" />
-                        <span>Airbnb Host Dashboard Instructions</span>
-                      </span>
-                      {openSection === 'airbnb' ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-                    </button>
-                    {openSection === 'airbnb' && (
-                      <div className="p-4 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 space-y-2.5">
-                        <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
-                          <li>Switch your Airbnb account to <strong>Hosting Mode</strong> and go to the <strong>Reservations</strong> manager.</li>
-                          <li>Select the <strong>Completed</strong> tab or configure custom checkout date boundaries.</li>
-                          <li>Click the <strong>Export</strong> button situated above the reservation listings.</li>
-                          <li>Select <strong>CSV</strong> as the target format and save the spreadsheet directly.</li>
-                        </ol>
-                        <div className="bg-indigo-50 border border-indigo-100 text-indigo-800 p-2.5 rounded-lg font-medium mt-3">
-                          💡 <strong>Note:</strong> Upload the downloaded CSV file above after export.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Expedia */}
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                    <button
-                      onClick={() => toggleSection('expedia')}
-                      className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-sm text-slate-800"
-                    >
-                      <span className="flex items-center space-x-2">
-                        <span className="h-2 w-2 rounded-full bg-yellow-500" />
-                        <span>Expedia Partner Central Instructions</span>
-                      </span>
-                      {openSection === 'expedia' ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-                    </button>
-                    {openSection === 'expedia' && (
-                      <div className="p-4 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 space-y-2.5">
-                        <ol className="list-decimal list-inside space-y-1.5 pl-1 leading-relaxed">
-                          <li>Log into <strong>Expedia Partner Central</strong> and open the <strong>Reservations</strong> dashboard.</li>
-                          <li>Filter by <strong>Status: Checked Out</strong> to display only completed stays.</li>
-                          <li>Click the <strong>Export</strong> dropdown menu to select the CSV export option.</li>
-                          <li>Save the downloaded CSV report and upload it to ReviewSail.</li>
-                        </ol>
-                        <div className="bg-indigo-50 border border-indigo-100 text-indigo-800 p-2.5 rounded-lg font-medium mt-3">
-                          💡 <strong>Note:</strong> Upload the downloaded CSV file above after export.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Column Mapping Table Guide */}
-              <div>
-                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-3">Expected CSV Column Headers</h4>
-                <p className="text-xs text-slate-500 mb-4">
-                  ReviewSail accommodates diverse header titles automatically, but ensuring your column labels match or closely resemble the labels below will speed up ingestion:
-                </p>
-                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm text-xs">
-                  <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Expected Column Header</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Alias Matches (Auto-Mapped)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white leading-relaxed">
-                      <tr>
-                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                          <User className="h-3.5 w-3.5 text-slate-400" />
-                          <span>First Name</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-500">First, FirstName, GuestFirstName, Name</td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                          <User className="h-3.5 w-3.5 text-slate-400" />
-                          <span>Last Name</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="bg-red-50 text-red-700 border border-red-100 font-semibold px-2 py-0.5 rounded text-[10px]">Required</span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-500">Last, LastName, GuestLastName, Surname</td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                          <Mail className="h-3.5 w-3.5 text-slate-400" />
-                          <span>Email</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-500">Email, EmailAddress, GuestEmail, Mail</td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                          <PhoneIcon className="h-3.5 w-3.5 text-slate-400" />
-                          <span>Phone</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional*</span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-500">Phone, PhoneNumber, Mobile, Cell</td>
-                      </tr>
-                      <tr>
-                        <td className="px-4 py-3.5 font-semibold text-slate-800 flex items-center space-x-1.5">
-                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                          <span>Checkout Date</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="bg-slate-100 text-slate-600 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[10px]">Optional</span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-500">Checkout, CheckoutDate, DepartureDate</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-2 italic">
-                  * Note: In order to successfully contact a guest, you must provide either an active Email Address or Phone Number.
-                </p>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end">
-              <button
-                onClick={() => setIsGuideOpen(false)}
-                className="bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold py-2.5 px-5 rounded-xl transition-all shadow-sm"
-              >
-                Close Guide
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    <ReviewSailContext.Provider
+      value={{
+        ...state,
+        setActiveLocationId,
+        addLocation,
+        deleteLocation,
+        addCustomer,
+        addOrder,
+        addOptOut,
+        addReviewRequest,
+        updateLocationSettings,
+        respondToFeedback,
+        markPrivateFeedbackRead,
+        refreshData,
+        bulkImport,
+        subscribe,
+        completeOnboarding,
+        triggerSingleResend,
+        updateDigestSetting,
+      }}
+    >
+      {children}
+    </ReviewSailContext.Provider>
   );
-}
+};
+
+export const useReviewSail = () => {
+  const context = useContext(ReviewSailContext);
+  if (context === undefined) {
+    throw new Error('useReviewSail must be used within a ReviewSailProvider');
+  }
+  return context;
+};
