@@ -32,7 +32,7 @@ serve(async (req) => {
     console.log(`[process-reviews] Current UTC Hour is: ${currentUTCHour}`);
 
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@maprated.com';
+    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@reviewsail.com';
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     const twilioFromNumber = Deno.env.get('TWILIO_FROM_NUMBER');
@@ -104,7 +104,7 @@ serve(async (req) => {
         const customer = order?.customers;
 
         if (!order || !location || !customer) {
-          console.error(`[process-reviews] Incomplete data for request ${request.id}`, { request });
+          console.error(`[process-reviews] Incomplete data for request ${request.id}`);
           continue;
         }
 
@@ -130,7 +130,7 @@ serve(async (req) => {
 
         const emailLower = customer.email?.toLowerCase();
         if (emailLower && optedOutEmails.has(emailLower)) {
-          console.log(`[process-reviews] STRICT COMPLIANCE: Skipping request ${request.id} because ${customer.email} has opted out.`);
+          console.log(`[process-reviews] STRICT COMPLIANCE: Skipping request ${request.id} — customer opted out.`);
           await supabase.from('review_requests').update({ status: 'opted_out' }).eq('id', request.id);
           processedResults.push({ id: request.id, type: 'pending', status: 'opted_out_skipped' });
           continue;
@@ -145,10 +145,10 @@ serve(async (req) => {
           : 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}';
 
         const cleanEmail = customer.email || '';
-        const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
-        const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
-        const alreadyReviewedUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/already-reviewed?request_id=${request.id}`;
-        const feedbackGateUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback-gate?request_id=${request.id}`;
+        const unsubUrl = `${supabaseUrl}/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
+        const feedbackUrl = `${supabaseUrl}/feedback?request_id=${request.id}`;
+        const alreadyReviewedUrl = `${supabaseUrl}/already-reviewed?request_id=${request.id}`;
+        const feedbackGateUrl = `${supabaseUrl}/feedback-gate?request_id=${request.id}`;
 
         let message = templateText
           .replace(/{firstName}/g, customer.first_name || '')
@@ -164,7 +164,7 @@ serve(async (req) => {
         // Email via Resend
         if (isEmailEnabled && customer.email && resendApiKey && resendFromEmail) {
           try {
-            console.log(`[process-reviews] Sending Resend email to: ${customer.email}`);
+            console.log(`[process-reviews] Sending Resend email for request ${request.id}`);
             const emailResponse = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: {
@@ -180,21 +180,21 @@ serve(async (req) => {
             });
 
             if (emailResponse.ok) {
-              console.log(`[process-reviews] Resend email sent successfully to ${customer.email}`);
+              console.log(`[process-reviews] Resend email sent successfully for request ${request.id}`);
               sendSuccess = true;
             } else {
               const errBody = await emailResponse.text();
-              console.error(`[process-reviews] Resend API Error for ${customer.email}:`, errBody);
+              console.error(`[process-reviews] Resend API Error for request ${request.id}:`, errBody);
             }
           } catch (emailErr) {
-            console.error(`[process-reviews] Resend Fetch Error:`, emailErr);
+            console.error(`[process-reviews] Resend Fetch Error for request ${request.id}:`, emailErr);
           }
         }
 
         // SMS via Twilio
         if (isSmsEnabled && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
           try {
-            console.log(`[process-reviews] Sending Twilio SMS to: ${customer.phone}`);
+            console.log(`[process-reviews] Sending Twilio SMS for request ${request.id}`);
             const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
             const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
             const formData = new URLSearchParams();
@@ -212,24 +212,20 @@ serve(async (req) => {
             });
 
             if (smsResponse.ok) {
-              console.log(`[process-reviews] Twilio SMS sent successfully to ${customer.phone}`);
+              console.log(`[process-reviews] Twilio SMS sent successfully for request ${request.id}`);
               sendSuccess = true;
             } else {
               const errBody = await smsResponse.text();
-              console.error(`[process-reviews] Twilio API Error for ${customer.phone}:`, errBody);
+              console.error(`[process-reviews] Twilio API Error for request ${request.id}:`, errBody);
             }
           } catch (smsErr) {
-            console.error(`[process-reviews] Twilio Fetch Error:`, smsErr);
+            console.error(`[process-reviews] Twilio Fetch Error for request ${request.id}:`, smsErr);
           }
         }
 
         // Fallback mock
         if (!sendSuccess) {
-          console.warn(`[process-reviews] Warning: Mock mode triggered for request ${request.id}.`);
-          console.log(`[process-reviews] =======================================`);
-          console.log(`[process-reviews] MOCK SENDING INVITE TO: ${customer.email || customer.phone}`);
-          console.log(`[process-reviews] MESSAGE CONTENT:\n${message}`);
-          console.log(`[process-reviews] =======================================`);
+          console.warn(`[process-reviews] Mock mode: invite queued for request ${request.id}`);
           sendSuccess = true;
         }
 
@@ -347,10 +343,10 @@ serve(async (req) => {
                 : 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}';
 
               const cleanEmail = customer.email || '';
-              const unsubUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
-              const feedbackUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback?request_id=${request.id}`;
-              const alreadyReviewedUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/already-reviewed?request_id=${request.id}`;
-              const feedbackGateUrl = `https://vqjzscdlfhgzzqhmkchw.supabase.co/feedback-gate?request_id=${request.id}`;
+              const unsubUrl = `${supabaseUrl}/unsubscribe?email=${encodeURIComponent(cleanEmail)}`;
+              const feedbackUrl = `${supabaseUrl}/feedback?request_id=${request.id}`;
+              const alreadyReviewedUrl = `${supabaseUrl}/already-reviewed?request_id=${request.id}`;
+              const feedbackGateUrl = `${supabaseUrl}/feedback-gate?request_id=${request.id}`;
 
               let message = `[Reminder] ` + templateText
                 .replace(/{firstName}/g, customer.first_name || '')
@@ -380,7 +376,7 @@ serve(async (req) => {
                   });
                   if (emailResponse.ok) sendSuccess = true;
                 } catch (err) {
-                  console.error(err);
+                  console.error(`[process-reviews] Reminder Resend error for request ${request.id}:`, err);
                 }
               }
 
@@ -403,22 +399,19 @@ serve(async (req) => {
                   });
 
                   if (smsResponse.ok) {
-                    console.log(`[process-reviews] Reminder Twilio SMS sent successfully to ${customer.phone}`);
+                    console.log(`[process-reviews] Reminder Twilio SMS sent for request ${request.id}`);
                     sendSuccess = true;
                   } else {
                     const errBody = await smsResponse.text();
-                    console.error(`[process-reviews] Twilio API Error for ${customer.phone}:`, errBody);
+                    console.error(`[process-reviews] Reminder Twilio API Error for request ${request.id}:`, errBody);
                   }
                 } catch (smsErr) {
-                  console.error(`[process-reviews] Reminder Twilio Fetch Error:`, smsErr);
+                  console.error(`[process-reviews] Reminder Twilio Fetch Error for request ${request.id}:`, smsErr);
                 }
               }
 
               if (!sendSuccess) {
-                console.log(`[process-reviews] =======================================`);
-                console.log(`[process-reviews] MOCK SENDING REMINDER INVITE TO: ${customer.email || customer.phone}`);
-                console.log(`[process-reviews] MESSAGE CONTENT:\n${message}`);
-                console.log(`[process-reviews] =======================================`);
+                console.warn(`[process-reviews] Mock mode: reminder queued for request ${request.id}`);
                 sendSuccess = true;
               }
 
@@ -509,7 +502,7 @@ serve(async (req) => {
           // Check opted-out
           const emailLower = customer.email?.toLowerCase();
           if (emailLower && optedOutEmails.has(emailLower)) {
-            console.log(`[process-reviews] Mid-stay: Customer ${customer.email} is opted out, skipping order ${order.id}.`);
+            console.log(`[process-reviews] Mid-stay: Customer opted out, skipping order ${order.id}.`);
             continue;
           }
 
@@ -527,7 +520,7 @@ serve(async (req) => {
             continue;
           }
 
-          console.log(`[process-reviews] Mid-stay: Sending check-in message for order ${order.id} (guest: ${customer.first_name} ${customer.last_name})`);
+          console.log(`[process-reviews] Mid-stay: Sending check-in message for order ${order.id}`);
 
           const messageText = `Hi ${customer.first_name}, we hope you're enjoying your stay at ${location.name}! 😊 Is there anything we can do to make your stay even better? Just reply to this message and we'll take care of it right away.`;
 
@@ -536,7 +529,7 @@ serve(async (req) => {
           // Email via Resend
           if (location.enable_email !== false && customer.email && resendApiKey && resendFromEmail) {
             try {
-              console.log(`[process-reviews] Mid-stay: Sending Resend email to: ${customer.email}`);
+              console.log(`[process-reviews] Mid-stay: Sending Resend email for order ${order.id}`);
               const emailResponse = await fetch('https://api.resend.com/emails', {
                 method: 'POST',
                 headers: {
@@ -552,21 +545,21 @@ serve(async (req) => {
               });
 
               if (emailResponse.ok) {
-                console.log(`[process-reviews] Mid-stay: Resend email sent successfully to ${customer.email}`);
+                console.log(`[process-reviews] Mid-stay: Resend email sent for order ${order.id}`);
                 sendSuccess = true;
               } else {
                 const errBody = await emailResponse.text();
-                console.error(`[process-reviews] Mid-stay: Resend API Error for ${customer.email}:`, errBody);
+                console.error(`[process-reviews] Mid-stay: Resend API Error for order ${order.id}:`, errBody);
               }
             } catch (emailErr) {
-              console.error(`[process-reviews] Mid-stay: Resend Fetch Error:`, emailErr);
+              console.error(`[process-reviews] Mid-stay: Resend Fetch Error for order ${order.id}:`, emailErr);
             }
           }
 
           // SMS via Twilio
           if (!sendSuccess && location.enable_sms !== false && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
             try {
-              console.log(`[process-reviews] Mid-stay: Sending Twilio SMS to: ${customer.phone}`);
+              console.log(`[process-reviews] Mid-stay: Sending Twilio SMS for order ${order.id}`);
               const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
               const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
               const formData = new URLSearchParams();
@@ -584,24 +577,20 @@ serve(async (req) => {
               });
 
               if (smsResponse.ok) {
-                console.log(`[process-reviews] Mid-stay: Twilio SMS sent successfully to ${customer.phone}`);
+                console.log(`[process-reviews] Mid-stay: Twilio SMS sent for order ${order.id}`);
                 sendSuccess = true;
               } else {
                 const errBody = await smsResponse.text();
-                console.error(`[process-reviews] Mid-stay: Twilio API Error for ${customer.phone}:`, errBody);
+                console.error(`[process-reviews] Mid-stay: Twilio API Error for order ${order.id}:`, errBody);
               }
             } catch (smsErr) {
-              console.error(`[process-reviews] Mid-stay: Twilio Fetch Error:`, smsErr);
+              console.error(`[process-reviews] Mid-stay: Twilio Fetch Error for order ${order.id}:`, smsErr);
             }
           }
 
           // Fallback mock
           if (!sendSuccess) {
-            console.warn(`[process-reviews] Mid-stay: Mock mode triggered for order ${order.id}.`);
-            console.log(`[process-reviews] =======================================`);
-            console.log(`[process-reviews] MOCK MID-STAY CHECK-IN TO: ${customer.email || customer.phone}`);
-            console.log(`[process-reviews] MESSAGE CONTENT:\n${messageText}`);
-            console.log(`[process-reviews] =======================================`);
+            console.warn(`[process-reviews] Mid-stay mock: check-in queued for order ${order.id}`);
             sendSuccess = true;
           }
 
