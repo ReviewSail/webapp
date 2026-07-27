@@ -1046,7 +1046,7 @@ const { digestSetting, updateDigestSetting } = useReviewSail();
 function DigestSettings() {
 const { digestSetting, updateDigestSetting } = useReviewSail();
 =======
-  const { digestSetting, updateDigestSetting } = useReviewSail();
+function DigestSettings() {
   const { user: currentUser } = useAuth();
   const [frequency, setFrequency] = useState<'weekly' | 'monthly'>('weekly');
   const [enabled, setEnabled] = useState(true);
