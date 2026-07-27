@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileUp, Users, Settings, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, FileUp, Users, Settings, MessageSquare, MessageCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useReviewSail } from '../context/ReviewSailContext';
@@ -13,6 +13,7 @@ export function Sidebar() {
     { name: 'Sync Guests', href: '/import', icon: FileUp },
     { name: 'Guests', href: '/guests', icon: Users },
     { name: 'Feedback', href: '/dashboard?tab=feedback', icon: MessageSquare, badge: unreadPrivateFeedbackCount },
+    { name: 'Review Replies', href: '/reply', icon: MessageCircle },
     ...(role !== 'staff' ? [{ name: 'Settings', href: '/settings', icon: Settings }] : []),
   ];
 

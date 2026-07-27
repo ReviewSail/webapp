@@ -12,6 +12,7 @@ import Feedback from "./pages/Feedback"
 import AlreadyReviewed from "./pages/AlreadyReviewed"
 import ResetPassword from "./pages/ResetPassword"
 import FeedbackGate from "./pages/FeedbackGate"
+import ReviewReply from "./pages/ReviewReply"
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { session, loading } = useAuth();
@@ -60,6 +61,7 @@ function AppRoutes() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="import" element={<SyncGuests />} />
         <Route path="guests" element={<Guests />} />
+        <Route path="reply" element={<ReviewReply />} />
         <Route path="settings" element={
           <AdminRoute>
             <Settings />
