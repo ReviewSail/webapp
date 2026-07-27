@@ -20,7 +20,7 @@ export default function Login() {
       <div className="w-full max-w-md space-y-8 bg-white p-10 rounded-xl shadow-sm border border-slate-200">
         <div>
           <h2 className="mt-2 text-center text-3xl font-extrabold text-slate-900 tracking-tight">
-            MapRated
+            ReviewSail
           </h2>
           <p className="mt-2 text-center text-sm text-slate-600">
             Sign in to manage your review requests

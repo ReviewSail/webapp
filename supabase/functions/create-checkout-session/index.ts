@@ -118,7 +118,7 @@ serve(async (req) => {
     }
     bodyParams.append('success_url', `${origin}/dashboard?checkout_success=true`)
     bodyParams.append('cancel_url', `${origin}/settings`)
-    bodyParams.append('subscription_data[metadata][account  bodyParams.append('subscription_data[metadata][account_id]', accountId)
+    bodyParams.append('subscription_data[metadata][account_id]', accountId)
 
     const stripeRes = await fetch(stripeUrl, {
       method: 'POST',

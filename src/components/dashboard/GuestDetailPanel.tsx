@@ -104,16 +104,21 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
             <span>Checkout: {format(new Date(order.checkoutDate), 'MMM d, yyyy')}</span>
           </div>
 
-          {request.sentAt && (
+          {request.sentAt ? (
             <div className="flex items-center space-x-2.5 text-sm text-slate-600">
               <Send className="h-4 w-4 text-slate-400" />
               <span>Invite sent: {format(new Date(request.sentAt), 'MMM d, yyyy h:mm a')}</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2.5 text-sm text-slate-600">
+              <Clock className="h-4 w-4 text-slate-400" />
+              <span>Not yet sent</span>
             </div>
           )}
 
           <div className="flex items-center space-x-2.5 text-sm text-slate-600">
             <Clock className="h-4 w-4 text-slate-400" />
-            <span>Created: {format(new Date(request.sentAt || order.checkoutDate), 'MMM d, yyyy')}</span>
+            <span>Created: {format(new Date(order.checkoutDate), 'MMM d, yyyy')}</span>
           </div>
         </div>
 
@@ -140,23 +145,25 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
           </div>
         )}
 
-        {/* Resend */}
-        <button
-          onClick={handleResend}
-          disabled={sending || resendSuccess}
-          className="w-full bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-        >
-          {sending ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
-          ) : resendSuccess ? (
-            <span className="text-emerald-400">✓ Sent!</span>
-          ) : (
-            <>
-              <RefreshCw className="h-4 w-4" />
-              <span>Resend Invite</span>
-            </>
-          )}
-        </button>
+        {/* Resend (only for requests that have been sent already) */}
+        {request.status === 'sent' && (
+          <button
+            onClick={handleResend}
+            disabled={sending || resendSuccess}
+            className="w-full bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+          >
+            {sending ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : resendSuccess ? (
+              <span className="text-emerald-400">✓ Sent!</span>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                <span>Resend Invite</span>
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

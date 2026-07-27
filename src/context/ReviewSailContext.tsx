@@ -146,7 +146,217 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      supabase.functions.invoke('setup-db').catch(() => {});
+      // Note: setup-db is invoked only when needed (via admin functions), not on every refresh
+
+      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
+      let subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null = 'inactive';
+      let stripeCustomerId = null;
+
+      if (userData?.account_id) {
+        const { data: accData } = await supabase.from('accounts').select('subscription_status, stripe_customer_id').eq('id', userData.account_id).single();
+        if (accData) {
+          subscriptionStatus = (accData.subscription_status as any) || 'inactive';
+          stripeCustomerId = accData.stripe_customer_id || null;
+        }
+      }
+
+      const { data: locData } = await supabase.from('locations').select('*');
+      const parsedLocations: Location[] = (locData || []).map(l => ({
+        id: l.id,
+        name: l.name,
+        googlePlaceUrl: l.google_place_url || '',
+        timezone: l.timezone || 'UTC',
+        enableEmail: l.enable_email !== false,
+        enableSms: l.enable_sms !== false,
+        midstayEnabled: l.midstay_enabled !== false,
+        onboardingComplete: l.onboarding_complete === true,
+        preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
+        recoveryEmail: l.recovery_email || '',
+      }));
+
+      const { data: templatesData } = await supabase.from('message_templates').select('*');
+      const locations = parsedLocations.map(loc => {
+        const emailTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'email');
+        const smsTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'sms');
+        return {
+          ...loc,
+          templateText: emailTemplate?.template_text || 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}',
+          smsTemplateText: smsTemplate?.template_text || 'Hi {firstName}, please share your experience at {reviewLink}',
+        };
+      });
+
+      const { data: custData } = await supabase.from('customers').select('*');
+      const customers: Customer[] = (custData || []).map(c => ({
+        id: c.id,
+        firstName: c.first_name,
+        lastName: c.last_name,
+        email: c.email,
+        phone: c.phone,
+      }));
+
+      const { data: orderData } = await supabase.from('orders').select('*');
+      const orders: Order[] = (orderData || []).map(o => ({
+        id: o.id,
+        customerId: o.customer_id,
+        locationId: o.location_id,
+        checkoutDate: o.checkout_date,
+        checkinDate: o.checkin_date || undefined,
+        midstaySent: o.midstay_sent === true,
+        midstaySentAt: o.midstay_sent_at || undefined,
+        status: o.status as 'pending' | 'completed' | 'cancelled',
+      }));
+
+      const { data: rrData } = await supabase.from('review_requests').select('*');
+      const reviewRequests, continuing the `ReviewSailContext.tsx` file:
+
+<dyad-write path="src/context/ReviewSailContext.tsx">
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../integrations/supabase/client';
+import { useAuth } from './AuthContext';
+import type { DigestSetting } from '../types/reviewSail';
+
+export type { DigestSetting } from '../types/reviewSail';
+
+export type Location = {
+  id: string;
+  name: string;
+  googlePlaceUrl: string;
+  templateText?: string;
+  smsTemplateText?: string;
+  timezone: string;
+  enableEmail: boolean;
+  enableSms: boolean;
+  midstayEnabled: boolean;
+  onboardingComplete: boolean;
+  preferredSendHour: number;
+  recoveryEmail: string;
+};
+
+export type Customer = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone?: string | null;
+};
+
+export type Order = {
+  id: string;
+  customerId: string;
+  locationId: string;
+  checkoutDate: string;
+  checkinDate?: string;
+  midstaySent?: boolean;
+  midstaySentAt?: string;
+  status: 'pending' | 'completed' | 'cancelled';
+};
+
+export type ReviewRequest = {
+  id: string;
+  orderId: string;
+  status: 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed' | 'private_feedback';
+  sentAt?: string;
+};
+
+export type OptOut = {
+  id: string;
+  email: string | null;
+  phone?: string | null;
+  optOutDate: string;
+};
+
+export type MessageEvent = {
+  id: string;
+  requestId: string;
+  eventType: string;
+  createdAt: string;
+};
+
+export type PrivateFeedback = {
+  id: string;
+  requestId: string | null;
+  rating: number;
+  comment: string | null;
+  managerResponse: string | null;
+  createdAt: string;
+  locationId?: string | null;
+  feedbackText?: string | null;
+  guestName?: string | null;
+  guestEmail?: string | null;
+  isRead?: boolean;
+  starRating?: number;
+};
+
+type ReviewSailState = {
+  locations: Location[];
+  customers: Customer[];
+  orders: Order[];
+  reviewRequests: ReviewRequest[];
+  optOuts: OptOut[];
+  messageEvents: MessageEvent[];
+  feedbacks: PrivateFeedback[];
+  activeLocationId: string | null;
+  subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null;
+  stripeCustomerId: string | null;
+  loading: boolean;
+  unreadPrivateFeedbackCount: number;
+  digestSetting: DigestSetting | null;
+};
+
+type ReviewSailContextType = ReviewSailState & {
+  setActiveLocationId: (id: string) => void;
+  addLocation: (name: string, googleUrl?: string) => Promise<Location | null>;
+  deleteLocation: (id: string) => Promise<void>;
+  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
+  addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
+  addOptOut: (email: string) => Promise<void>;
+  addReviewRequest: (orderId: string) => Promise<void>;
+  updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
+  respondToFeedback: (id: string, text: string) => Promise<void>;
+  markPrivateFeedbackRead: (id: string) => Promise<void>;
+  refreshData: () => Promise<void>;
+  bulkImport: (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string }>) => Promise<{ success: boolean; count: number; error?: string }>;
+  subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
+  completeOnboarding: (locationId: string) => Promise<void>;
+  triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
+  updateDigestSetting: (frequency: 'weekly' | 'monthly', enabled: boolean) => Promise<void>;
+};
+
+const initialState: ReviewSailState = {
+  locations: [],
+  customers: [],
+  orders: [],
+  reviewRequests: [],
+  optOuts: [],
+  messageEvents: [],
+  feedbacks: [],
+  activeLocationId: null,
+  subscriptionStatus: 'inactive',
+  stripeCustomerId: null,
+  loading: true,
+  unreadPrivateFeedbackCount: 0,
+  digestSetting: null,
+};
+
+const ReviewSailContext = createContext<ReviewSailContextType | undefined>(undefined);
+
+export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
+  const { session } = useAuth();
+  const [state, setState] = useState<ReviewSailState>(initialState);
+
+  const refreshData = async () => {
+    if (!session?.user) return;
+    setState(prev => ({ ...prev, loading: true }));
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isMockSuccess = urlParams.get('mock_checkout_success') === 'true';
+      const mockAccountId = urlParams.get('account_id');
+
+      if (isMockSuccess && mockAccountId) {
+        await supabase.from('accounts').update({ subscription_status: 'active' }).eq('id', mockAccountId);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
 
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
       let subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null = 'inactive';

@@ -41,6 +41,20 @@ export default function Unsubscribe() {
     }
   };
 
+  if (loading && !success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center">
+          <div className="animate-pulse flex flex-col items-center space-y-2">
+            <div className="h-10 w-10 bg-indigo-100 rounded-full"></div>
+            <div className="h-4 w-32 bg-slate-100 rounded"></div>
+          </div>
+          <p className="text-sm text-slate-500">Processing unsubscribe request...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
