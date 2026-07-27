@@ -1,0 +1,347 @@
+# ReviewSail — Project Handoff
+
+## 1. Project Overview
+
+**ReviewSail** is an automated guest feedback and review-acceleration engine for hospitality businesses (hotels, vacation rentals, etc.). It captures private guest feedback before it reaches public review sites like Google Maps, and routes happy guests to leave public reviews.
+
+---
+
+## 2. Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | TypeScript |
+| UI Library | React 18 |
+| Build Tool | Vite 5 |
+| Styling | Tailwind CSS 3 + shadcn/ui variables |
+| Icons | Lucide React |
+| CSS Utility | clsx + tailwind-merge (`cn()`) |
+| Routing | React Router v6 (all routes in `src/App.tsx`) |
+| Charts | Recharts |
+| Date/Time | date-fns |
+| CSV | papaparse |
+| Auth | Supabase Auth (`@supabase/auth-ui-react`) |
+| Database | Supabase (PostgreSQL) |
+| Edge Functions | Supabase Edge Functions (Deno) |
+| Email Provider | Resend (v1 API) |
+| SMS Provider | Twilio (optional) |
+| AI | OpenAI (GPT-4o-mini) |
+
+---
+
+## 3. Project Structure (Key Files)
+
+```
+src/
+├── App.tsx                    # Entry point, routes, providers
+├── main.tsx                   # React root
+├── index.css                  # Tailwind + CSS variables
+├── lib/
+│   ├── utils.ts               # cn() helper
+│   └── roles.ts               # UserRole type and helpers
+├── integrations/supabase/
+│   └── client.ts              # Supabase client singleton
+├── context/
+│   ├── AuthContext.tsx         # Auth state (session, user, role)
+│   └── ReviewSailContext.tsx   # Main app state + all CRUD operations
+├── types/
+│   └── reviewSail.ts          # DigestSetting type
+├── pages/
+│   ├── Login.tsx              # Auth UI (Supabase Auth)
+│   ├── Dashboard.tsx          # Main dashboard with tabs
+│   ├── Analytics.tsx          # KPI line chart, recent activity
+│   ├── SyncGuests.tsx         # Manual add + CSV upload
+│   ├── Guests.tsx             # Guest list with status/actions
+│   ├── Settings.tsx           # Locations, templates, digest, billing, account
+│   ├── Feedback.tsx           # Public feedback form (request_id)
+│   ├── FeedbackGate.tsx       # Star rating gate + private feedback flow
+│   ├── AlreadyReviewed.tsx    # Self-suppression page
+│   ├── ResetPassword.tsx      # Password recovery
+│   ├── Unsubscribe.tsx        # Opt-out page
+│   └── ReviewReply.tsx        # AI-generated Google review replies
+├── components/
+│   ├── Layout.tsx             # Sidebar + header + outlet
+│   ├── Sidebar.tsx            # Navigation
+│   └── dashboard/
+│       ├── StatsGrid.tsx
+│       ├── RecentRequestsTable.tsx
+│       ├── PrivateFeedbackSection.tsx
+│       ├── PrivateFeedbackInbox.tsx
+│       ├── GuestDetailPanel.tsx
+│       ├── TrialBanner.tsx
+│       ├── OnboardingWizard.tsx
+│       └── TeamRecognitionCard.tsx
+supabase/functions/
+├── process-reviews/index.ts         # Hourly cron: send invites & reminders & mid-stay
+├── create-checkout-session/index.ts # Stripe checkout (or mock)
+├── stripe-webhook/index.ts          # Stripe webhook handler
+├── delete-account/index.ts          # Full account deletion
+├── invite-team-member/index.ts      # Send team invite email
+├── generate-review-reply/index.ts   # AI reply draft (OpenAI)
+├── scan-feedback-recognition/index.ts # AI recognition extraction (OpenAI)
+├── weekly-summary/index.ts          # Email digest generation
+└── setup-db/index.ts                # One-time db schema setup
+```
+
+---
+
+## 4. Database Schema (Public Tables)
+
+### `accounts`
+- `id` UUID PK (uuid_generate_v4)
+- `name` TEXT NOT NULL
+- `created_at` TIMESTAMPTZ DEFAULT NOW()
+- `resend_api_key`, `resend_from_email`, `twilio_account_sid`, `twilio_auth_token`, `twilio_from_number` TEXT nullable
+- `stripe_customer_id` TEXT nullable
+- `subscription_status` TEXT DEFAULT 'inactive'
+
+### `locations`
+- `id` UUID PK
+- `account_id` UUID FK → accounts
+- `name`, `google_place_url`, `timezone`
+- `enable_email`, `enable_sms`, `midstay_enabled` BOOLEAN
+- `onboarding_complete` BOOLEAN
+- `preferred_send_hour` INTEGER
+- `recovery_email` TEXT
+
+### `users` (public)
+- `id` UUID PK (references auth.users)
+- `account_id` UUID FK → accounts
+- `role` TEXT DEFAULT 'admin' (admin | staff)
+- `email`, `full_name` TEXT
+- `created_at` TIMESTAMPTZ
+
+### `customers`
+- `id` UUID PK
+- `account_id` UUID FK
+- `first_name`, `last_name`, `email`, `phone`
+
+### `orders`
+- `id` UUID PK
+- `location_id` UUID FK
+- `customer_id` UUID FK
+- `checkout_date` TIMESTAMPTZ
+- `checkin_date` TIMESTAMPTZ nullable
+- `status` TEXT DEFAULT 'completed'
+- `midstay_sent` BOOLEAN DEFAULT false
+- `midstay_sent_at` TIMESTAMPTZ nullable
+
+### `review_requests`
+- `id` UUID PK
+- `order_id` UUID FK
+- `status` TEXT (pending|sent|clicked|opted_out|expired|already_reviewed|private_feedback)
+- `sent_at` TIMESTAMPTZ nullable
+
+### `feedback`
+- `id` UUID PK
+- `request_id` UUID FK
+- `rating` INTEGER (1–5)
+- `comment`, `manager_response` TEXT
+- `created_at` TIMESTAMPTZ
+
+### `private_feedback`
+- `id` UUID PK
+- `request_id`, `location_id` UUID nullable
+- `star_rating` INTEGER nullable
+- `feedback_text`, `guest_name`, `guest_email`, `manager_response` TEXT
+- `is_read` BOOLEAN DEFAULT false
+- `created_at` TIMESTAMPTZ
+
+### `message_events`
+- `id` UUID PK
+- `request_id` UUID FK
+- `event_type` TEXT (sent|clicked|reminder_sent|midstay_checkin|already_reviewed)
+- `created_at` TIMESTAMPTZ
+
+### `opt_outs`
+- `id` UUID PK
+- `email`, `phone` TEXT nullable
+- `opt_out_date` TIMESTAMPTZ DEFAULT NOW()
+
+### `message_templates`
+- `id` UUID PK
+- `location_id` UUID FK
+- `type` TEXT (email|sms)
+- `template_text` TEXT
+- `created_at` TIMESTAMPTZ
+
+### `team_members`
+- `id` UUID PK
+- `account_id` UUID FK
+- `name`, `role` TEXT
+- `created_at` TIMESTAMPTZ
+
+### `recognition_records`
+- `id` UUID PK
+- `account_id` UUID FK
+- `team_member_id` UUID nullable FK → team_members
+- `matched_role`, `matched_sentence`, `guest_name`, `source` TEXT
+- `created_at` TIMESTAMPTZ
+
+### `digest_settings`
+- `id` UUID PK
+- `user_id` UUID FK → auth.users
+- `account_id` UUID FK → accounts
+- `frequency` TEXT (weekly|monthly)
+- `enabled` BOOLEAN
+- `created_at`, `updated_at` TIMESTAMPTZ
+
+---
+
+## 5. RLS & Security
+
+- All tables have RLS enabled.
+- `anon` roles have **minimum grants**: only insert/update on `feedback`, `private_feedback`, `opt_outs`, and `message_events`.
+- `authenticated` roles have full CRUD on business tables, scoped to their account via `get_current_account_id()`.
+- `service_role` has full CRUD for edge functions.
+- Anon can read `review_requests` (for status check) and update only specific statuses (`clicked`, `already_reviewed`).
+- Admins can manage `accounts`, `locations`, `users`, `team_members`; staff cannot access Settings.
+- `revoke_anon.sql` migrations have removed excessive anon grants.
+
+---
+
+## 6. Key Edge Functions
+
+| Function | Trigger | Purpose |
+|---|---|---|
+| `process-reviews` | Cron (hourly) or manual | Sends pending invites, 3-day reminders, and mid-stay check-ins based on preferred send hour, opt-out list, and expiry logic. |
+| `create-checkout-session` | User clicks "Upgrade" | Creates Stripe checkout session (or returns mock success URL) |
+| `stripe-webhook` | Stripe webhook | Updates account subscription status on checkout completion or cancellation |
+| `delete-account` | User confirms delete | Deletes account + all cascade data + auth user |
+| `invite-team-member` | Admin invites staff | Sends invite email with `invite_account_id` in URL |
+| `generate-review-reply` | User clicks "Generate" | Calls OpenAI to draft a Google review reply based on review text, topic, tone, hotel name, and template guidance |
+| `scan-feedback-recognition` | DB trigger on `private_feedback` insert | Scans feedback text for positive mentions of team members/roles; records `recognition_records` |
+| `weekly-summary` | Cron (weekly, monthly) | Emails admin users with aggregated metrics per property over the period |
+| `setup-db` | Manual | Runs one-time schema migrations (columns, tables, cron jobs) |
+
+---
+
+## 7. Public-Facing Flows
+
+### FeedbackGate (`/feedback-gate?request_id=xxx`)
+- Shows star rating selector (1–5).
+- If rating >= 4 (happy): redirects to Google Maps URL or shows thank-you.
+- If rating <= 3 (unhappy): shows private feedback form.
+- After submission, shows thank-you + optional recovery section:
+  1. Direct email link (`mailto:{recoveryEmail}`).
+  2. Inline message form that inserts into `private_feedback` with `star_rating = null`.
+- If `request_id=demo`, shows preview mode with hardcoded data.
+
+### Feedback (`/feedback?request_id=xxx`)
+- Direct public feedback page (legacy; mostly superceded by FeedbackGate).
+- Submits to `feedback` table.
+
+### Already Reviewed (`/already-reviewed?request_id=xxx`)
+- Sets `review_requests.status = 'already_reviewed'` and logs message event.
+
+### Unsubscribe (`/unsubscribe?email=xxx`, also `/opt-out`)
+- Inserts into `opt_outs` table.
+
+### Reset Password (`/reset-password`)
+- Uses Supabase recovery token from URL hash (`type=recovery` + `access_token`).
+- Allows password update via `supabase.auth.updateUser`.
+
+---
+
+## 8. Known Bugs & Pending Issues
+
+### 1. CSV Column Mapping Fragility
+**File:** `src/pages/SyncGuests.tsx` (Papa parse callback)
+- The key cleaning logic (`cleanKey`) normalizes column names but the mapping from those keys to fields (`firstName`, `lastName`, `email`, `phone`, `checkoutDate`, `checkinDate`) is incomplete/inconsistent. The code was cut off mid-write and needs careful review.
+- **Impact:** CSV import may silently fail or produce rows with missing data.
+- **Fix needed:** Ensure all required columns are mapped correctly; add validation and user-friendly error messages for each row.
+
+### 2. Private Feedback "PrivateFeedback" Branding Mismatch
+- In `PrivateFeedbackInbox.tsx`, the `starRating` field from `private_feedback` is displayed but the context merges `feedback` and `private_feedback` tables. Some records may have `rating` = 0 when `star_rating` is null.
+- **Impact:** Unhappy guests who submitted via recovery form (no star rating) show "0 stars" on the feedback inbox.
+- **Fix needed:** Distinguish between feedback with no rating (show "Recovery Message") vs actual star rating.
+
+### 3. Edge Function Permission Gaps
+- `process-reviews` uses `service_role` key for all ops, but anon access to `review_requests` for status update is currently allowed via RLS. However, some customers have reported `permission denied for table private_feedback` when anonymous guests try to submit the recovery form.
+- **Impact:** Guests may see an error after submission.
+- **Workaround:** Ensure `private_feedback` has explicit `GRANT INSERT ON TABLE private_feedback TO anon;` (already in migrations). Double-check the RLS policy for `private_feedback` allows anon inserts with no `WITH CHECK` restriction.
+
+### 4. Digest Email "reviews@maprated.com" Default
+- The `weekly-summary` function hardcodes `resendFromEmail` as `reviews@maprated.com`. This domain may not be verified in Resend.
+- **Impact:** Digest emails may not be sent or may land in spam.
+- **Fix:** Use the account-level `resend_from_email` from the `accounts` table instead of hardcoded default, or set a verified domain.
+
+### 5. Mid-Stay Check-in Window Logic
+- In `process-reviews`, the window for sending mid-stay check-in is 23–25 hours after check-in. The code uses `twentyFiveHoursAgo` and `twentyThreeHoursAgo` but the comparison `checkinDate > twentyThreeHoursAgo || checkinDate < twentyFiveHoursAgo` is inverted logic.
+- **Impact:** Mid-stay check-ins may never be sent or may be sent incorrectly.
+- **Fix:** Should be `checkinDate >= twentyFiveHoursAgo && checkinDate <= twentyThreeHoursAgo` (i.e., between 23 and 25 hours ago). Also ensure `checkin_date` is properly indexed.
+
+### 6. FeedbackGate Demo Mode Inconsistent
+- When `request_id=demo`, the flow works but does not simulate the recovery email submission (the `recoveryEmail` is hardcoded to 'recovery@grandhotel.com' but is not validated against a real location).
+- **Impact:** Demo cannot fully test recovery flow.
+- **Fix:** Add better demo data generation or use a sandbox account.
+
+### 7. Settings Page — Digest Tab Update
+- The digest settings update in `Settings.tsx` calls `updateDigestSetting(frequency, enabled)` which updates the database but does not refresh the local state immediately. The user may see stale values after toggling.
+- **Impact:** Minor UX issue; digest toggle may not visually reflect change until page refresh.
+- **Fix:** Call `refreshData()` after `updateDigestSetting` or update local state in the callback.
+
+### 8. ReviewReplies — Template Guidance Hardcoded
+- The `templateGuidance` in `ReviewReply.tsx` constructs a string from `TEMPLATES[topic]` which includes both email and SMS guidance. This is passed to the edge function but the function's system prompt always uses it as a string. The edge function does not distinguish between email and SMS contexts.
+- **Impact:** Generated drafts may conflate tone or length expectations.
+- **Fix:** Allow the user to select output format (email vs SMS) and pass only relevant guidance.
+
+### 9. Error Handling in Edge Functions
+- Several edge functions (e.g., `process-reviews`, `weekly-summary`) have broad try/catch blocks that return a 500 with `error.message`. This leaks internal implementation details to the client (if the client calls the function directly). For functions called by cron or webhook, this is acceptable, but for user-triggered functions (`create-checkout-session`, `delete-account`, `invite-team-member`), the error should be sanitized.
+- **Impact:** Potential information leakage.
+- **Fix:** Return generic error messages to the client; log full error server-side.
+
+---
+
+## 9. Configuration Requirements
+
+### Environment Variables (Supabase Secrets)
+| Secret | Purpose |
+|---|---|
+| `RESEND_API_KEY` | Sending emails |
+| `RESEND_FROM_EMAIL` | Default sender email |
+| `TWILIO_ACCOUNT_SID` | Twilio auth |
+| `TWILIO_AUTH_TOKEN` | Twilio auth |
+| `TWILIO_FROM_NUMBER` | Twilio sender number |
+| `STRIPE_SECRET_KEY` | Stripe payment |
+| `OPENAI_API_KEY` | AI completions (review replies + recognition) |
+| `SUPABASE_URL` | Auto-set by Supabase |
+| `SUPABASE_ANON_KEY` | Auto-set |
+| `SUPABASE_SERVICE_ROLE_KEY` | Auto-set |
+| `SUPABASE_DB_URL` | Auto-set (only for `setup-db`) |
+
+### Resend Verified Domain
+- The `resend_from_email` address must be from a verified domain in Resend.
+- Current default: `reviews@maprated.com` — **not verified**, needs to be updated.
+
+### Stripe Webhook Endpoint
+- Endpoint URL: `https://vqjzscdlfhgzzqhmkchw.supabase.co/functions/v1/stripe-webhook`
+- Events: `checkout.session.completed`, `customer.subscription.deleted`
+
+### Cron Jobs (via pg_cron)
+- `invoke-process-reviews` — hourly at minute 0
+- `invoke-weekly-summary` — weekly on Monday at 8:00 UTC
+
+---
+
+## 10. Deployment Notes
+
+- **Build:** `npm run build` (TypeScript + Vite)
+- **Preview:** `npm run preview`
+- **Dev:** `npm run dev` (Vite dev server)
+- Edge functions are deployed automatically when pushed to the Supabase project linked to this repo. No manual deploy needed.
+
+---
+
+## 11. Next Steps / Future Improvements
+
+1. **Refactor CSV importer** to use a wizard with column preview and mapping.
+2. **Add multi-language support** for the feedback gate (guest-facing pages).
+3. **Add SMS templates** distinct from email templates (currently only email template used for SMS).
+4. **Improve mid-stay window logic** with configurable delay (not hardcoded 24h).
+5. **Add team member management UI** (currently only API via `invite-team-member`).
+6. **Add subscription management UI** (cancel, upgrade/downgrade, billing history).
+7. **Add automated testing** for edge functions (Deno test suite).
+8. **Migrate from pg_cron** to Supabase's native scheduled functions if available.
+9. **Add rate limiting** on public endpoints (feedback, opt-out) to prevent abuse.
+10. **Consolidate `feedback` and `private_feedback`** into a single table with proper RLS.
