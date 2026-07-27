@@ -145,7 +145,6 @@ serve(async (req) => {
       for (const member of teamMembers) {
         if (!member.name) continue
         if (feedbackText.toLowerCase().includes(member.name.toLowerCase())) {
-          const sentence = extractSentenceContaining(feedbackif (feedbackText.toLowerCase().includes(member.name.toLowerCase())) {
           const sentence = extractSentenceContaining(feedbackText, member.name)
           candidates.push({
             type: 'name',
@@ -164,7 +163,6 @@ serve(async (req) => {
     for (const [role, phrases] of Object.entries(ROLE_PHRASES)) {
       for (const phrase of phrases) {
         if (feedbackLower.includes(phrase)) {
-          // Determine how to map
           if (teamListEmpty) {
             candidates.push({
               type: 'role',
@@ -172,9 +170,8 @@ serve(async (req) => {
               matched_sentence: extractSentenceContaining(feedbackText, phrase),
               matched_phrase: phrase
             })
-            break // only one per phrase
+            break
           } else {
-            // Check if there's a team member with this role
             const matchingMember = teamMembers.find((m: any) => m.role === role)
             if (matchingMember) {
               candidates.push({
@@ -184,8 +181,6 @@ serve(async (req) => {
                 matched_sentence: extractSentenceContaining(feedbackText, phrase),
                 matched_phrase: phrase
               })
-            } else {
-              // team list exists but no member with that role, skip
             }
             break
           }
@@ -193,7 +188,7 @@ serve(async (req) => {
       }
     }
 
-    // Deduplicate candidates (same sentence multiple matches)
+    // Deduplicate candidates
     const seenSentences = new Set<string>()
     const uniqueCandidates = candidates.filter(c => {
       const key = c.matched_sentence
@@ -213,7 +208,6 @@ serve(async (req) => {
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     if (!openAiKey) {
       console.warn("[scan-feedback-recognition] OPENAI_API_KEY not set, skipping sentiment classification")
-      // Without AI, we cannot classify, so skip saving
       return new Response(JSON.stringify({ success: true, message: "No AI key configured" }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -229,7 +223,6 @@ serve(async (req) => {
         continue
       }
 
-      // Insert recognition record
       const insertData: any = {
         account_id: accountId,
         matched_sentence: cand.matched_sentence,
