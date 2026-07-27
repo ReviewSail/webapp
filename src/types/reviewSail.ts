@@ -62,6 +62,14 @@ export type PrivateFeedback = {
   createdAt: string;
 };
 
+export type DigestSetting = {
+  id: string;
+  userId: string;
+  accountId: string;
+  frequency: 'weekly' | 'monthly';
+  enabled: boolean;
+};
+
 export type ReviewSailState = {
   locations: Location[];
   customers: Customer[];
@@ -74,6 +82,7 @@ export type ReviewSailState = {
   subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null;
   stripeCustomerId: string | null;
   loading: boolean;
+  digestSetting: DigestSetting | null;
 };
 
 export type ReviewSailContextType = ReviewSailState & {
@@ -91,4 +100,5 @@ export type ReviewSailContextType = ReviewSailState & {
   subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
   completeOnboarding: (locationId: string) => Promise<void>;
   triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
+  updateDigestSetting: (frequency: 'weekly' | 'monthly', enabled: boolean) => Promise<void>;
 };

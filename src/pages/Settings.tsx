@@ -6,10 +6,10 @@ import { supabase } from '../integrations/supabase/client';
 import {
   MapPin, Plus, Trash2, Save, Mail, Users,
   UserPlus, RefreshCw, AlertCircle, CheckCircle, BedDouble,
-  User, Lock, CreditCard, Building2, Smartphone, Clock, Settings2, Code, RotateCcw
+  User, Lock, CreditCard, Building2, Smartphone, Clock, Settings2, Code, RotateCcw, Bell
 } from 'lucide-react';
 
-type TabId = 'property' | 'messaging' | 'team' | 'subscription' | 'account';
+type TabId = 'property' | 'messaging' | 'team' | 'subscription' | 'account' | 'digest';
 
 const TABS: { key: TabId; label: string; icon: typeof MapPin; description: string }[] = [
   { key: 'property', label: 'Property', icon: Building2, description: 'Manage your properties and configure their settings.' },
@@ -17,6 +17,7 @@ const TABS: { key: TabId; label: string; icon: typeof MapPin; description: strin
   { key: 'team', label: 'Team', icon: Users, description: 'Invite and manage team members.' },
   { key: 'subscription', label: 'Subscription', icon: CreditCard, description: 'View and manage your subscription plan and billing status.' },
   { key: 'account', label: 'Account', icon: User, description: 'Manage your profile, security, and account settings.' },
+  { key: 'digest', label: 'Digest', icon: Bell, description: 'Configure automated owner digest emails — weekly or monthly performance summaries.' },
 ];
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -849,6 +850,199 @@ export default function Settings() {
             </div>
           </div>
         )}
+
+        {/* ===== Digest Tab ===== */}
+        {activeTab === 'digest' && (
+          <DigestSettings />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DigestSettings() {
+  const { digestSetting, updateDigestSetting } = useReviewSail();
+  const { user: currentUser } = useAuth();
+  const [frequency, setFrequency] = useState<'weekly' | 'monthly'>('weekly');
+  const [enabled, setEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (digestSetting) {
+      setFrequency(digestSetting.frequency);
+      setEnabled(digestSetting.enabled);
+    }
+  }, [digestSetting]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await updateDigestSetting(frequency, enabled);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save digest settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-bold text-slate-900">Owner Digest Emails</h3>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Receive regular performance summaries for all your properties. These are sent to the account owner (admin users) and include key metrics at a glance — no need to log into the dashboard.
+        </p>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 text-red-800 p-3 rounded-xl border border-red-200 flex items-start space-x-2">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl border border-emerald-200 flex items-center space-x-2">
+          <CheckCircle className="h-4 w-4 shrink-0" />
+          <span className="text-sm">Digest preferences saved!</span>
+        </div>
+      )}
+
+      <div className="bg-slate-50 rounded-xl p-6 border border-slate-100 space-y-6">
+        {/* Enable Toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
+              <Bell className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900">Digest Notifications</p>
+              <p className="text-xs text-slate-500">Receive automated summary emails</p>
+            </div>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+
+        {/* Frequency Selection */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <p className="text-sm font-bold text-slate-700 mb-3">Email Frequency</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setFrequency('weekly')}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${
+                frequency === 'weekly'
+                  ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-100'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              } ${!enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!enabled}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                  frequency === 'weekly' ? 'border-indigo-500' : 'border-slate-300'
+                }`}>
+                  {frequency === 'weekly' && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Weekly</p>
+                  <p className="text-xs text-slate-500">Every 7 days</p>
+                </div>
+              </div>
+            </button>
+            <button
+              onClick={() => setFrequency('monthly')}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${
+                frequency === 'monthly'
+                  ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-100'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              } ${!enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!enabled}
+            >
+              <div className="flex items-center space-x-3">
+                <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                  frequency === 'monthly' ? 'border-indigo-500' : 'border-slate-300'
+                }`}>
+                  {frequency === 'monthly' && <div className="h-2 w-2 rounded-full bg-indigo-500" />}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Monthly</p>
+                  <p className="text-xs text-slate-500">Every 30 days</p>
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* What's Included */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <p className="text-sm font-bold text-slate-700 mb-3">What's Included</p>
+          <div className="space-y-3">
+            <div className="flex items-start space-x-3">
+              <div className="h-6 w-6 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Reviews Received</p>
+                <p className="text-xs text-slate-500">Total number of guests who submitted feedback during the period.</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="h-6 w-6 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle className="h-3.5 w-3.5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Average Rating</p>
+                <p className="text-xs text-slate-500">Combined average star rating across all feedback received.</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle className="h-3.5 w-3.5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Private Feedback Caught</p>
+                <p className="text-xs text-slate-500">Issues and comments captured privately before they reach public review sites.</p>
+              </div>
+            </div>
+            <div className="flex items-start space-x-3">
+              <div className="h-6 w-6 rounded-full bg-purple-100 flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle className="h-3.5 w-3.5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Mid-Stay Saves</p>
+                <p className="text-xs text-slate-500">Proactive mid-stay check-ins sent to guests during their stay.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+        >
+          {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          <span>{saving ? 'Saving...' : 'Save Digest Preferences'}</span>
+        </button>
+
+        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+          <p className="text-xs text-indigo-700 leading-relaxed">
+            <strong>Note:</strong> Digest emails are sent to all admin users on your account.
+            If the digest is enabled, you'll receive an email at <strong>{currentUser?.email || 'your email'}</strong>
+            with a summary of all your properties. You can change your preferences or unsubscribe at any time.
+          </p>
+        </div>
       </div>
     </div>
   );

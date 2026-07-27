@@ -185,6 +185,31 @@ export function useReviewSailActions({ state, setState, refreshData }: ActionsDe
     }
   }, []);
 
+  const updateDigestSetting = useCallback(async (frequency: 'weekly' | 'monthly', enabled: boolean) => {
+    if (!session?.user) return;
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+    if (!userData?.account_id) return;
+
+    const existing = state.digestSetting;
+    if (existing) {
+      const { error } = await supabase
+        .from('digest_settings')
+        .update({ frequency, enabled, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('digest_settings')
+        .insert({ user_id: session.user.id, account_id: userData.account_id, frequency, enabled });
+      if (error) throw error;
+    }
+
+    setState(prev => ({
+      ...prev,
+      digestSetting: { id: existing?.id || '', userId: session.user.id, accountId: userData.account_id, frequency, enabled },
+    }));
+  }, [session, setState, state.digestSetting]);
+
   return {
     addLocation,
     deleteLocation,
@@ -198,5 +223,6 @@ export function useReviewSailActions({ state, setState, refreshData }: ActionsDe
     updateLocationSettings,
     respondToFeedback,
     subscribe,
+    updateDigestSetting,
   };
 }

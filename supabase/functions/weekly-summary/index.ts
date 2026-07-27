@@ -12,230 +12,441 @@ serve(async (req) => {
   }
 
   try {
-    console.log("[weekly-summary] Commencing weekly email report generator job...");
-    
-    // Read secure API keys
+    console.log("[weekly-summary] Digest job starting...");
+
+    // Allow forcing a specific frequency for manual triggers
+    let forcedFrequency: 'weekly' | 'monthly' | null = null;
+    try {
+      const body = await req.json();
+      if (body && body.frequency && ['weekly', 'monthly'].includes(body.frequency)) {
+        forcedFrequency = body.frequency as 'weekly' | 'monthly';
+        console.log(`[weekly-summary] Forced frequency: ${forcedFrequency}`);
+      }
+    } catch {
+      // No body or invalid JSON — proceed normally
+    }
+
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@maprated.com';
 
-    // Initialize service client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Calculate past 7 days range
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const oneWeekAgoISO = oneWeekAgo.toISOString();
+    // Calculate date range
+    const now = new Date();
+    let periodStart: Date;
 
-    // 1. Fetch all locations with templates and account owners
-    const { data: locations, error: locError } = await supabase
-      .from('locations')
+    if (forcedFrequency === 'monthly') {
+      periodStart = new Date(now);
+      periodStart.setMonth(periodStart.getMonth() - 1);
+    } else {
+      periodStart = new Date(now);
+      periodStart.setDate(periodStart.getDate() - 7);
+    }
+
+    const periodStartISO = periodStart.toISOString();
+    const periodLabel = forcedFrequency === 'monthly' ? 'Monthly' : 'Weekly';
+    const periodLabelLower = forcedFrequency === 'monthly' ? 'monthly' : 'weekly';
+
+    console.log(`[weekly-summary] Period: ${periodLabel}, starting ${periodStartISO}`);
+
+    // 1. Fetch all accounts with locations
+    const { data: accounts, error: accError } = await supabase
+      .from('accounts')
       .select(`
         id,
         name,
-        account_id
+        locations (id, name, recovery_email)
       `);
 
-    if (locError || !locations) {
-      throw locError || new Error("Failed to load locations");
+    if (accError) {
+      throw new Error(`Failed to load accounts: ${accError.message}`);
     }
 
-    console.log(`[weekly-summary] Loaded ${locations.length} locations to analyze.`);
+    if (!accounts || accounts.length === 0) {
+      console.log("[weekly-summary] No accounts found.");
+      return new Response(JSON.stringify({ success: true, message: "No accounts to process" }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    }
 
-    // Match locations with account email addresses.
-    // Let's grab all active user emails from authentication or our public users database
-    // Note: We use auth.users mock emails or public users joined with auth details.
-    // Since we're in service role, we can read from users.
-    const { data: users, error: userError } = await supabase
+    console.log(`[weekly-summary] Loaded ${accounts.length} accounts.`);
+
+    // 2. Fetch all digest settings
+    const { data: digestSettings, error: dsError } = await supabase
+      .from('digest_settings')
+      .select('*');
+
+    if (dsError) {
+      console.error("[weekly-summary] Failed to fetch digest settings:", dsError);
+    }
+
+    const digestMap = new Map<string, { frequency: string; enabled: boolean }>();
+    if (digestSettings) {
+      for (const ds of digestSettings) {
+        digestMap.set(ds.user_id, { frequency: ds.frequency, enabled: ds.enabled });
+      }
+    }
+
+    // 3. Fetch all users (to find admins and their emails)
+    const { data: allUsers, error: usersError } = await supabase
       .from('users')
-      .select(`
-        id,
-        account_id,
-        role
-      `);
+      .select('*');
 
-    if (userError) {
-      console.error("[weekly-summary] Failed to query accounts owners database:", userError);
+    if (usersError) {
+      console.error("[weekly-summary] Failed to query users:", usersError);
     }
 
-    // Now let's loop through each location to compile and deliver reports
-    for (const loc of locations) {
-      // Find the account owners for this location
-      const ownerUsers = users?.filter(u => u.account_id === loc.account_id) || [];
-      if (ownerUsers.length === 0) {
-        console.log(`[weekly-summary] Skipping location "${loc.name}" (ID: ${loc.id}): No associated admin users.`);
+    // Group users by account
+    const usersByAccount = new Map<string, Array<{ id: string; email: string | null; role: string | null; fullName: string | null }>>();
+    if (allUsers) {
+      for (const u of allUsers) {
+        if (!u.account_id) continue;
+        const existing = usersByAccount.get(u.account_id) || [];
+        existing.push({
+          id: u.id,
+          email: u.email,
+          role: u.role,
+          fullName: u.full_name,
+        });
+        usersByAccount.set(u.account_id, existing);
+      }
+    }
+
+    let totalSent = 0;
+    let totalSkipped = 0;
+
+    // 4. Process each account
+    for (const account of (accounts as any[])) {
+      const accountId = account.id;
+      const accountName = account.name || 'Your Account';
+      const locations = account.locations || [];
+
+      if (locations.length === 0) {
+        console.log(`[weekly-summary] Skipping account "${accountName}": No locations.`);
         continue;
       }
 
-      // Fetch the email for the first owner from auth.users (mock/direct)
-      // Since supabase-js auth API can list users, we'll extract the emails
-      const { data: authData, error: authErr } = await supabase.auth.admin.getUserById(ownerUsers[0].id);
-      const ownerEmail = authData?.user?.email;
+      // Find admin users for this account
+      const accountUsers = usersByAccount.get(accountId) || [];
+      const adminUsers = accountUsers.filter(u => u.role === 'admin' || u.role === 'owner');
 
-      if (!ownerEmail) {
-        console.log(`[weekly-summary] Skipping location "${loc.name}": Account owner does not have a registered email address.`);
+      if (adminUsers.length === 0) {
+        console.log(`[weekly-summary] Skipping account "${accountName}": No admin users found.`);
+        totalSkipped++;
         continue;
       }
 
-      // 2. Fetch last week's review requests for this location
-      // Query orders checked out / completed within this location over last 7 days
-      const { data: lastWeekOrders, error: ordersError } = await supabase
+      console.log(`[weekly-summary] Processing account "${accountName}" with ${locations.length} location(s) and ${adminUsers.length} admin user(s).`);
+
+      // Compute aggregate metrics across ALL properties for this account
+      const locationIds = locations.map((l: any) => l.id);
+
+      // Fetch orders created in the period
+      const { data: periodOrders, error: ordersErr } = await supabase
         .from('orders')
-        .select('id')
-        .eq('location_id', loc.id)
-        .gte('created_at', oneWeekAgoISO);
+        .select('id, location_id, midstay_sent, midstay_sent_at, checkin_date')
+        .in('location_id', locationIds)
+        .gte('created_at', periodStartISO);
 
-      if (ordersError || !lastWeekOrders || lastWeekOrders.length === 0) {
-        console.log(`[weekly-summary] Skipping "${loc.name}": Zero invites generated last week.`);
+      if (ordersErr) {
+        console.error(`[weekly-summary] Error fetching orders for account ${accountName}:`, ordersErr);
         continue;
       }
 
-      const orderIds = lastWeekOrders.map(o => o.id);
-
-      // Query review requests
-      const { data: requests, error: requestsError } = await supabase
-        .from('review_requests')
-        .select('id, status')
-        .in('order_id', orderIds);
-
-      if (requestsError || !requests || requests.length === 0) {
-        console.log(`[weekly-summary] Skipping "${loc.name}": No review requests created last week.`);
-        continue;
+      if (!periodOrders || periodOrders.length === 0) {
+        console.log(`[weekly-summary] No orders found for account "${accountName}" in period.`);
       }
 
-      const requestIds = requests.map(r => r.id);
+      const orderIds = (periodOrders || []).map((o: any) => o.id);
 
-      // Calculate Sent/Clicked metrics
-      const totalInvitesSent = requests.filter(r => ['sent', 'clicked'].includes(r.status)).length;
-      if (totalInvitesSent === 0) {
-        console.log(`[weekly-summary] Skipping "${loc.name}": Zero invitations were sent over the past 7 days.`);
-        continue;
+      // Fetch review requests for these orders
+      let requestIds: string[] = [];
+      if (orderIds.length > 0) {
+        const { data: requests, error: reqErr } = await supabase
+          .from('review_requests')
+          .select('id, status')
+          .in('order_id', orderIds);
+
+        if (!reqErr && requests) {
+          requestIds = requests.map((r: any) => r.id);
+        }
       }
 
-      const clickedInvites = requests.filter(r => r.status === 'clicked').length;
-      const clickRate = totalInvitesSent > 0 ? Math.round((clickedInvites / totalInvitesSent) * 100) : 0;
+      // Fetch feedback (private reviews captured via ReviewSail)
+      let feedbackEntries: Array<{ rating: number }> = [];
+      if (requestIds.length > 0) {
+        const { data: fb, error: fbErr } = await supabase
+          .from('feedback')
+          .select('rating')
+          .in('request_id', requestIds);
 
-      // Calculate Delivery Rate
-      const { data: events, error: eventsError } = await supabase
-        .from('message_events')
-        .select('event_type')
-        .in('request_id', requestIds);
-
-      let deliveryRate = 100;
-      if (!eventsError && events && events.length > 0) {
-        const totalAttempts = events.filter(e => ['sent', 'reminder_sent', 'failed'].includes(e.event_type)).length;
-        const successful = events.filter(e => ['sent', 'reminder_sent'].includes(e.event_type)).length;
-        deliveryRate = totalAttempts > 0 ? Math.round((successful / totalAttempts) * 100) : 100;
+        if (!fbErr && fb) {
+          feedbackEntries = fb;
+        }
       }
 
-      // Calculate Average Rating
-      const { data: feedbacks, error: fbError } = await supabase
-        .from('feedback')
-        .select('rating')
-        .in('request_id', requestIds);
+      // Calculate metrics
+      const totalInvitesSent = orderIds.length;
+      const reviewsReceived = feedbackEntries.length;
+      const avgRating = reviewsReceived > 0
+        ? (feedbackEntries.reduce((sum, f) => sum + f.rating, 0) / reviewsReceived)
+        : null;
 
-      let averageRating = 'No feedback yet';
-      if (!fbError && feedbacks && feedbacks.length > 0) {
-        const sum = feedbacks.reduce((acc, f) => acc + f.rating, 0);
-        averageRating = `${Math.round((sum / feedbacks.length) * 10) / 10} / 5 Stars`;
+      // Mid-stay saves: mid-stay check-ins that were sent in this period
+      const midstaySentInPeriod = (periodOrders || []).filter((o: any) =>
+        o.midstay_sent === true && o.midstay_sent_at && new Date(o.midstay_sent_at) >= periodStart
+      ).length;
+
+      // Build per-location breakdown for the email
+      const locationMetrics: Array<{
+        name: string;
+        invites: number;
+        reviews: number;
+        avgRating: number | null;
+        midstaySaves: number;
+      }> = [];
+
+      for (const loc of locations) {
+        const locOrders = (periodOrders || []).filter((o: any) => o.location_id === loc.id);
+        const locOrderIds = locOrders.map((o: any) => o.id);
+
+        let locRequestIds: string[] = [];
+        if (locOrderIds.length > 0) {
+          const { data: locReqs } = await supabase
+            .from('review_requests')
+            .select('id')
+            .in('order_id', locOrderIds);
+          if (locReqs) locRequestIds = locReqs.map((r: any) => r.id);
+        }
+
+        let locFeedbacks: Array<{ rating: number }> = [];
+        if (locRequestIds.length > 0) {
+          const { data: locFb } = await supabase
+            .from('feedback')
+            .select('rating')
+            .in('request_id', locRequestIds);
+          if (locFb) locFeedbacks = locFb;
+        }
+
+        const locMidstaySent = locOrders.filter((o: any) =>
+          o.midstay_sent === true && o.midstay_sent_at && new Date(o.midstay_sent_at) >= periodStart
+        ).length;
+
+        locationMetrics.push({
+          name: loc.name,
+          invites: locOrderIds.length,
+          reviews: locFeedbacks.length,
+          avgRating: locFeedbacks.length > 0
+            ? locFeedbacks.reduce((sum, f) => sum + f.rating, 0) / locFeedbacks.length
+            : null,
+          midstaySaves: locMidstaySent,
+        });
       }
 
-      // 3. Draft clean HTML email body
-      const emailHtml = `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; color: #1e293b;">
-          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-            <!-- Header -->
-            <div style="background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); padding: 32px; text-align: center; color: #ffffff;">
-              <span style="background-color: rgba(255, 255, 255, 0.2); color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">Performance Report</span>
-              <h1 style="margin: 12px 0 0 0; font-size: 22px; font-weight: 800; tracking-tight: -0.025em;">Weekly Summary</h1>
-              <p style="margin: 4px 0 0 0; font-size: 13px; color: #e0e7ff;">${loc.name}</p>
-            </div>
+      // For each admin user, check their digest preferences and send
+      for (const admin of adminUsers) {
+        const prefs = digestMap.get(admin.id);
 
-            <!-- Body Content -->
-            <div style="padding: 32px;">
-              <p style="margin-top: 0; font-size: 15px; line-height: 1.6; color: #475569;">
-                Hi there, here is your MapRated summary report highlighting invite deliverability, link clicks, and private rating averages compiled over the past 7 days for <strong>${loc.name}</strong>:
-              </p>
+        // If no preferences set, default to enabled weekly
+        const isEnabled = prefs ? prefs.enabled : true;
+        const userFrequency = prefs ? prefs.frequency : 'weekly';
 
-              <!-- Metrics Table -->
-              <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px;">
-                <thead>
-                  <tr style="border-bottom: 2px solid #e2e8f0;">
-                    <th style="text-align: left; padding: 12px 8px; font-weight: bold; color: #475569;">Metric Category</th>
-                    <th style="text-align: right; padding: 12px 8px; font-weight: bold; color: #4f46e5;">Weekly Performance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 14px 8px; color: #64748b; font-weight: 500;">Total Invitations Sent</td>
-                    <td style="text-align: right; padding: 14px 8px; font-weight: bold; color: #1e293b;">${totalInvitesSent}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 14px 8px; color: #64748b; font-weight: 500;">Delivery Success Rate</td>
-                    <td style="text-align: right; padding: 14px 8px; font-weight: bold; color: #1e293b;">${deliveryRate}%</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 14px 8px; color: #64748b; font-weight: 500;">Review Link Click Rate</td>
-                    <td style="text-align: right; padding: 14px 8px; font-weight: bold; color: #1e293b;">${clickRate}%</td>
-                  </tr>
+        // Skip if disabled
+        if (!isEnabled) {
+          console.log(`[weekly-summary] Skipping user ${admin.email} (${admin.fullName}): digest disabled.`);
+          totalSkipped++;
+          continue;
+        }
+
+        // Skip if frequency doesn't match (unless forced)
+        if (!forcedFrequency && userFrequency !== periodLabelLower) {
+          console.log(`[weekly-summary] Skipping user ${admin.email}: prefers ${userFrequency}, running ${periodLabelLower}.`);
+          totalSkipped++;
+          continue;
+        }
+
+        const ownerEmail = admin.email;
+        if (!ownerEmail) {
+          console.log(`[weekly-summary] Skipping user ${admin.id}: no email on record.`);
+          totalSkipped++;
+          continue;
+        }
+
+        const ownerName = admin.fullName || 'Valued Partner';
+
+        // Build locations table rows HTML
+        const locationRowsHtml = locationMetrics.map(loc => {
+          const ratingDisplay = loc.avgRating !== null
+            ? `${loc.avgRating.toFixed(1)} / 5`
+            : '—';
+          return `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 12px 8px; color: #1e293b; font-weight: 500;">${loc.name}</td>
+              <td style="text-align: center; padding: 12px 8px; color: #475569;">${loc.invites}</td>
+              <td style="text-align: center; padding: 12px 8px; color: #475569;">${loc.reviews}</td>
+              <td style="text-align: center; padding: 12px 8px; font-weight: 600; color: ${loc.avgRating !== null && loc.avgRating >= 4 ? '#10b981' : loc.avgRating !== null && loc.avgRating >= 3 ? '#f59e0b' : '#ef4444'};">${ratingDisplay}</td>
+              <td style="text-align: center; padding: 12px 8px; color: #475569;">${loc.midstaySaves}</td>
+            </tr>
+          `;
+        }).join('');
+
+        const totalRatingDisplay = avgRating !== null
+          ? `${avgRating.toFixed(1)} / 5`
+          : 'No ratings yet';
+
+        const emailHtml = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 40px 20px; color: #1e293b;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+              <!-- Header -->
+              <div style="background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); padding: 32px; text-align: center; color: #ffffff;">
+                <span style="background-color: rgba(255, 255, 255, 0.2); color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">Owner Digest</span>
+                <h1 style="margin: 12px 0 0 0; font-size: 22px; font-weight: 800; letter-spacing: -0.025em;">${periodLabel} Summary</h1>
+                <p style="margin: 4px 0 0 0; font-size: 13px; color: #e0e7ff;">${accountName}</p>
+              </div>
+
+              <!-- Body -->
+              <div style="padding: 32px;">
+                <p style="margin-top: 0; font-size: 15px; line-height: 1.6; color: #475569;">
+                  Hi ${ownerName}, here is your ${periodLabel.toLowerCase()} digest for <strong>${accountName}</strong>. See how your properties performed across guest engagement, feedback, and mid-stay check-ins.
+                </p>
+
+                <!-- Summary KPI Cards -->
+                <table style="width: 100%; border-collapse: collapse; margin: 24px 0;">
                   <tr>
-                    <td style="padding: 14px 8px; color: #64748b; font-weight: 500;">Private Feedback Average</td>
-                    <td style="text-align: right; padding: 14px 8px; font-weight: bold; color: #10b981;">${averageRating}</td>
+                    <td style="width: 25%; padding: 4px;">
+                      <div style="background: #f0fdf4; border-radius: 12px; padding: 16px; text-align: center; border: 1px solid #bbf7d0;">
+                        <p style="margin: 0; font-size: 24px; font-weight: 800; color: #16a34a;">${reviewsReceived}</p>
+                        <p style="margin: 4px 0 0; font-size: 11px; color: #15803d; font-weight: 500;">Reviews Received</p>
+                      </div>
+                    </td>
+                    <td style="width: 25%; padding: 4px;">
+                      <div style="background: #fefce8; border-radius: 12px; padding: 16px; text-align: center; border: 1px solid #fde68a;">
+                        <p style="margin: 0; font-size: 24px; font-weight: 800; color: #ca8a04;">${avgRating !== null ? avgRating.toFixed(1) : '—'}</p>
+                        <p style="margin: 4px 0 0; font-size: 11px; color: #a16207; font-weight: 500;">Avg Rating</p>
+                      </div>
+                    </td>
+                    <td style="width: 25%; padding: 4px;">
+                      <div style="background: #f0f9ff; border-radius: 12px; padding: 16px; text-align: center; border: 1px solid #bae6fd;">
+                        <p style="margin: 0; font-size: 24px; font-weight: 800; color: #0284c7;">${reviewsReceived}</p>
+                        <p style="margin: 4px 0 0; font-size: 11px; color: #0369a1; font-weight: 500;">Private Feedback</p>
+                      </div>
+                    </td>
+                    <td style="width: 25%; padding: 4px;">
+                      <div style="background: #f5f3ff; border-radius: 12px; padding: 16px; text-align: center; border: 1px solid #ddd6fe;">
+                        <p style="margin: 0; font-size: 24px; font-weight: 800; color: #7c3aed;">${midstaySentInPeriod}</p>
+                        <p style="margin: 4px 0 0; font-size: 11px; color: #6d28d9; font-weight: 500;">Mid-Stay Saves</p>
+                      </div>
+                    </td>
                   </tr>
-                </tbody>
-              </table>
+                </table>
 
-              <!-- Action Call -->
-              <div style="text-align: center; margin-top: 32px; margin-bottom: 16px;">
-                <a href="https://vqjzscdlfhgzzqhmkchw.supabase.co/dashboard" style="display: inline-block; background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 13px; text-decoration: none; padding: 12px 28px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-                  View Full Dashboard
-                </a>
+                ${locationMetrics.length > 1 ? `
+                  <!-- Per-Property Breakdown -->
+                  <h3 style="font-size: 14px; font-weight: 700; color: #0f172a; margin: 28px 0 12px 0;">Per-Property Breakdown</h3>
+                  <table style="width: 100%; border-collapse: collapse; margin: 8px 0 24px; font-size: 13px;">
+                    <thead>
+                      <tr style="border-bottom: 2px solid #e2e8f0;">
+                        <th style="text-align: left; padding: 10px 8px; font-weight: 700; color: #475569;">Property</th>
+                        <th style="text-align: center; padding: 10px 8px; font-weight: 700; color: #475569;">Invites</th>
+                        <th style="text-align: center; padding: 10px 8px; font-weight: 700; color: #475569;">Reviews</th>
+                        <th style="text-align: center; padding: 10px 8px; font-weight: 700; color: #475569;">Avg Rating</th>
+                        <th style="text-align: center; padding: 10px 8px; font-weight: 700; color: #475569;">Mid-Stay</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${locationRowsHtml}
+                    </tbody>
+                  </table>
+                ` : ''}
+
+                <!-- What This Means Section -->
+                <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #e2e8f0;">
+                  <h4 style="margin: 0 0 12px; font-size: 13px; font-weight: 700; color: #0f172a;">What These Numbers Mean</h4>
+                  <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+                    <tr>
+                      <td style="padding: 6px 8px; vertical-align: top; width: 24px; color: #16a34a; font-weight: bold;">•</td>
+                      <td style="padding: 6px 8px; color: #475569;"><strong>Reviews Received</strong> — Guests who completed feedback. More reviews = more visibility.</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px; vertical-align: top; width: 24px; color: #0284c7; font-weight: bold;">•</td>
+                      <td style="padding: 6px 8px; color: #475569;"><strong>Private Feedback</strong> — Issues caught privately before they become public Google reviews.</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px; vertical-align: top; width: 24px; color: #7c3aed; font-weight: bold;">•</td>
+                      <td style="padding: 6px 8px; color: #475569;"><strong>Mid-Stay Saves</strong> — Proactive check-ins during guest stays that can prevent negative outcomes.</td>
+                    </tr>
+                  </table>
+                </div>
+
+                <!-- CTA -->
+                <div style="text-align: center; margin: 28px 0 16px;">
+                  <a href="https://vqjzscdlfhgzzqhmkchw.supabase.co/dashboard" style="display: inline-block; background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 14px; text-decoration: none; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                    View Full Dashboard
+                  </a>
+                </div>
+                <p style="text-align: center; font-size: 12px; color: #94a3b8; margin: 4px 0 0;">
+                  See detailed feedback, respond to guests, and manage settings.
+                </p>
+              </div>
+
+              <!-- Footer -->
+              <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; line-height: 1.5;">
+                <p style="margin: 0;">Sent automatically by ReviewSail on behalf of your account.</p>
+                <p style="margin: 4px 0 0;">
+                  <a href="https://vqjzscdlfhgzzqhmkchw.supabase.co/settings?tab=account" style="color: #6366f1; text-decoration: underline;">Manage digest preferences</a>
+                  &nbsp;·&nbsp;
+                  <a href="https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe" style="color: #94a3b8; text-decoration: underline;">Unsubscribe</a>
+                </p>
               </div>
             </div>
-
-            <!-- Footer Compliance -->
-            <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; line-height: 1.5;">
-              <p style="margin: 0;">Sent automatically by MapRated Review Automation Systems.</p>
-              <p style="margin: 4px 0 0 0;">Manage your dispatch notifications inside the settings page in your dashboard account.</p>
-            </div>
           </div>
-        </div>
-      `;
+        `;
 
-      // 4. Send email via Resend
-      if (resendApiKey) {
-        try {
-          console.log(`[weekly-summary] Dispaching Resend email report to owner email: ${ownerEmail}`);
-          const emailResponse = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${resendApiKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              from: resendFromEmail,
-              to: ownerEmail,
-              subject: `Your MapRated Weekly Summary — ${loc.name}`,
-              html: emailHtml
-            })
-          });
+        // Send email via Resend
+        if (resendApiKey) {
+          try {
+            console.log(`[weekly-summary] Sending ${periodLabelLower} digest to ${ownerEmail}`);
+            const emailResponse = await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${resendApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                from: resendFromEmail,
+                to: ownerEmail,
+                subject: `Your ${periodLabel} Digest — ${accountName} (${periodStart.toLocaleDateString()} - ${now.toLocaleDateString()})`,
+                html: emailHtml,
+              }),
+            });
 
-          if (emailResponse.ok) {
-            console.log(`[weekly-summary] Weekly report email dispatched successfully to ${ownerEmail}`);
-          } else {
-            const errTxt = await emailResponse.text();
-            console.error(`[weekly-summary] Resend API Error for weekly report email:`, errTxt);
+            if (emailResponse.ok) {
+              console.log(`[weekly-summary] Digest sent successfully to ${ownerEmail}`);
+              totalSent++;
+            } else {
+              const errTxt = await emailResponse.text();
+              console.error(`[weekly-summary] Resend error for ${ownerEmail}:`, errTxt);
+            }
+          } catch (resendErr) {
+            console.error(`[weekly-summary] Resend network error for ${ownerEmail}:`, resendErr);
           }
-        } catch (resendErr) {
-          console.error(`[weekly-summary] Resend Network Error:`, resendErr);
+        } else {
+          console.warn(`[weekly-summary] No RESEND_API_KEY configured. Would have sent digest to ${ownerEmail}.`);
         }
-      } else {
-        console.warn(`[weekly-summary] Stripe / Resend Key missing. Mocking Weekly summary delivery to "${ownerEmail}" for property "${loc.name}".`);
       }
     }
 
-    return new Response(JSON.stringify({ success: true, message: "Weekly summary reports processing completed" }), {
+    console.log(`[weekly-summary] Digest job complete. Sent: ${totalSent}, Skipped: ${totalSkipped}`);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: `${periodLabel} digest processing completed`,
+      sent: totalSent,
+      skipped: totalSkipped,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

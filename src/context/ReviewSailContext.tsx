@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from './AuthContext';
+import type { DigestSetting } from '../types/reviewSail';
+
+export type { DigestSetting } from '../types/reviewSail';
 
 export type Location = {
   id: string;
@@ -85,6 +88,7 @@ type ReviewSailState = {
   stripeCustomerId: string | null;
   loading: boolean;
   unreadPrivateFeedbackCount: number;
+  digestSetting: DigestSetting | null;
 };
 
 type ReviewSailContextType = ReviewSailState & {
@@ -103,6 +107,7 @@ type ReviewSailContextType = ReviewSailState & {
   subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
   completeOnboarding: (locationId: string) => Promise<void>;
   triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
+  updateDigestSetting: (frequency: 'weekly' | 'monthly', enabled: boolean) => Promise<void>;
 };
 
 const initialState: ReviewSailState = {
@@ -118,6 +123,7 @@ const initialState: ReviewSailState = {
   stripeCustomerId: null,
   loading: true,
   unreadPrivateFeedbackCount: 0,
+  digestSetting: null,
 };
 
 const ReviewSailContext = createContext<ReviewSailContextType | undefined>(undefined);
@@ -224,6 +230,25 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         createdAt: e.created_at,
       }));
 
+      // Fetch digest settings for current user
+      let digestSetting: DigestSetting | null = null;
+      try {
+        const { data: dsData } = await supabase
+          .from('digest_settings')
+          .select('*')
+          .eq('user_id', session?.user.id)
+          .maybeSingle();
+        if (dsData) {
+          digestSetting = {
+            id: dsData.id,
+            userId: dsData.user_id,
+            accountId: dsData.account_id,
+            frequency: dsData.frequency as 'weekly' | 'monthly',
+            enabled: dsData.enabled,
+          };
+        }
+      } catch (_) {}
+
       let feedbacks: PrivateFeedback[] = [];
       try {
         const { data: privateFbData } = await supabase.from('private_feedback').select('*');
@@ -269,6 +294,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         feedbacks: mergedFeedbacks,
         subscriptionStatus,
         stripeCustomerId,
+        digestSetting,
         activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
         unreadPrivateFeedbackCount: unreadCount,
         loading: false,
@@ -544,6 +570,31 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const updateDigestSetting = async (frequency: 'weekly' | 'monthly', enabled: boolean) => {
+    if (!session?.user) return;
+    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
+    if (!userData?.account_id) return;
+
+    const existing = state.digestSetting;
+    if (existing) {
+      const { error } = await supabase
+        .from('digest_settings')
+        .update({ frequency, enabled, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('digest_settings')
+        .insert({ user_id: session.user.id, account_id: userData.account_id, frequency, enabled });
+      if (error) throw error;
+    }
+
+    setState(prev => ({
+      ...prev,
+      digestSetting: { id: existing?.id || '', userId: session.user.id, accountId: userData.account_id, frequency, enabled },
+    }));
+  };
+
   return (
     <ReviewSailContext.Provider
       value={{
@@ -563,6 +614,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         subscribe,
         completeOnboarding,
         triggerSingleResend,
+        updateDigestSetting,
       }}
     >
       {children}

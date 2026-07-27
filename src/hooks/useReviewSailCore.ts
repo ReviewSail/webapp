@@ -15,6 +15,7 @@ const initialState: ReviewSailState = {
   subscriptionStatus: 'inactive',
   stripeCustomerId: null,
   loading: true,
+  digestSetting: null,
 };
 
 export function useReviewSailCore() {
