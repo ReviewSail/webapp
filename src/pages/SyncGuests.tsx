@@ -39,7 +39,7 @@ export default function SyncGuests() {
     lastName: '',
     email: '',
     phone: '',
-    checkoutDate: new Date().toISOString().split('T')[0], // today's date
+    checkoutDate: new Date().toISOString().split('T')[0],
     checkinDate: '',
   });
 
@@ -160,639 +160,435 @@ export default function SyncGuests() {
       header: true,
       skipEmptyLines: true,
       complete: async (results) => {
-        const cleanKey = (key: string) => key.toLowerCase().trim().replace(/[_-\s]/g, '');
-
-        const mappedRows = results.data.map((row: any) => {
-          let firstName = '';
-          let<dyad-write path="src/context/ReviewSailContext.tsx" description="Complete context with checkinDate support in addOrder and bulkImport">
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '../integrations/supabase/client';
-import { useAuth } from './AuthContext';
-import type { DigestSetting } from '../types/reviewSail';
-
-export type { DigestSetting } from '../types/reviewSail';
-
-export type Location = {
-  id: string;
-  name: string;
-  googlePlaceUrl: string;
-  templateText?: string;
-  smsTemplateText?: string;
-  timezone: string;
-  enableEmail: boolean;
-  enableSms: boolean;
-  midstayEnabled: boolean;
-  onboardingComplete: boolean;
-  preferredSendHour: number;
-  recoveryEmail: string;
-};
-
-export type Customer = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string | null;
-  phone?: string | null;
-};
-
-export type Order = {
-  id: string;
-  customerId: string;
-  locationId: string;
-  checkoutDate: string;
-  checkinDate?: string;
-  midstaySent?: boolean;
-  midstaySentAt?: string;
-  status: 'pending' | 'completed' | 'cancelled';
-};
-
-export type ReviewRequest = {
-  id: string;
-  orderId: string;
-  status: 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed' | 'private_feedback';
-  sentAt?: string;
-};
-
-export type OptOut = {
-  id: string;
-  email: string | null;
-  phone?: string | null;
-  optOutDate: string;
-};
-
-export type MessageEvent = {
-  id: string;
-  requestId: string;
-  eventType: string;
-  createdAt: string;
-};
-
-export type PrivateFeedback = {
-  id: string;
-  requestId: string | null;
-  rating: number;
-  comment: string | null;
-  managerResponse: string | null;
-  createdAt: string;
-  locationId?: string | null;
-  feedbackText?: string | null;
-  guestName?: string | null;
-  guestEmail?: string | null;
-  isRead?: boolean;
-  starRating?: number;
-};
-
-type ReviewSailState = {
-  locations: Location[];
-  customers: Customer[];
-  orders: Order[];
-  reviewRequests: ReviewRequest[];
-  optOuts: OptOut[];
-  messageEvents: MessageEvent[];
-  feedbacks: PrivateFeedback[];
-  activeLocationId: string | null;
-  subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null;
-  stripeCustomerId: string | null;
-  loading: boolean;
-  unreadPrivateFeedbackCount: number;
-  digestSetting: DigestSetting | null;
-};
-
-type ReviewSailContextType = ReviewSailState & {
-  setActiveLocationId: (id: string) => void;
-  addLocation: (name: string, googleUrl?: string) => Promise<Location | null>;
-  deleteLocation: (id: string) => Promise<void>;
-  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
-  addOrder: (order: Omit<Order, 'id'> & { checkinDate?: string }) => Promise<Order | null>;
-  addOptOut: (email: string) => Promise<void>;
-  addReviewRequest: (orderId: string) => Promise<void>;
-  updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
-  respondToFeedback: (id: string, text: string) => Promise<void>;
-  markPrivateFeedbackRead: (id: string) => Promise<void>;
-  refreshData: () => Promise<void>;
-  bulkImport: (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string; checkinDate?: string }>) => Promise<{ success: boolean; count: number; error?: string }>;
-  subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
-  completeOnboarding: (locationId: string) => Promise<void>;
-  triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
-  updateDigestSetting: (frequency: 'weekly' | 'monthly', enabled: boolean) => Promise<void>;
-};
-
-const initialState: ReviewSailState = {
-  locations: [],
-  customers: [],
-  orders: [],
-  reviewRequests: [],
-  optOuts: [],
-  messageEvents: [],
-  feedbacks: [],
-  activeLocationId: null,
-  subscriptionStatus: 'inactive',
-  stripeCustomerId: null,
-  loading: true,
-  unreadPrivateFeedbackCount: 0,
-  digestSetting: null,
-};
-
-const ReviewSailContext = createContext<ReviewSailContextType | undefined>(undefined);
-
-export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
-  const { session } = useAuth();
-  const [state, setState] = useState<ReviewSailState>(initialState);
-
-  const refreshData = async () => {
-    if (!session?.user) return;
-    setState(prev => ({ ...prev, loading: true }));
-
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const isMockSuccess = urlParams.get('mock_checkout_success') === 'true';
-      const mockAccountId = urlParams.get('account_id');
-
-      if (isMockSuccess && mockAccountId) {
-        await supabase.from('accounts').update({ subscription_status: 'active' }).eq('id', mockAccountId);
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-
-      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-      let subscriptionStatus: 'active' | 'trialing' | 'inactive' | 'canceled' | null = 'inactive';
-      let stripeCustomerId = null;
-
-      if (userData?.account_id) {
-        const { data: accData } = await supabase.from('accounts').select('subscription_status, stripe_customer_id').eq('id', userData.account_id).single();
-        if (accData) {
-          subscriptionStatus = (accData.subscription_status as any) || 'inactive';
-          stripeCustomerId = accData.stripe_customer_id || null;
+        if (results.errors.length > 0 && results.data.length === 0) {
+          setFeedback({ type: 'error', message: `CSV parsing error: ${results.errors[0].message}` });
+          setLoading(false);
+          return;
         }
-      }
 
-      const { data: locData } = await supabase.from('locations').select('*');
-      const parsedLocations: Location[] = (locData || []).map(l => ({
-        id: l.id,
-        name: l.name,
-        googlePlaceUrl: l.google_place_url || '',
-        timezone: l.timezone || 'UTC',
-        enableEmail: l.enable_email !== false,
-        enableSms: l.enable_sms !== false,
-        midstayEnabled: l.midstay_enabled !== false,
-        onboardingComplete: l.onboarding_complete === true,
-        preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
-        recoveryEmail: l.recovery_email || '',
-      }));
+        const headers = results.meta.fields || [];
+        const cleanKey = (key: string) => key.toLowerCase().trim().replace(/[_\-\s]+/g, '');
 
-      const { data: templatesData } = await supabase.from('message_templates').select('*');
-      const locations = parsedLocations.map(loc => {
-        const emailTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'email');
-        const smsTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'sms');
-        return {
-          ...loc,
-          templateText: emailTemplate?.template_text || 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}',
-          smsTemplateText: smsTemplate?.template_text || 'Hi {firstName}, please share your experience at {reviewLink}',
+        // Build an index map from cleaned header to original key
+        const headerMap = new Map<string, string>();
+        for (const h of headers) {
+          headerMap.set(cleanKey(h), h);
+        }
+
+        // Find the best matching header from a set of candidates
+        const findHeader = (candidates: string[]): string | null => {
+          for (const c of candidates) {
+            if (headerMap.has(c)) return headerMap.get(c)!;
+          }
+          return null;
         };
-      });
 
-      const { data: custData } = await supabase.from('customers').select('*');
-      const customers: Customer[] = (custData || []).map(c => ({
-        id: c.id,
-        firstName: c.first_name,
-        lastName: c.last_name,
-        email: c.email,
-        phone: c.phone,
-      }));
+        // Column candidates for each field (ordered by priority)
+        const firstNameKey = findHeader(['firstname', 'firstname', 'first', 'guestfirstname', 'guestname']);
+        const lastNameKey = findHeader(['lastname', 'last', 'guestlastname', 'lastname']);
+        const emailKey = findHeader(['email', 'emailaddress', 'guestemail', 'e-mail']);
+        const phoneKey = findHeader(['phone', 'phonenumber', 'mobile', 'telephone', 'tel', 'guestphone']);
+        const checkoutDateKey = findHeader(['checkoutdate', 'checkout', 'departuredate', 'departure', 'enddate', 'checkout', 'checkoutdate']);
+        const checkinDateKey = findHeader(['checkindate', 'checkin', 'arrivaldate', 'arrival', 'startdate']);
 
-      const { data: orderData } = await supabase.from('orders').select('*');
-      const orders: Order[] = (orderData || []).map(o => ({
-        id: o.id,
-        customerId: o.customer_id,
-        locationId: o.location_id,
-        checkoutDate: o.checkout_date,
-        checkinDate: o.checkin_date || undefined,
-        midstaySent: o.midstay_sent === true,
-        midstaySentAt: o.midstay_sent_at || undefined,
-        status: o.status as 'pending' | 'completed' | 'cancelled',
-      }));
+        const mappedRows: Array<{
+          firstName: string;
+          lastName: string;
+          email: string | null;
+          phone: string | null;
+          checkoutDate: string;
+          checkinDate?: string;
+        }> = [];
 
-      const { data: rrData } = await supabase.from('review_requests').select('*');
-      const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
-        id: r.id,
-        orderId: r.order_id,
-        status: r.status as ReviewRequest['status'],
-        sentAt: r.sent_at,
-      }));
+        let skipped = 0;
 
-      const { data: optData } = await supabase.from('opt_outs').select('*');
-      const optOuts: OptOut[] = (optData || []).map(o => ({
-        id: o.id,
-        email: o.email,
-        phone: o.phone,
-        optOutDate: o.opt_out_date,
-      }));
+        for (const row of results.data as Record<string, any>[]) {
+          const firstName = firstNameKey ? (row[firstNameKey] || '').toString().trim() : '';
+          const lastName = lastNameKey ? (row[lastNameKey] || '').toString().trim() : '';
+          const email = emailKey ? (row[emailKey] || '').toString().trim() : '';
+          const phone = phoneKey ? (row[phoneKey] || '').toString().trim() : '';
+          const checkoutDateRaw = checkoutDateKey ? (row[checkoutDateKey] || '').toString().trim() : '';
+          const checkinDateRaw = checkinDateKey ? (row[checkinDateKey] || '').toString().trim() : '';
 
-      const { data: eventData } = await supabase.from('message_events').select('*');
-      const messageEvents: MessageEvent[] = (eventData || []).map(e => ({
-        id: e.id,
-        requestId: e.request_id,
-        eventType: e.event_type,
-        createdAt: e.created_at,
-      }));
+          if (!firstName && !lastName) {
+            skipped++;
+            continue;
+          }
 
-      // Fetch digest settings for current user
-      let digestSetting: DigestSetting | null = null;
-      try {
-        const { data: dsData } = await supabase
-          .from('digest_settings')
-          .select('*')
-          .eq('user_id', session?.user.id)
-          .maybeSingle();
-        if (dsData) {
-          digestSetting = {
-            id: dsData.id,
-            userId: dsData.user_id,
-            accountId: dsData.account_id,
-            frequency: dsData.frequency as 'weekly' | 'monthly',
-            enabled: dsData.enabled,
-          };
+          // Parse checkout date — try common formats
+          let checkoutDate = '';
+          if (checkoutDateRaw) {
+            const parsed = new Date(checkoutDateRaw);
+            if (!isNaN(parsed.getTime())) {
+              checkoutDate = parsed.toISOString().split('T')[0];
+            }
+          }
+          if (!checkoutDate) {
+            checkoutDate = new Date().toISOString().split('T')[0];
+          }
+
+          let checkinDate: string | undefined;
+          if (checkinDateRaw) {
+            const parsed = new Date(checkinDateRaw);
+            if (!isNaN(parsed.getTime())) {
+              checkinDate = parsed.toISOString().split('T')[0];
+            }
+          }
+
+          mappedRows.push({
+            firstName,
+            lastName,
+            email: email || null,
+            phone: phone || null,
+            checkoutDate,
+            checkinDate,
+          });
         }
-      } catch (_) {}
 
-      let feedbacks: PrivateFeedback[] = [];
-      try {
-        const { data: privateFbData } = await supabase.from('private_feedback').select('*');
-        if (privateFbData) {
-          feedbacks = privateFbData.map((f: any) => ({
-            id: f.id,
-            requestId: f.request_id,
-            rating: f.star_rating ?? 0,
-            comment: f.feedback_text ?? null,
-            managerResponse: f.manager_response ?? null,
-            createdAt: f.created_at,
-            locationId: f.location_id,
-            feedbackText: f.feedback_text,
-            guestName: f.guest_name,
-            guestEmail: f.guest_email,
-            isRead: f.is_read ?? true,
-            starRating: f.star_rating,
-          }));
+        if (mappedRows.length === 0) {
+          setFeedback({ type: 'error', message: 'No valid rows found in CSV. Ensure the file has at least first and last name columns.' });
+          setLoading(false);
+          return;
         }
-      } catch (_) {}
 
-      const { data: fbData } = await supabase.from('feedback').select('*');
-      const publicFeedbacks: PrivateFeedback[] = (fbData || []).map(f => ({
-        id: f.id,
-        requestId: f.request_id,
-        rating: f.rating,
-        comment: f.comment,
-        managerResponse: f.manager_response,
-        createdAt: f.created_at,
-      }));
-
-      const mergedFeedbacks = [...feedbacks, ...publicFeedbacks.filter(pf => !feedbacks.some(f => f.id === pf.id))];
-      const unreadCount = feedbacks.filter(f => f.isRead === false).length;
-
-      setState(prev => ({
-        ...prev,
-        locations,
-        customers,
-        orders,
-        reviewRequests,
-        optOuts,
-        messageEvents,
-        feedbacks: mergedFeedbacks,
-        subscriptionStatus,
-        stripeCustomerId,
-        digestSetting,
-        activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
-        unreadPrivateFeedbackCount: unreadCount,
-        loading: false,
-      }));
-    } catch (e) {
-      console.error('Failed to fetch from supabase:', e);
-      setState(prev => ({ ...prev, loading: false }));
-    }
-  };
-
-  useEffect(() => {
-    refreshData();
-  }, [session?.user]);
-
-  const setActiveLocationId = (id: string) => {
-    setState(prev => ({ ...prev, activeLocationId: id }));
-  };
-
-  const addLocation = async (name: string, googleUrl?: string) => {
-    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-    if (!userData) return null;
-
-    const { data, error } = await supabase.from('locations').insert({
-      account_id: userData.account_id,
-      name,
-      google_place_url: googleUrl || '',
-      timezone: 'UTC',
-      enable_email: true,
-      enable_sms: true,
-      midstay_enabled: true,
-      onboarding_complete: false,
-      preferred_send_hour: 10,
-      recovery_email: '',
-    }).select().single();
-
-    if (error) {
-      console.error(error);
-      return null;
-    }
-
-    await supabase.from('message_templates').insert([
-      { location_id: data.id, type: 'email', template_text: 'Hi {firstName}, thanks for your visit! Please leave us a review: {reviewLink}' },
-      { location_id: data.id, type: 'sms', template_text: 'Hi {firstName}, please share your experience with us at {reviewLink}' },
-    ]);
-
-    await refreshData();
-    return {
-      id: data.id,
-      name: data.name,
-      googlePlaceUrl: data.google_place_url || '',
-      timezone: 'UTC',
-      enableEmail: true,
-      enableSms: true,
-      midstayEnabled: true,
-      onboardingComplete: false,
-      preferredSendHour: 10,
-      recoveryEmail: '',
-    };
-  };
-
-  const deleteLocation = async (id: string) => {
-    const { error } = await supabase.from('locations').delete().eq('id', id);
-    if (error) throw error;
-    setState(prev => {
-      const filtered = prev.locations.filter(l => l.id !== id);
-      return {
-        ...prev,
-        locations: filtered,
-        activeLocationId: prev.activeLocationId === id ? (filtered.length > 0 ? filtered[0].id : null) : prev.activeLocationId,
-      };
+        const result = await bulkImport(mappedRows);
+        if (result.success) {
+          setUploadResult({ success: true, count: result.count, skipped });
+          setFeedback({ type: 'success', message: `Imported ${result.count} guest(s)${skipped > 0 ? ` (${skipped} skipped)` : ''}.` });
+        } else {
+          setFeedback({ type: 'error', message: result.error || 'Failed to import guests.' });
+        }
+        setLoading(false);
+      },
+      error: (err) => {
+        console.error('CSV parse error:', err);
+        setFeedback({ type: 'error', message: `Failed to read CSV: ${err.message}` });
+        setLoading(false);
+      },
     });
-    await refreshData();
   };
 
-  const addCustomer = async (customer: Omit<Customer, 'id'>) => {
-    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-    if (!userData) return null;
-
-    const { data, error } = await supabase.from('customers').insert({
-      account_id: userData.account_id,
-      first_name: customer.firstName,
-      last_name: customer.lastName,
-      email: customer.email,
-      phone: customer.phone,
-    }).select().single();
-
-    if (error) {
-      console.error(error);
-      return null;
-    }
-
-    await refreshData();
-    return { id: data.id, firstName: data.first_name, lastName: data.last_name, email: data.email, phone: data.phone };
-  };
-
-  const addOrder = async (order: Omit<Order, 'id'> & { checkinDate?: string }) => {
-    const { data, error } = await supabase.from('orders').insert({
-      location_id: order.locationId,
-      customer_id: order.customerId,
-      checkout_date: order.checkoutDate,
-      checkin_date: order.checkinDate || null,
-      status: order.status,
-    }).select().single();
-
-    if (error) {
-      console.error(error);
-      return null;
-    }
-
-    await refreshData();
-    return {
-      id: data.id,
-      customerId: data.customer_id,
-      locationId: data.location_id,
-      checkoutDate: data.checkout_date,
-      checkinDate: data.checkin_date || undefined,
-      midstaySent: data.midstay_sent === true,
-      midstaySentAt: data.midstay_sent_at || undefined,
-      status: data.status as 'pending' | 'completed' | 'cancelled',
-    };
-  };
-
-  const addOptOut = async (email: string) => {
-    await supabase.from('opt_outs').insert({ email });
-    await refreshData();
-  };
-
-  const addReviewRequest = async (orderId: string) => {
-    const order = state.orders.find(o => o.id === orderId);
-    const customer = order ? state.customers.find(c => c.id === order.customerId) : null;
-    let status = 'pending';
-    if (customer && state.optOuts.some(o => o.email === customer.email)) {
-      status = 'opted_out';
-    }
-    await supabase.from('review_requests').insert({ order_id: orderId, status });
-    await refreshData();
-  };
-
-  const completeOnboarding = async (locationId: string) => {
-    const { error } = await supabase.from('locations').update({ onboarding_complete: true }).eq('id', locationId);
-    if (error) throw error;
-    await refreshData();
-  };
-
-  const triggerSingleResend = async (requestId: string) => {
-    try {
-      const { error } = await supabase.functions.invoke('process-reviews', { body: { review_request_id: requestId } });
-      if (error) throw error;
-      await refreshData();
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Resend process failed' };
-    }
-  };
-
-  const bulkImport = async (rows: Array<{ firstName: string; lastName: string; email: string | null; phone?: string | null; checkoutDate: string; checkinDate?: string }>) => {
-    if (!state.activeLocationId) {
-      return { success: false, count: 0, error: 'No active location selected' };
-    }
-
-    try {
-      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-      if (!userData) {
-        return { success: false, count: 0, error: 'No user account linked' };
-      }
-      const accountId = userData.account_id;
-
-      const { data: insertedCustomers, error: custError } = await supabase
-        .from('customers')
-        .insert(rows.map(r => ({
-          account_id: accountId,
-          first_name: r.firstName,
-          last_name: r.lastName,
-          email: r.email,
-          phone: r.phone || null,
-        })))
-        .select();
-
-      if (custError || !insertedCustomers) {
-        throw custError || new Error('Failed to bulk insert customers');
-      }
-
-      const ordersToInsert = insertedCustomers.map((cust, idx) => ({
-        location_id: state.activeLocationId!,
-        customer_id: cust.id,
-        checkout_date: rows[idx] ? new Date(rows[idx].checkoutDate).toISOString() : new Date().toISOString(),
-        checkin_date: rows[idx]?.checkinDate ? new Date(rows[idx].checkinDate).toISOString() : null,
-        status: 'completed' as const,
-      }));
-
-      const { data: insertedOrders, error: orderError } = await supabase.from('orders').insert(ordersToInsert).select();
-      if (orderError || !insertedOrders) {
-        throw orderError || new Error('Failed to bulk insert orders');
-      }
-
-      const { data: optOuts } = await supabase.from('opt_outs').select('email');
-      const optedOutEmails = new Set((optOuts || []).map(o => o.email?.toLowerCase()));
-
-      const requestsToInsert = insertedOrders.map(order => {
-        const customer = insertedCustomers.find(c => c.id === order.customer_id);
-        const isOptedOut = customer?.email && optedOutEmails.has(customer.email.toLowerCase());
-        return { order_id: order.id, status: isOptedOut ? 'opted_out' : 'pending' };
-      });
-
-      const { error: rrError } = await supabase.from('review_requests').insert(requestsToInsert);
-      if (rrError) throw rrError;
-
-      await refreshData();
-      return { success: true, count: rows.length };
-    } catch (e: any) {
-      console.error(e);
-      return { success: false, count: 0, error: e.message || 'Failed to bulk import data' };
-    }
-  };
-
-  const updateLocationSettings = async (id: string, settings: Partial<Location>) => {
-    const updateData: any = {};
-    if (settings.name !== undefined) updateData.name = settings.name;
-    if (settings.googlePlaceUrl !== undefined) updateData.google_place_url = settings.googlePlaceUrl;
-    if (settings.timezone !== undefined) updateData.timezone = settings.timezone;
-    if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
-    if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
-    if (settings.midstayEnabled !== undefined) updateData.midstay_enabled = settings.midstayEnabled;
-    if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
-    if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;
-
-    if (Object.keys(updateData).length > 0) {
-      const { error } = await supabase.from('locations').update(updateData).eq('id', id);
-      if (error) throw error;
-    }
-
-    if (settings.templateText !== undefined) {
-      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'email').maybeSingle();
-      if (existing) {
-        await supabase.from('message_templates').update({ template_text: settings.templateText }).eq('id', existing.id);
-      } else {
-        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.templateText, type: 'email' });
-      }
-    }
-
-    if (settings.smsTemplateText !== undefined) {
-      const { data: existing } = await supabase.from('message_templates').select('id').eq('location_id', id).eq('type', 'sms').maybeSingle();
-      if (existing) {
-        await supabase.from('message_templates').update({ template_text: settings.smsTemplateText }).eq('id', existing.id);
-      } else {
-        await supabase.from('message_templates').insert({ location_id: id, template_text: settings.smsTemplateText, type: 'sms' });
-      }
-    }
-
-    await refreshData();
-  };
-
-  const respondToFeedback = async (id: string, text: string) => {
-    const { error } = await supabase.from('feedback').update({ manager_response: text }).eq('id', id);
-    if (error) throw error;
-    await refreshData();
-  };
-
-  const markPrivateFeedbackRead = async (id: string) => {
-    const { error } = await supabase.from('private_feedback').update({ is_read: true }).eq('id', id);
-    if (error) throw error;
-    await refreshData();
-  };
-
-  const subscribe = async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke('create-checkout-session');
-      if (error) throw error;
-      if (data && data.url) {
-        return { success: true, url: data.url };
-      }
-      return { success: false, error: 'No checkout session URL returned' };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Failed to initiate subscription' };
-    }
-  };
-
-  const updateDigestSetting = async (frequency: 'weekly' | 'monthly', enabled: boolean) => {
-    if (!session?.user) return;
-    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
-    if (!userData?.account_id) return;
-
-    const existing = state.digestSetting;
-    if (existing) {
-      const { error } = await supabase
-        .from('digest_settings')
-        .update({ frequency, enabled, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('digest_settings')
-        .insert({ user_id: session.user.id, account_id: userData.account_id, frequency, enabled });
-      if (error) throw error;
-    }
-
-    setState(prev => ({
-      ...prev,
-      digestSetting: { id: existing?.id || '', userId: session.user.id, accountId: userData.account_id, frequency, enabled },
-    }));
-  };
+  const locationName = locations.find(l => l.id === activeLocationId)?.name || '';
 
   return (
-    <ReviewSailContext.Provider
-      value={{
-        ...state,
-        setActiveLocationId,
-        addLocation,
-        deleteLocation,
-        addCustomer,
-        addOrder,
-        addOptOut,
-        addReviewRequest,
-        updateLocationSettings,
-        respondToFeedback,
-        markPrivateFeedbackRead,
-        refreshData,
-        bulkImport,
-        subscribe,
-        completeOnboarding,
-        triggerSingleResend,
-        updateDigestSetting,
-      }}
-    >
-      {children}
-    </ReviewSailContext.Provider>
-  );
-};
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-gray-900">Import Guests</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Add guests manually or upload a CSV file to queue review requests.
+          </p>
+        </div>
+        <button
+          onClick={() => setIsGuideOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+        >
+          <BookOpen size={16} />
+          CSV Format Guide
+        </button>
+      </div>
 
-export const useReviewSail = () => {
-  const context = useContext(ReviewSailContext);
-  if (context === undefined) {
-    throw new Error('useReviewSail must be used within a ReviewSailProvider');
-  }
-  return context;
-};
+      {/* Location warning */}
+      {!activeLocationId && (
+        <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          <AlertTriangle size={18} />
+          <span>Please select a property location from the dropdown in the header before importing guests.</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* CSV Upload */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FileUp size={20} className="text-indigo-500" />
+            Bulk Import (CSV)
+          </h3>
+
+          <div
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+            className={`
+              relative border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer
+              ${dragActive ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400 bg-gray-50'}
+              ${!activeLocationId ? 'opacity-50 pointer-events-none' : ''}
+            `}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleFileInputChange}
+              className="hidden"
+            />
+            <FileUp size={40} className="mx-auto mb-3 text-gray-400" />
+            <p className="text-sm font-medium text-gray-700">
+              {dragActive ? 'Drop your CSV here' : 'Drag & drop a CSV file, or click to browse'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">Accepts .csv files from Booking.com, Airbnb, Expedia, and custom formats</p>
+          </div>
+
+          {uploadResult && (
+            <div className={`mt-4 p-3 rounded-lg text-sm flex items-center gap-2 ${
+              uploadResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+            }`}>
+              {uploadResult.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+              <span>
+                {uploadResult.success
+                  ? `Imported ${uploadResult.count} guest(s)${uploadResult.skipped > 0 ? ` (${uploadResult.skipped} rows skipped — missing name)` : ''}.`
+                  : uploadResult.error || 'Upload failed.'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Manual Entry */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <User size={20} className="text-indigo-500" />
+            Add Guest Manually
+          </h3>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                <input
+                  type="text"
+                  value={formData.firstName}
+                  onChange={e => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
+                  placeholder="John"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                  disabled={!activeLocationId}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                <input
+                  type="text"
+                  value={formData.lastName}
+                  onChange={e => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
+                  placeholder="Smith"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                  disabled={!activeLocationId}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                <Mail size={14} /> Email
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="guest@example.com"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                disabled={!activeLocationId}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                <PhoneIcon size={14} /> Phone
+              </label>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={e => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                placeholder="+1 555-0100"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                disabled={!activeLocationId}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                  <Calendar size={14} /> Check-out Date *
+                </label>
+                <input
+                  type="date"
+                  value={formData.checkoutDate}
+                  onChange={e => setFormData(prev => ({ ...prev, checkoutDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                  disabled={!activeLocationId}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                  <Calendar size={14} /> Check-in Date
+                </label>
+                <input
+                  type="date"
+                  value={formData.checkinDate}
+                  onChange={e => setFormData(prev => ({ ...prev, checkinDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                  disabled={!activeLocationId}
+                />
+                <p className="text-xs text-gray-400 mt-1">Optional — enables mid-stay check-ins</p>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !activeLocationId}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw size={16} className="animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  Add Guest & Queue Review
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Feedback banner */}
+      {feedback && (
+        <div className={`p-4 rounded-lg text-sm flex items-start gap-3 ${
+          feedback.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+        }`}>
+          {feedback.type === 'success' ? <CheckCircle size={18} className="mt-0.5 shrink-0" /> : <AlertCircle size={18} className="mt-0.5 shrink-0" />}
+          <span>{feedback.message}</span>
+          <button onClick={() => setFeedback(null)} className="ml-auto shrink-0 hover:opacity-70">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Guide Modal */}
+      {isGuideOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setIsGuideOpen(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <BookOpen size={20} className="text-indigo-500" />
+                CSV Import Format Guide
+              </h3>
+              <button onClick={() => setIsGuideOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-sm text-gray-600">
+                Your CSV file must include column headers. We support exports from major booking platforms and custom formats.
+                Required columns: <strong>first name</strong> and <strong>last name</strong>.
+                At least one contact method (email or phone) is recommended.
+              </p>
+
+              {/* Booking.com */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => toggleSection('booking')}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <span className="font-medium text-sm text-gray-900">Booking.com Export</span>
+                  {openSection === 'booking' ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+                {openSection === 'booking' && (
+                  <div className="px-4 py-3 space-y-2 text-sm text-gray-600">
+                    <p>Export your reservations from Booking.com as CSV and upload directly.</p>
+                    <p className="text-xs text-gray-400">Supported columns: Guest first name, Guest last name, Email, Phone, Check-out, Check-in</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Airbnb */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => toggleSection('airbnb')}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <span className="font-medium text-sm text-gray-900">Airbnb Export</span>
+                  {openSection === 'airbnb' ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+                {openSection === 'airbnb' && (
+                  <div className="px-4 py-3 space-y-2 text-sm text-gray-600">
+                    <p>Export your reservations from Airbnb as CSV and upload directly.</p>
+                    <p className="text-xs text-gray-400">Supported columns: First Name, Last Name, Email, Phone Number, Checkout, Check-in</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Expedia */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => toggleSection('expedia')}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <span className="font-medium text-sm text-gray-900">Expedia / VRBO Export</span>
+                  {openSection === 'expedia' ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+                {openSection === 'expedia' && (
+                  <div className="px-4 py-3 space-y-2 text-sm text-gray-600">
+                    <p>Export your reservations from Expedia or VRBO as CSV and upload directly.</p>
+                    <p className="text-xs text-gray-400">Supported columns: First Name, Last Name, Email, Phone, Departure Date, Arrival Date</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Custom format */}
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <h4 className="font-medium text-sm text-gray-900 mb-2">Custom CSV Format</h4>
+                <p className="text-xs text-gray-500 mb-2">
+                  For custom files, use any of these column header names (case-insensitive):
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="font-medium text-gray-700">First Name:</span>
+                    <span className="text-gray-500 ml-1">firstname, first name, guest name</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Last Name:</span>
+                    <span className="text-gray-500 ml-1">lastname, last name</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Email:</span>
+                    <span className="text-gray-500 ml-1">email, email address, e-mail</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Phone:</span>
+                    <span className="text-gray-500 ml-1">phone, phone number, mobile, tel</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Check-out:</span>
+                    <span className="text-gray-500 ml-1">checkout, departure, end date</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Check-in:</span>
+                    <span className="text-gray-500 ml-1">checkin, arrival, start date</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex justify-end">
+              <button
+                onClick={() => setIsGuideOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
