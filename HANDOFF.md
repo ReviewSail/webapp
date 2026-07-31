@@ -102,6 +102,7 @@ supabase/functions/
 - `enable_email`, `enable_sms`, `midstay_enabled` BOOLEAN
 - `onboarding_complete` BOOLEAN
 - `preferred_send_hour` INTEGER
+- `midstay_day` INTEGER DEFAULT 2, CHECK 2–7 (day of the stay the mid-stay check-in goes out on; day 1 is the arrival day)
 - `recovery_email` TEXT
 
 ### `users` (public)
@@ -266,10 +267,10 @@ supabase/functions/
 - **Impact:** Digest emails may not be sent or may land in spam.
 - **Fix:** Use the account-level `resend_from_email` from the `accounts` table instead of hardcoded default, or set a verified domain.
 
-### 5. Mid-Stay Check-in Window Logic
-- In `process-reviews`, the window for sending mid-stay check-in is 23–25 hours after check-in. The code uses `twentyFiveHoursAgo` and `twentyThreeHoursAgo` but the comparison `checkinDate > twentyThreeHoursAgo || checkinDate < twentyFiveHoursAgo` is inverted logic.
-- **Impact:** Mid-stay check-ins may never be sent or may be sent incorrectly.
-- **Fix:** Should be `checkinDate >= twentyFiveHoursAgo && checkinDate <= twentyThreeHoursAgo` (i.e., between 23 and 25 hours ago). Also ensure `checkin_date` is properly indexed.
+### 5. Mid-Stay Check-in Window Logic — RESOLVED (migration `0022_midstay_day.sql`)
+- The "inverted logic" recorded here was a misreading: `checkinDate < twentyFiveHoursAgo || checkinDate > twentyThreeHoursAgo` *skips* rows outside the 23–25h band, which was the intent.
+- The real defect was that a 24-hour offset from `checkin_date` is meaningless. Both writers store a date only (`yyyy-MM-dd`), which Postgres reads as midnight UTC, so "24h after check-in" resolved to 01:00 UTC the next day — 6pm in Los Angeles, 9am in Berlin, 3am in Auckland. Unlike Phase 1, Phase 3 had no local-time gating at all, so some properties were texting guests overnight.
+- **Fixed by:** a per-location `midstay_day` (day of stay, day 1 = arrival) sent at the location's existing `preferred_send_hour` in its own timezone, matching how Hospitable/Guesty express in-stay automations. The candidate query is now bounded on `checkin_date` and limited, and `orders_midstay_pending_idx` backs it.
 
 ### 6. FeedbackGate Demo Mode Inconsistent
 - When `request_id=demo`, the flow works but does not simulate the recovery email submission (the `recoveryEmail` is hardcoded to 'recovery@grandhotel.com' but is not validated against a real location).
@@ -338,9 +339,15 @@ supabase/functions/
 1. **Refactor CSV importer** to use a wizard with column preview and mapping.
 2. **Add multi-language support** for the feedback gate (guest-facing pages).
 3. **Add SMS templates** distinct from email templates (currently only email template used for SMS).
-4. **Improve mid-stay window logic** with configurable delay (not hardcoded 24h).
-5. **Add team member management UI** (currently only API via `invite-team-member`).
-6. **Add subscription management UI** (cancel, upgrade/downgrade, billing history).
+4. ~~**Improve mid-stay window logic** with configurable delay (not hardcoded 24h).~~ Done — `locations.midstay_day` + local send hour. Remaining follow-ups: move the hardcoded mid-stay copy into `message_templates`, set `reply_to` on the mid-stay email (it says "just reply" but nothing listens), and make the dashboard's "Mid-Stay Pending" badge read the configured day instead of its own 24h math.
+5. ~~**Add team member management UI**~~ — done. Settings → Team. Backed by a real
+   `invitations` table with tokens and expiry (migration `0027`), an admin check on
+   `invite-team-member`, and the `accept_invitation()` RPC. The old
+   `?invite_account_id=` URL-parameter join was removed.
+6. ~~**Add subscription management UI**~~ — done. Settings → Billing, with cancel /
+   payment method / invoices handled by the Stripe Customer Portal via
+   `create-portal-session`. **One-time setup still required:** enable the portal at
+   https://dashboard.stripe.com/settings/billing/portal.
 7. **Add automated testing** for edge functions (Deno test suite).
 8. **Migrate from pg_cron** to Supabase's native scheduled functions if available.
 9. **Add rate limiting** on public endpoints (feedback, opt-out) to prevent abuse.
