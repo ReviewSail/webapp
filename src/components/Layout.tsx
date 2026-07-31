@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { MapPin, LogOut, Menu, Check, ChevronsUpDown, Settings as SettingsIcon } from 'lucide-react';
 import { supabase } from '../integrations/supabase/client';
 import { isAdmin } from '../lib/roles';
+import { SailMark } from './brand/SailMark';
 import { cn } from '../lib/utils';
 
 export function Layout() {
@@ -75,9 +76,9 @@ export function Layout() {
                 and on a narrow phone the location picker and sign-out matter
                 more than repeating the product name. */}
             <span className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.02em] text-ink">
-              <span className="flex h-5 w-5 items-center justify-center rounded bg-brand-600 text-[11px] font-bold text-white">
-                R
-              </span>
+              {/* Container variant here: the mobile header is a light surface,
+                  so the mark needs its own ground to sit on. */}
+              <SailMark variant="container" className="h-6 w-6 shrink-0" title="ReviewSail" />
               <span className="hidden min-[400px]:inline">ReviewSail</span>
             </span>
           </div>

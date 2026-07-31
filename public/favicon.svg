@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="ReviewSail">
+  <title>ReviewSail</title>
+  <!--
+    Favicon drawing — deliberately NOT the same artwork as icon.svg.
+
+    At 16px a diagonal gradient across two thin sails collapses into one blur of
+    mid-blue and the gap that identifies the mark closes up. So this variant is
+    flat-filled, the two sails are pushed further apart in value, and the gap is
+    widened from 3.2 to 4.5 units. It is the same silhouette, drawn to survive
+    being 16 pixels wide.
+  -->
+  <rect width="64" height="64" rx="14.5" fill="#0A1728"/>
+  <path d="M23 19 L28 51 L11 51 C13.5 39 18 28 23 19 Z" fill="#1D6FB8"/>
+  <path d="M36 10 C49 23 56.5 37.5 54 51 L31 51 Z"
+        fill="#63BAF2" stroke="#0A1728" stroke-width="4.5" paint-order="stroke"/>
+</svg>

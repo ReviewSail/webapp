@@ -4,6 +4,7 @@ import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useReviewSail } from '../context/ReviewSailContext';
 import { isAdmin } from '../lib/roles';
+import { SailMark } from './brand/SailMark';
 
 /** Exact build provenance, so a deploy can be identified down to the second. */
 function BuildStamp() {
@@ -111,10 +112,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     // here would spend the one-gradient budget permanently.
     <div className="flex h-full w-64 flex-col bg-brand-950 text-white/70">
       <div className="flex h-16 shrink-0 items-center px-5">
-        <span className="flex items-center gap-2 text-[17px] font-semibold tracking-[-0.02em] text-white">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-600 text-[13px] font-bold text-white">
-            R
-          </span>
+        {/* Icon-only mark. The wordmark stays live text rather than being baked
+            into the artwork, so it stays crisp at any zoom and follows the
+            theme. text-brand-950 sets the colour the sail gap is cut with. */}
+        <span className="flex items-center gap-2.5 text-[17px] font-semibold tracking-[-0.02em] text-white">
+          <SailMark className="h-7 w-7 shrink-0 text-brand-950" title="ReviewSail" />
           <span>ReviewSail</span>
         </span>
       </div>
