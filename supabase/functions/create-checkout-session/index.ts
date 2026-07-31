@@ -112,7 +112,10 @@ serve(async (req) => {
     bodyParams.append('line_items[0][price_data][product_data][description]', 'Unlimited guest feedback review requests, automated multi-channel emails/texts, and full reporting.')
     bodyParams.append('line_items[0][price_data][unit_amount]', '4900') // $49.00
     bodyParams.append('line_items[0][price_data][recurring][interval]', 'month')
-    bodyParams.append('line_items[0][qty]', '1')
+    // Stripe's parameter is `quantity`. This said `qty`, which Stripe ignores,
+    // and quantity is required for a price_data line item — so every checkout
+    // attempt was rejected before it could reach the payment page.
+    bodyParams.append('line_items[0][quantity]', '1')
     if (customerId) {
       bodyParams.append('customer', customerId)
     }

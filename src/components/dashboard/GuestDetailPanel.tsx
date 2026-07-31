@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { X, Mail, Phone, Calendar, Clock, RefreshCw, Send, MousePointerClick, BedDouble } from 'lucide-react';
 import { ReviewRequest, Order, Customer, MessageEvent } from '../../context/ReviewSailContext';
+import { StatusBadge } from '../ui/StatusBadge';
 
 interface GuestDetailPanelProps {
   request: ReviewRequest | null;
@@ -16,6 +17,16 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
   const [sending, setSending] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
 
+  // The drawer had no keyboard exit at all — once open, the close button was
+  // the only way out.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   if (!request || !order || !customer) return null;
 
   const handleResend = async () => {
@@ -28,44 +39,26 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
     setSending(false);
   };
 
-  const statusLabel = (status: string) => {
-    switch (status) {
-      case 'pending': return 'Awaiting Send';
-      case 'sent': return 'Invite Sent';
-      case 'clicked': return 'Feedback Received';
-      case 'opted_out': return 'Opted Out';
-      case 'expired': return 'Expired';
-      case 'already_reviewed': return 'Already Reviewed';
-      default: return status;
-    }
-  };
-
-  const statusColor = (status: string) => {
-    switch (status) {
-      case 'sent': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'clicked': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'expired': return 'bg-slate-50 text-slate-500 border-slate-200';
-      case 'opted_out': return 'bg-red-50 text-red-600 border-red-200';
-      case 'already_reviewed': return 'bg-violet-50 text-violet-700 border-violet-200';
-      default: return 'bg-amber-50 text-amber-700 border-amber-200';
-    }
-  };
-
   return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto animate-slide-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Guest details"
+      className="fixed inset-y-0 right-0 w-full max-w-sm bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto animate-slide-in"
+    >
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-bold text-slate-900">Guest Details</h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+            aria-label="Close guest details"
+          >
             <X className="h-5 w-5 text-slate-400" />
           </button>
         </div>
 
-        {/* Status Badge */}
-        <div className={`px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center space-x-1.5 border ${statusColor(request.status)} mb-6`}>
-          <span className="h-1.5 w-1.5 rounded-full bg-current" />
-          <span>{statusLabel(request.status)}</span>
-        </div>
+        <StatusBadge status={request.status} variant="detailed" className="mb-6" />
 
         {/* Guest Info */}
         <div className="space-y-4 bg-slate-50 rounded-xl p-4 border border-slate-100 mb-6">

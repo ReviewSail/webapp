@@ -296,7 +296,13 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         status: o.status as 'pending' | 'completed' | 'cancelled',
       }));
 
-      const { data: rrData } = await supabase.from('review_requests').select('*');
+      // Newest first, so the dashboard's "Recent Requests" (which just takes the
+      // first 20) actually shows the most recent ones. Unordered, Postgres
+      // returned an arbitrary 20 rows under a "Recent" heading.
+      const { data: rrData } = await supabase
+        .from('review_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
       const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
         id: r.id,
         orderId: r.order_id,

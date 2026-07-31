@@ -1,38 +1,30 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useReviewSail } from '../context/ReviewSailContext';
-import Papa from 'papaparse';
-import { 
-  FileUp, 
-  CheckCircle, 
-  AlertTriangle, 
-  AlertCircle, 
-  MapPin, 
-  Sparkles, 
-  RefreshCw, 
-  BookOpen, 
-  X, 
-  ChevronDown, 
-  ChevronUp, 
-  Info,
+import CsvImportWizard from '../components/import/CsvImportWizard';
+import {
+  CheckCircle,
+  AlertTriangle,
+  AlertCircle,
+  Sparkles,
+  RefreshCw,
+  BookOpen,
+  X,
+  ChevronDown,
+  ChevronUp,
   Calendar,
   Mail,
   Phone as PhoneIcon,
   User
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 
 export default function SyncGuests() {
-  const { addCustomer, addOrder, addReviewRequest, activeLocationId, locations, bulkImport } = useReviewSail();
+  const { addCustomer, addOrder, addReviewRequest, activeLocationId, locations } = useReviewSail();
   const [loading, setLoading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{ success: boolean; count: number; skipped: number; error?: string } | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  
+
   // Modal & Accordion State
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [openSection, setOpenSection] = useState<'booking' | 'airbnb' | 'expedia' | null>('booking');
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -74,7 +66,6 @@ export default function SyncGuests() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
-    setUploadResult(null);
 
     if (!activeLocationId) {
       setFeedback({ type: 'error', message: 'Please select a property location first.' });
@@ -119,154 +110,6 @@ export default function SyncGuests() {
     }
   };
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      handleFile(e.target.files[0]);
-    }
-  };
-
-  const handleFile = (file: File) => {
-    setFeedback(null);
-    setUploadResult(null);
-
-    if (file.type !== "text/csv" && !file.name.endsWith('.csv')) {
-      setFeedback({ type: 'error', message: 'Please upload a valid CSV file.' });
-      return;
-    }
-
-    setLoading(true);
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        if (results.errors.length > 0 && results.data.length === 0) {
-          setFeedback({ type: 'error', message: `CSV parsing error: ${results.errors[0].message}` });
-          setLoading(false);
-          return;
-        }
-
-        const headers = results.meta.fields || [];
-        const cleanKey = (key: string) => key.toLowerCase().trim().replace(/[_\-\s]+/g, '');
-
-        // Build an index map from cleaned header to original key
-        const headerMap = new Map<string, string>();
-        for (const h of headers) {
-          headerMap.set(cleanKey(h), h);
-        }
-
-        // Find the best matching header from a set of candidates
-        const findHeader = (candidates: string[]): string | null => {
-          for (const c of candidates) {
-            if (headerMap.has(c)) return headerMap.get(c)!;
-          }
-          return null;
-        };
-
-        // Column candidates for each field (ordered by priority)
-        const firstNameKey = findHeader(['firstname', 'firstname', 'first', 'guestfirstname', 'guestname']);
-        const lastNameKey = findHeader(['lastname', 'last', 'guestlastname', 'lastname']);
-        const emailKey = findHeader(['email', 'emailaddress', 'guestemail', 'e-mail']);
-        const phoneKey = findHeader(['phone', 'phonenumber', 'mobile', 'telephone', 'tel', 'guestphone']);
-        const checkoutDateKey = findHeader(['checkoutdate', 'checkout', 'departuredate', 'departure', 'enddate', 'checkout', 'checkoutdate']);
-        const checkinDateKey = findHeader(['checkindate', 'checkin', 'arrivaldate', 'arrival', 'startdate']);
-
-        const mappedRows: Array<{
-          firstName: string;
-          lastName: string;
-          email: string | null;
-          phone: string | null;
-          checkoutDate: string;
-          checkinDate?: string;
-        }> = [];
-
-        let skipped = 0;
-
-        for (const row of results.data as Record<string, any>[]) {
-          const firstName = firstNameKey ? (row[firstNameKey] || '').toString().trim() : '';
-          const lastName = lastNameKey ? (row[lastNameKey] || '').toString().trim() : '';
-          const email = emailKey ? (row[emailKey] || '').toString().trim() : '';
-          const phone = phoneKey ? (row[phoneKey] || '').toString().trim() : '';
-          const checkoutDateRaw = checkoutDateKey ? (row[checkoutDateKey] || '').toString().trim() : '';
-          const checkinDateRaw = checkinDateKey ? (row[checkinDateKey] || '').toString().trim() : '';
-
-          if (!firstName && !lastName) {
-            skipped++;
-            continue;
-          }
-
-          // Parse checkout date — try common formats
-          let checkoutDate = '';
-          if (checkoutDateRaw) {
-            const parsed = new Date(checkoutDateRaw);
-            if (!isNaN(parsed.getTime())) {
-              checkoutDate = parsed.toISOString().split('T')[0];
-            }
-          }
-          if (!checkoutDate) {
-            checkoutDate = new Date().toISOString().split('T')[0];
-          }
-
-          let checkinDate: string | undefined;
-          if (checkinDateRaw) {
-            const parsed = new Date(checkinDateRaw);
-            if (!isNaN(parsed.getTime())) {
-              checkinDate = parsed.toISOString().split('T')[0];
-            }
-          }
-
-          mappedRows.push({
-            firstName,
-            lastName,
-            email: email || null,
-            phone: phone || null,
-            checkoutDate,
-            checkinDate,
-          });
-        }
-
-        if (mappedRows.length === 0) {
-          setFeedback({ type: 'error', message: 'No valid rows found in CSV. Ensure the file has at least first and last name columns.' });
-          setLoading(false);
-          return;
-        }
-
-        const result = await bulkImport(mappedRows);
-        if (result.success) {
-          setUploadResult({ success: true, count: result.count, skipped });
-          setFeedback({ type: 'success', message: `Imported ${result.count} guest(s)${skipped > 0 ? ` (${skipped} skipped)` : ''}.` });
-        } else {
-          setFeedback({ type: 'error', message: result.error || 'Failed to import guests.' });
-        }
-        setLoading(false);
-      },
-      error: (err) => {
-        console.error('CSV parse error:', err);
-        setFeedback({ type: 'error', message: `Failed to read CSV: ${err.message}` });
-        setLoading(false);
-      },
-    });
-  };
 
   const locationName = locations.find(l => l.id === activeLocationId)?.name || '';
 
@@ -299,51 +142,7 @@ export default function SyncGuests() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* CSV Upload */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <FileUp size={20} className="text-indigo-500" />
-            Bulk Import (CSV)
-          </h3>
-
-          <div
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            className={`
-              relative border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer
-              ${dragActive ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400 bg-gray-50'}
-              ${!activeLocationId ? 'opacity-50 pointer-events-none' : ''}
-            `}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={handleFileInputChange}
-              className="hidden"
-            />
-            <FileUp size={40} className="mx-auto mb-3 text-gray-400" />
-            <p className="text-sm font-medium text-gray-700">
-              {dragActive ? 'Drop your CSV here' : 'Drag & drop a CSV file, or click to browse'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">Accepts .csv files from Booking.com, Airbnb, Expedia, and custom formats</p>
-          </div>
-
-          {uploadResult && (
-            <div className={`mt-4 p-3 rounded-lg text-sm flex items-center gap-2 ${
-              uploadResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-            }`}>
-              {uploadResult.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-              <span>
-                {uploadResult.success
-                  ? `Imported ${uploadResult.count} guest(s)${uploadResult.skipped > 0 ? ` (${uploadResult.skipped} rows skipped — missing name)` : ''}.`
-                  : uploadResult.error || 'Upload failed.'}
-              </span>
-            </div>
-          )}
-        </div>
+        <CsvImportWizard />
 
         {/* Manual Entry */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -487,9 +286,14 @@ export default function SyncGuests() {
 
             <div className="px-6 py-4 space-y-4">
               <p className="text-sm text-gray-600">
-                Your CSV file must include column headers. We support exports from major booking platforms and custom formats.
-                Required columns: <strong>first name</strong> and <strong>last name</strong>.
-                At least one contact method (email or phone) is recommended.
+                Your CSV file must include column headers. We recognise exports from the major booking platforms and
+                match their columns automatically — but every match is only a suggestion, and you can correct any of
+                them in the import step before anything is saved.
+              </p>
+              <p className="text-sm text-gray-600">
+                You'll need a <strong>name</strong> column, a <strong>check-out date</strong>, and at least one way to
+                reach the guest (<strong>email</strong> or <strong>phone</strong>). Adding a <strong>check-in date</strong> is
+                optional and enables mid-stay check-ins.
               </p>
 
               {/* Booking.com */}

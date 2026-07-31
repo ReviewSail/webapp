@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Sparkles, Building2, MapPin, RefreshCw, AlertCircle, FileUp, ShieldCheck, ChevronDown, ChevronUp, Map } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Sparkles, Building2, MapPin, RefreshCw, AlertCircle, FileUp, ShieldCheck, ChevronDown, ChevronUp, Map, CheckCircle2, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useReviewSail } from '../../context/ReviewSailContext';
+import { assessGoogleReviewUrl } from '../../lib/googleReviewUrl';
 
 export function OnboardingWizard() {
   const { locations, updateLocationSettings, completeOnboarding } = useReviewSail();
@@ -15,12 +16,20 @@ export function OnboardingWizard() {
 
   const activeLoc = locations.find(l => l.id);
 
+  // Assessed live so the manager sees what guests will get before saving.
+  const assessment = useMemo(() => assessGoogleReviewUrl(googleUrl), [googleUrl]);
+
   const handleSaveGoogleUrl = async () => {
     if (!activeLoc) return;
+    if (assessment.kind === 'empty') {
+      setError('A review link is required — without it, every happy guest is a lost review.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      await updateLocationSettings(activeLoc.id, { googlePlaceUrl: googleUrl });
+      // Store the normalized form so a pasted Place ID becomes a usable link.
+      await updateLocationSettings(activeLoc.id, { googlePlaceUrl: assessment.normalized });
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -106,9 +115,14 @@ export function OnboardingWizard() {
 
             {showGoogleHelp && (
               <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-600 space-y-1.5 border border-slate-100">
-                <p>1. Go to <strong>Google Maps</strong> and search for your business</p>
-                <p>2. Click <strong>Share</strong> and copy the link</p>
-                <p>3. Paste the URL in the input below</p>
+                <p className="font-semibold text-slate-700">Best — a direct review link:</p>
+                <p>1. Open <strong>Google Business Profile</strong> and select your property</p>
+                <p>2. Click <strong>Ask for reviews</strong> — Google gives you a short link</p>
+                <p>3. Paste it below</p>
+                <p className="pt-1.5 text-slate-400">
+                  A link from Google Maps' <strong>Share</strong> button also works, but it drops guests on your
+                  profile instead of the review box, so fewer of them finish.
+                </p>
               </div>
             )}
 
@@ -116,9 +130,39 @@ export function OnboardingWizard() {
               type="text"
               value={googleUrl}
               onChange={(e) => setGoogleUrl(e.target.value)}
-              placeholder="https://maps.google.com/..."
+              placeholder="https://g.page/r/.../review"
               className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
             />
+
+            {googleUrl.trim() && assessment.message && (
+              <div
+                className={`text-xs p-2.5 rounded-lg flex items-start space-x-1.5 ${
+                  assessment.opensReviewComposer
+                    ? 'text-emerald-700 bg-emerald-50'
+                    : assessment.kind === 'listing-link'
+                      ? 'text-amber-700 bg-amber-50'
+                      : 'text-red-600 bg-red-50'
+                }`}
+              >
+                {assessment.opensReviewComposer
+                  ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  : <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
+                <span>{assessment.message}</span>
+              </div>
+            )}
+
+            {/* The only honest verification: let them see the real destination. */}
+            {assessment.normalized && assessment.kind !== 'invalid' && (
+              <a
+                href={assessment.normalized}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-indigo-600 hover:text-indigo-700 inline-flex items-center space-x-1"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>Preview what guests see</span>
+              </a>
+            )}
 
             {error && (
               <div className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg flex items-center space-x-1.5">

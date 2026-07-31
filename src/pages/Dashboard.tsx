@@ -26,7 +26,8 @@ export default function Dashboard() {
     subscriptionStatus,
     subscribe,
     respondToFeedback,
-    unreadPrivateFeedbackCount
+    unreadPrivateFeedbackCount,
+    loading
   } = useReviewSail();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -139,6 +140,7 @@ export default function Dashboard() {
             clickRate={clickRate}
             totalClicked={totalClicked}
             totalOptedOut={totalOptedOut}
+            loading={loading}
           />
 
           <RecentRequestsTable
@@ -146,6 +148,7 @@ export default function Dashboard() {
             orders={orders}
             customers={customers}
             totalLogs={totalLogs}
+            loading={loading}
           />
 
           <PrivateFeedbackSection
