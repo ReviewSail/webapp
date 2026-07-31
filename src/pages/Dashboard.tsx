@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useReviewSail, isActionableFeedback } from '../context/ReviewSailContext';
-import { AlertCircle, MessageSquare, BarChart3 } from 'lucide-react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { TabNav } from '../components/ui/TabNav';
+import { useSearchParams, useNavigate, Navigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toast';
+import { Notice } from '../components/ui/Notice';
+import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
 import { TrialBanner } from '../components/dashboard/TrialBanner';
 import { OnboardingWizard } from '../components/dashboard/OnboardingWizard';
-import { StatsGrid } from '../components/dashboard/StatsGrid';
+import { ResultsHero } from '../components/dashboard/ResultsHero';
+import { InvitePipeline } from '../components/dashboard/InvitePipeline';
 import { RecentRequestsTable } from '../components/dashboard/RecentRequestsTable';
 import { PrivateFeedbackSection } from '../components/dashboard/PrivateFeedbackSection';
-import { PrivateFeedbackInbox } from '../components/dashboard/PrivateFeedbackInbox';
 import { TeamRecognitionCard } from '../components/dashboard/TeamRecognitionCard';
 import { useAuth } from '../context/AuthContext';
 import { isAdmin } from '../lib/roles';
@@ -26,16 +27,14 @@ export default function Dashboard() {
     subscriptionStatus,
     subscribe,
     respondToFeedback,
-    unreadPrivateFeedbackCount,
+    messageEvents,
     loading
   } = useReviewSail();
 
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [upgrading, setUpgrading] = useState(false);
-
-  const activeTab = searchParams.get('tab') || 'overview';
 
   const handleUpgrade = async () => {
     setUpgrading(true);
@@ -85,91 +84,86 @@ export default function Dashboard() {
   const activeLoc = locations.find(l => l.id === activeLocationId) || null;
   const missingReviewUrl = !!activeLoc && !activeLoc.googlePlaceUrl?.trim();
 
-  const tabs = [
-    { key: 'overview', label: 'Overview', icon: BarChart3 },
-    { key: 'feedback', label: 'Private Feedback', icon: MessageSquare, badge: unreadPrivateFeedbackCount },
-  ];
-
-  const setActiveTab = (tab: string) => {
-    setSearchParams({ tab });
-  };
+  // Private feedback moved to its own route. Bookmarks and old links survive.
+  if (searchParams.get('tab') === 'feedback') {
+    return <Navigate to="/inbox" replace />;
+  }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* No description here: the hero directly below names the property and
+          states the result, so a subtitle would only repeat it. */}
+      <PageHeader title="Dashboard" />
+
       {accessDenied && (
-        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start space-x-3 text-amber-800">
-          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-semibold text-sm">Access Restricted</h4>
-            <p className="text-xs mt-0.5">You don't have permission to access that area. Contact your administrator for details.</p>
-          </div>
-        </div>
+        <Notice tone="caution" title="Access restricted">
+          You don't have permission to open that area. Ask an administrator if you need it.
+        </Notice>
       )}
 
       {missingReviewUrl && activeLoc?.onboardingComplete && (
-        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start space-x-3 text-amber-800">
-          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="font-semibold text-sm">No Google review link for {activeLoc.name}</h4>
-            <p className="text-xs mt-0.5">
-              Guests who rate you 4 or 5 stars currently have nowhere to post their review — every one of them is
-              being lost.{' '}
-              <button
-                onClick={() => navigate('/settings?tab=locations')}
-                className="underline font-semibold hover:text-amber-900"
-              >
-                Add your review link
-              </button>
-            </p>
-          </div>
-        </div>
+        <Notice
+          tone="caution"
+          title={`No Google review link for ${activeLoc.name}`}
+          action={
+            // Locations is where the review-link field actually lives now. This
+            // link was briefly pointed at Templates to match where the field had
+            // drifted to; moving the field back fixed the cause.
+            <Button size="sm" onClick={() => navigate('/settings?tab=locations')}>
+              Add review link
+            </Button>
+          }
+        >
+          Guests who rate you 4 or 5 stars have nowhere to post their review, so every one of them is lost.
+        </Notice>
       )}
 
       <TrialBanner status={subscriptionStatus} onUpgrade={handleUpgrade} upgrading={upgrading} />
 
       <OnboardingWizard />
 
-      <TabNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
-
-      {activeTab === 'overview' && (
-        <div className="space-y-8">
-          <StatsGrid
-            totalSent={totalSent}
-            totalPending={totalPending}
-            deliveryRate={deliveryRate}
-            clickRate={clickRate}
-            totalClicked={totalClicked}
-            totalOptedOut={totalOptedOut}
-            loading={loading}
-          />
-
-          <RecentRequestsTable
-            recentRequests={recentRequests}
-            orders={orders}
-            customers={customers}
-            totalLogs={totalLogs}
-            loading={loading}
-          />
-
-          <PrivateFeedbackSection
-            feedbacks={actionableFeedback}
-            reviewRequests={reviewRequests}
-            orders={orders}
-            customers={customers}
-            onRespond={respondToFeedback}
-          />
-
-          {isAdmin(role) && (
-            <div className="mt-8">
-              <TeamRecognitionCard />
-            </div>
-          )}
-        </div>
+      {/* One opening statement at a time. While setup is unfinished the wizard
+          is the page's lead; the hero takes over the moment it's done, which is
+          also when its "import your first guests" nudge starts being the right
+          next step rather than a duplicate of wizard step 3. */}
+      {activeLoc?.onboardingComplete && (
+        <ResultsHero
+          locationName={activeLoc.name}
+          requests={activeLocRequests}
+          events={messageEvents}
+          totalClicked={totalClicked}
+          loading={loading}
+          onImportGuests={() => navigate('/import')}
+        />
       )}
 
-      {activeTab === 'feedback' && (
-        <PrivateFeedbackInbox />
-      )}
+      <InvitePipeline
+        totalSent={totalSent}
+        totalPending={totalPending}
+        deliveryRate={deliveryRate}
+        clickRate={clickRate}
+        totalClicked={totalClicked}
+        totalOptedOut={totalOptedOut}
+        loading={loading}
+      />
+
+      <RecentRequestsTable
+        recentRequests={recentRequests}
+        orders={orders}
+        customers={customers}
+        totalLogs={totalLogs}
+        loading={loading}
+      />
+
+      <PrivateFeedbackSection
+        feedbacks={actionableFeedback}
+        reviewRequests={reviewRequests}
+        orders={orders}
+        customers={customers}
+        onRespond={respondToFeedback}
+      />
+
+      {isAdmin(role) && <TeamRecognitionCard />}
     </div>
   );
 }

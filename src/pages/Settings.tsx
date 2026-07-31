@@ -337,6 +337,220 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+
+          {/* Per-location configuration.
+
+              This lived under the Templates tab, which is why the dashboard
+              banner that says "add your review link" pointed at the wrong
+              place: the tab was named for message copy but held every
+              setting a location has. Templates is now only templates. */}
+          {activeLocationId && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-indigo-50 rounded-xl">
+                  <Globe className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {activeLoc?.name || 'Location'} settings
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Review link, timezone, send time, and channels for the active location.
+                  </p>
+                </div>
+              </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Google Review Link</label>
+              <input
+                type="text"
+                value={googleUrl}
+                onChange={(e) => setGoogleUrl(e.target.value)}
+                placeholder="https://g.page/r/.../review"
+                className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
+              />
+              {googleUrl.trim() && googleAssessment.message && (
+                <div
+                  className={`mt-2 text-xs p-2.5 rounded-lg flex items-start space-x-1.5 ${
+                    googleAssessment.opensReviewComposer
+                      ? 'text-emerald-700 bg-emerald-50'
+                      : googleAssessment.kind === 'listing-link'
+                        ? 'text-amber-700 bg-amber-50'
+                        : 'text-red-600 bg-red-50'
+                  }`}
+                >
+                  {googleAssessment.opensReviewComposer
+                    ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    : <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
+                  <span>{googleAssessment.message}</span>
+                </div>
+              )}
+              {googleAssessment.normalized && googleAssessment.kind !== 'invalid' && (
+                <a
+                  href={googleAssessment.normalized}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 text-xs text-indigo-600 hover:text-indigo-700 inline-flex items-center space-x-1"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Preview what guests see</span>
+                </a>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Property Timezone</label>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
+              >
+                {TIMEZONES.map(tz => (
+                  <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Review requests are sent at the local time of the property.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Preferred Send Hour – {formatHourInZone(sendHour)} local
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={23}
+                value={sendHour}
+                onChange={(e) => setSendHour(Number(e.target.value))}
+                className="w-full accent-indigo-600"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>00:00</span>
+                <span>12:00</span>
+                <span>23:00</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="flex items-center space-x-2">
+                  {enableEmail ? <Send className="h-4 w-4 text-indigo-500" /> : <BellOff className="h-4 w-4 text-slate-400" />}
+                  <span className="text-sm font-semibold text-slate-700">Email</span>
+                </div>
+                <button
+                  onClick={() => setEnableEmail(!enableEmail)}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${
+                    enableEmail ? 'bg-indigo-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                    enableEmail ? 'translate-x-4' : ''
+                  }`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="flex items-center space-x-2">
+                  {enableSms ? <MessageCircle className="h-4 w-4 text-indigo-500" /> : <BellOff className="h-4 w-4 text-slate-400" />}
+                  <span className="text-sm font-semibold text-slate-700">SMS</span>
+                </div>
+                <button
+                  onClick={() => setEnableSms(!enableSms)}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${
+                    enableSms ? 'bg-indigo-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                    enableSms ? 'translate-x-4' : ''
+                  }`} />
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Recovery Email (for unhappy guests)</label>
+              <input
+                type="email"
+                value={recoveryEmail}
+                onChange={(e) => setRecoveryEmail(e.target.value)}
+                placeholder="manager@myhotel.com"
+                className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">Shown to unhappy guests as a direct contact option.</p>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-semibold text-slate-700">Mid-stay Check-in</span>
+                  <p className="text-xs text-slate-400 mt-0.5">Catch problems while there is still time to fix them</p>
+                </div>
+                <button
+                  onClick={() => setMidstayEnabled(!midstayEnabled)}
+                  className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
+                    midstayEnabled ? 'bg-indigo-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                    midstayEnabled ? 'translate-x-4' : ''
+                  }`} />
+                </button>
+              </div>
+
+              {/* The hour is deliberately not a second control — it reuses the
+                  send hour set above, so there is only one number to choose. */}
+              {midstayEnabled && (
+                <div className="pt-3 border-t border-slate-200">
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                    <span>Send on</span>
+                    <select
+                      value={midstayDay}
+                      onChange={(e) => setMidstayDay(Number(e.target.value))}
+                      className="rounded-lg border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-1.5 px-2 border bg-white font-semibold"
+                    >
+                      {[2, 3, 4, 5, 6, 7].map((day) => (
+                        <option key={day} value={day}>Day {day}</option>
+                      ))}
+                    </select>
+                    <span>of the stay, at {formatHourInZone(sendHour)} local</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1.5">
+                    {midstayDay === 2
+                      ? 'Day 1 is the arrival day, so Day 2 is the morning after they arrive.'
+                      : `Day 1 is the arrival day, so Day ${midstayDay} is ${midstayDay - 1} days after they arrive.`}
+                    {' '}Skipped for guests who check out on or before that day.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleSaveGeneral}
+                className="bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition-colors flex items-center space-x-2"
+              >
+                <CheckCircle className="h-4 w-4" />
+                <span>Save Settings</span>
+              </button>
+
+              {/* Proves the whole loop — template, sender, links — in one click. */}
+              <button
+                onClick={handleTestSend}
+                disabled={testSending}
+                className="bg-white text-slate-700 font-semibold py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors flex items-center space-x-2 disabled:opacity-50"
+              >
+                {testSending
+                  ? <RefreshCw className="h-4 w-4 animate-spin" />
+                  : <Send className="h-4 w-4 text-indigo-500" />}
+                <span>{testSending ? 'Sending…' : 'Send a test to myself'}</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 -mt-2">
+              Sends one real review request to {session?.user?.email} using this location's template, then
+              removes the test guest. Nothing appears in your guest list or stats.
+            </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -410,201 +624,6 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {/* General Location Settings */}
-              <div className="border-t border-slate-100 pt-6 space-y-5">
-                <h3 className="text-sm font-bold text-slate-800">General Settings</h3>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Google Review Link</label>
-                  <input
-                    type="text"
-                    value={googleUrl}
-                    onChange={(e) => setGoogleUrl(e.target.value)}
-                    placeholder="https://g.page/r/.../review"
-                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
-                  />
-                  {googleUrl.trim() && googleAssessment.message && (
-                    <div
-                      className={`mt-2 text-xs p-2.5 rounded-lg flex items-start space-x-1.5 ${
-                        googleAssessment.opensReviewComposer
-                          ? 'text-emerald-700 bg-emerald-50'
-                          : googleAssessment.kind === 'listing-link'
-                            ? 'text-amber-700 bg-amber-50'
-                            : 'text-red-600 bg-red-50'
-                      }`}
-                    >
-                      {googleAssessment.opensReviewComposer
-                        ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                        : <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
-                      <span>{googleAssessment.message}</span>
-                    </div>
-                  )}
-                  {googleAssessment.normalized && googleAssessment.kind !== 'invalid' && (
-                    <a
-                      href={googleAssessment.normalized}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 text-xs text-indigo-600 hover:text-indigo-700 inline-flex items-center space-x-1"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      <span>Preview what guests see</span>
-                    </a>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Property Timezone</label>
-                  <select
-                    value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
-                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
-                  >
-                    {TIMEZONES.map(tz => (
-                      <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Review requests are sent at the local time of the property.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Preferred Send Hour – {formatHourInZone(sendHour)} local
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={23}
-                    value={sendHour}
-                    onChange={(e) => setSendHour(Number(e.target.value))}
-                    className="w-full accent-indigo-600"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                    <span>00:00</span>
-                    <span>12:00</span>
-                    <span>23:00</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="flex items-center space-x-2">
-                      {enableEmail ? <Send className="h-4 w-4 text-indigo-500" /> : <BellOff className="h-4 w-4 text-slate-400" />}
-                      <span className="text-sm font-semibold text-slate-700">Email</span>
-                    </div>
-                    <button
-                      onClick={() => setEnableEmail(!enableEmail)}
-                      className={`relative w-9 h-5 rounded-full transition-colors ${
-                        enableEmail ? 'bg-indigo-600' : 'bg-slate-300'
-                      }`}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                        enableEmail ? 'translate-x-4' : ''
-                      }`} />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="flex items-center space-x-2">
-                      {enableSms ? <MessageCircle className="h-4 w-4 text-indigo-500" /> : <BellOff className="h-4 w-4 text-slate-400" />}
-                      <span className="text-sm font-semibold text-slate-700">SMS</span>
-                    </div>
-                    <button
-                      onClick={() => setEnableSms(!enableSms)}
-                      className={`relative w-9 h-5 rounded-full transition-colors ${
-                        enableSms ? 'bg-indigo-600' : 'bg-slate-300'
-                      }`}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                        enableSms ? 'translate-x-4' : ''
-                      }`} />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Recovery Email (for unhappy guests)</label>
-                  <input
-                    type="email"
-                    value={recoveryEmail}
-                    onChange={(e) => setRecoveryEmail(e.target.value)}
-                    placeholder="manager@myhotel.com"
-                    className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">Shown to unhappy guests as a direct contact option.</p>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-sm font-semibold text-slate-700">Mid-stay Check-in</span>
-                      <p className="text-xs text-slate-400 mt-0.5">Catch problems while there is still time to fix them</p>
-                    </div>
-                    <button
-                      onClick={() => setMidstayEnabled(!midstayEnabled)}
-                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                        midstayEnabled ? 'bg-indigo-600' : 'bg-slate-300'
-                      }`}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                        midstayEnabled ? 'translate-x-4' : ''
-                      }`} />
-                    </button>
-                  </div>
-
-                  {/* The hour is deliberately not a second control — it reuses the
-                      send hour set above, so there is only one number to choose. */}
-                  {midstayEnabled && (
-                    <div className="pt-3 border-t border-slate-200">
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-                        <span>Send on</span>
-                        <select
-                          value={midstayDay}
-                          onChange={(e) => setMidstayDay(Number(e.target.value))}
-                          className="rounded-lg border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-1.5 px-2 border bg-white font-semibold"
-                        >
-                          {[2, 3, 4, 5, 6, 7].map((day) => (
-                            <option key={day} value={day}>Day {day}</option>
-                          ))}
-                        </select>
-                        <span>of the stay, at {formatHourInZone(sendHour)} local</span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1.5">
-                        {midstayDay === 2
-                          ? 'Day 1 is the arrival day, so Day 2 is the morning after they arrive.'
-                          : `Day 1 is the arrival day, so Day ${midstayDay} is ${midstayDay - 1} days after they arrive.`}
-                        {' '}Skipped for guests who check out on or before that day.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={handleSaveGeneral}
-                    className="bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition-colors flex items-center space-x-2"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Save Settings</span>
-                  </button>
-
-                  {/* Proves the whole loop — template, sender, links — in one click. */}
-                  <button
-                    onClick={handleTestSend}
-                    disabled={testSending}
-                    className="bg-white text-slate-700 font-semibold py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors flex items-center space-x-2 disabled:opacity-50"
-                  >
-                    {testSending
-                      ? <RefreshCw className="h-4 w-4 animate-spin" />
-                      : <Send className="h-4 w-4 text-indigo-500" />}
-                    <span>{testSending ? 'Sending…' : 'Send a test to myself'}</span>
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-400 -mt-2">
-                  Sends one real review request to {session?.user?.email} using this location's template, then
-                  removes the test guest. Nothing appears in your guest list or stats.
-                </p>
-              </div>
             </div>
           )}
         </div>

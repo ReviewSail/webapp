@@ -240,6 +240,57 @@ serve(async (req) => {
     );
     console.log(`[process-reviews] Loaded ${optedOutEmails.size} opted-out emails, ${optedOutPhones.size} opted-out phones.`);
 
+    /**
+     * Has the guest actually left?
+     *
+     * Every OTA export is forward-looking — a Booking.com or Airbnb reservations
+     * download is mostly stays that have not happened yet. Phase 1 only ever
+     * asked whether a stay was *too old* (>14 days) and treated everything else
+     * as ready, so the first import an owner ever did sent "thanks for staying"
+     * to guests who had not arrived. Phase 3 learned this in migration 0022 and
+     * compares calendar days at the property; Phases 1 and 2 now do the same.
+     *
+     * Compared as calendar days, not instants: checkout_date holds midnight UTC
+     * of the date the host typed, so an instant comparison would hold a guest
+     * who left this morning until tomorrow.
+     */
+    const hasCheckedOut = (order: any, location: any): boolean => {
+      const checkoutDay = utcDateOnly(order?.checkout_date);
+      // No checkout date recorded — nothing to wait for; the old behaviour of
+      // sending immediately is preserved.
+      if (!checkoutDay) return true;
+      return checkoutDay <= localDateFor(location?.timezone);
+    };
+
+    /**
+     * Accounts allowed to send.
+     *
+     * subscription_status was written by the Stripe webhook and read by the UI,
+     * but nothing on the sending path ever looked at it — so unpaid accounts
+     * kept sending while TrialBanner told them "automated invites are switched
+     * off". The claim is now true.
+     *
+     * Loaded once as a set rather than joined per request: the table is small
+     * and this keeps the per-request check to a Set lookup.
+     */
+    const { data: sendingAccounts, error: accountsError } = await supabase
+      .from('accounts')
+      .select('id, subscription_status')
+      .in('subscription_status', ['active', 'trialing']);
+
+    if (accountsError) {
+      // Failing open would send on behalf of every unpaid account. Failing
+      // closed delays invites by one cron tick, which is recoverable.
+      console.error('[process-reviews] Could not load billing state; sending nothing this run:', accountsError);
+      throw accountsError;
+    }
+
+    const payingAccountIds = new Set((sendingAccounts || []).map(a => a.id));
+    console.log(`[process-reviews] ${payingAccountIds.size} account(s) on an active plan.`);
+
+    /** True when this location's account may send. */
+    const canSend = (location: any): boolean => payingAccountIds.has(location?.account_id);
+
     // --- PHASE 1: PROCESS PENDING REVIEW REQUESTS ---
     let query = supabase
       .from('review_requests')
@@ -250,6 +301,7 @@ serve(async (req) => {
           checkout_date,
           locations (
             id,
+            account_id,
             name,
             google_place_url,
             enable_email,
@@ -306,6 +358,21 @@ serve(async (req) => {
             processedResults.push({ id: request.id, type: 'pending', status: 'expired' });
             continue;
           }
+        }
+
+        // Stay is still ahead of the guest. Leave it pending — it becomes
+        // sendable on its own the day they check out.
+        if (!hasCheckedOut(order, location)) {
+          console.log(`[process-reviews] Request ${request.id} checks out ${utcDateOnly(order.checkout_date)}; holding until after checkout.`);
+          continue;
+        }
+
+        // A manual resend from the dashboard still respects billing — the
+        // button is only reachable by an account that can see the dashboard,
+        // but the plan is what authorises the send.
+        if (!canSend(location)) {
+          console.log(`[process-reviews] Request ${request.id} held: account ${location.account_id} has no active plan.`);
+          continue;
         }
 
         if (!specificRequestId) {
@@ -480,6 +547,7 @@ serve(async (req) => {
             checkout_date,
             locations (
               id,
+              account_id,
               name,
               google_place_url,
               enable_email,
@@ -541,6 +609,15 @@ serve(async (req) => {
                   await supabase.from('review_requests').update({ status: 'expired' }).eq('id', request.id);
                   continue;
                 }
+              }
+
+              // Same gate as Phase 1: never chase a review for a stay that has
+              // not finished.
+              if (!hasCheckedOut(order, location)) continue;
+
+              if (!canSend(location)) {
+                console.log(`[process-reviews] Reminder for ${request.id} held: no active plan.`);
+                continue;
               }
 
               const preferredHour = location.preferred_send_hour ?? 10;
@@ -687,6 +764,7 @@ serve(async (req) => {
           ),
           locations (
             id,
+            account_id,
             name,
             midstay_enabled,
             midstay_day,
@@ -732,6 +810,11 @@ serve(async (req) => {
 
           if (location.midstay_enabled === false) {
             console.log(`[process-reviews] Mid-stay: Location "${location.name}" has mid-stay disabled, skipping order ${order.id}.`);
+            continue;
+          }
+
+          if (!canSend(location)) {
+            console.log(`[process-reviews] Mid-stay: order ${order.id} held, no active plan.`);
             continue;
           }
 

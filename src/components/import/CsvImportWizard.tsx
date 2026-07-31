@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CopyCheck,
+  CalendarClock,
 } from 'lucide-react';
 import { useReviewSail } from '../../context/ReviewSailContext';
 import {
@@ -202,6 +203,9 @@ export default function CsvImportWizard() {
     warnings: validated.filter(r => r.status === 'warning').length,
     duplicates: validated.filter(r => r.status === 'duplicate').length,
     errors: validated.filter(r => r.status === 'error').length,
+    // Stays that have not finished yet. Counted from the issue rather than the
+    // status, because an upcoming stay is a perfectly healthy row.
+    upcoming: validated.filter(r => r.issues.some(i => i.level === 'info')).length,
   }), [validated]);
 
   const problemRows = useMemo(
@@ -475,6 +479,17 @@ export default function CsvImportWizard() {
               <CopyCheck size={16} className="mt-0.5 shrink-0 text-gray-400" />
               {counts.duplicates} guest{counts.duplicates === 1 ? ' has' : 's have'} already been imported for the same
               check-out date and will be skipped, so nobody gets a second request.
+            </p>
+          )}
+
+          {/* Most of an OTA export is stays that have not happened yet. Saying
+              so up front is the difference between "this worked" and "why has
+              nothing sent?" a week later. */}
+          {counts.upcoming > 0 && (
+            <p className="text-sm text-gray-600 flex items-start gap-2">
+              <CalendarClock size={16} className="mt-0.5 shrink-0 text-gray-400" />
+              {counts.upcoming} {counts.upcoming === 1 ? 'stay is' : 'stays are'} still upcoming. Those invites are
+              scheduled automatically and send the day each guest checks out.
             </p>
           )}
 

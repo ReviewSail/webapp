@@ -5,35 +5,41 @@ import { cn } from '../../lib/utils';
  * RecentRequestsTable and GuestDetailPanel, where the two colour maps had
  * already drifted apart.
  */
+/*
+ * Colour here carries meaning, so it is spent narrowly: brand blue for the
+ * states we want (delivered, engaged, reviewed), state colours for the two that
+ * need a reaction, and plain neutral for everything inert. Seven distinct hues
+ * for seven statuses would make a table of guests look like a paint chart.
+ */
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-amber-50 text-amber-700 border-amber-200',
-  sent: 'bg-blue-50 text-blue-700 border-blue-200',
-  clicked: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  opted_out: 'bg-red-50 text-red-600 border-red-200',
-  expired: 'bg-slate-50 text-slate-500 border-slate-200',
-  already_reviewed: 'bg-violet-50 text-violet-700 border-violet-200',
-  private_feedback: 'bg-slate-50 text-slate-600 border-slate-300',
+  pending: 'bg-caution-soft text-caution border-caution/20',
+  sent: 'bg-brand-50 text-brand-700 border-brand-100',
+  clicked: 'bg-positive-soft text-positive border-positive/20',
+  opted_out: 'bg-critical-soft text-critical border-critical/20',
+  expired: 'bg-canvas text-ink-faint border-line',
+  already_reviewed: 'bg-brand-50 text-brand-800 border-brand-100',
+  private_feedback: 'bg-canvas text-ink-muted border-line',
 };
 
 const SHORT_LABELS: Record<string, string> = {
   pending: 'Pending',
   sent: 'Sent',
   clicked: 'Clicked',
-  opted_out: 'Opted Out',
+  opted_out: 'Opted out',
   expired: 'Expired',
   already_reviewed: 'Reviewed',
-  private_feedback: 'Private Feedback',
+  private_feedback: 'Private feedback',
 };
 
 /** The detail drawer has room to say what the status actually means. */
 const LONG_LABELS: Record<string, string> = {
-  pending: 'Awaiting Send',
-  sent: 'Invite Sent',
-  clicked: 'Feedback Received',
-  opted_out: 'Opted Out',
+  pending: 'Awaiting send',
+  sent: 'Invite sent',
+  clicked: 'Feedback received',
+  opted_out: 'Opted out',
   expired: 'Expired',
-  already_reviewed: 'Already Reviewed',
-  private_feedback: 'Private Feedback',
+  already_reviewed: 'Already reviewed',
+  private_feedback: 'Private feedback',
 };
 
 interface StatusBadgeProps {
@@ -44,7 +50,7 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, variant = 'pill', className }: StatusBadgeProps) {
-  const color = STATUS_COLORS[status] || 'bg-slate-50 text-slate-600 border-slate-200';
+  const color = STATUS_COLORS[status] || 'bg-canvas text-ink-muted border-line';
   const labels = variant === 'detailed' ? LONG_LABELS : SHORT_LABELS;
   const label = labels[status] || status;
 
@@ -52,7 +58,7 @@ export function StatusBadge({ status, variant = 'pill', className }: StatusBadge
     return (
       <div
         className={cn(
-          'px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center space-x-1.5 border',
+          'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium',
           color,
           className
         )}
@@ -64,7 +70,7 @@ export function StatusBadge({ status, variant = 'pill', className }: StatusBadge
   }
 
   return (
-    <span className={cn('px-2.5 py-0.5 rounded-full text-xs font-semibold border', color, className)}>
+    <span className={cn('rounded-full border px-2.5 py-0.5 text-xs font-medium', color, className)}>
       {label}
     </span>
   );

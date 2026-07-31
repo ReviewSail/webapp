@@ -1,11 +1,16 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useReviewSail } from '../context/ReviewSailContext';
-import { Search, User, Mail, Phone, Eye } from 'lucide-react';
+import { Search, User, Mail, Phone, Eye, FileUp } from 'lucide-react';
 import { GuestDetailPanel } from '../components/dashboard/GuestDetailPanel';
+import { PageHeader } from '../components/ui/PageHeader';
+import { EmptyState } from '../components/ui/EmptyState';
+import { Button } from '../components/ui/Button';
 import { format } from 'date-fns';
 
 export default function Guests() {
   const { customers, reviewRequests, orders, messageEvents, triggerSingleResend } = useReviewSail();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -55,10 +60,15 @@ export default function Guests() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Guests</h1>
-        <p className="text-sm text-slate-500 mt-1">All customer records and their latest review request status.</p>
-      </div>
+      <PageHeader
+        title="Guests"
+        description="Everyone you've imported, and where their review invite got to."
+        action={
+          <Button icon={FileUp} onClick={() => navigate('/import')}>
+            Import guests
+          </Button>
+        }
+      />
 
       {/* Search */}
       <div className="relative">
@@ -88,10 +98,33 @@ export default function Guests() {
             <tbody className="divide-y divide-slate-50">
               {filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                    <User className="h-8 w-8 mx-auto mb-3 text-slate-300" />
-                    <p className="text-sm font-semibold text-slate-700">No guests found</p>
-                    <p className="text-xs text-slate-400 mt-1">Import or add guests to see them here.</p>
+                  <td colSpan={5}>
+                    {/* A failed search and an empty account are different
+                        situations. Offering "Import guests" to someone who just
+                        mistyped a name is noise; withholding it from someone
+                        with no guests at all is the dead end this page had. */}
+                    {search.trim() ? (
+                      <EmptyState
+                        icon={Search}
+                        size="sm"
+                        bare
+                        title="No guests match that search"
+                        description="Try part of a name, an email address, or a phone number."
+                      />
+                    ) : (
+                      <EmptyState
+                        icon={User}
+                        size="sm"
+                        bare
+                        title="No guests yet"
+                        description="Import a checkout report and ReviewSail invites each guest the day they leave."
+                        action={
+                          <Button icon={FileUp} onClick={() => navigate('/import')}>
+                            Import guests
+                          </Button>
+                        }
+                      />
+                    )}
                   </td>
                 </tr>
               ) : (

@@ -6,9 +6,14 @@ interface CardProps {
   className?: string;
 }
 
+/**
+ * A resting surface: hairline border, no shadow. Depth is reserved for things
+ * that genuinely float — menus, toasts, the guest drawer. A page of shadowed
+ * cards reads as busy before a single word is read.
+ */
 export function Card({ children, className }: CardProps) {
   return (
-    <div className={cn('bg-white rounded-2xl border border-slate-200 shadow-sm', className)}>
+    <div className={cn('rounded-xl border border-line bg-white', className)}>
       {children}
     </div>
   );
@@ -18,28 +23,30 @@ interface CardHeaderProps {
   icon: LucideIcon;
   title: string;
   description?: string;
-  /** Tailwind color stem for the icon chip, e.g. 'indigo' (default) or 'red'. */
-  tone?: 'indigo' | 'red' | 'emerald' | 'amber';
+  /** Semantic tone for the icon chip. 'indigo' is kept as an alias for 'brand'
+   *  so existing callers keep working while the app finishes migrating. */
+  tone?: 'brand' | 'indigo' | 'red' | 'emerald' | 'amber';
   action?: React.ReactNode;
 }
 
 const toneClasses = {
-  indigo: { chip: 'bg-indigo-50', icon: 'text-indigo-600', title: 'text-slate-900' },
-  red: { chip: 'bg-red-50', icon: 'text-red-600', title: 'text-red-700' },
-  emerald: { chip: 'bg-emerald-50', icon: 'text-emerald-600', title: 'text-slate-900' },
-  amber: { chip: 'bg-amber-50', icon: 'text-amber-600', title: 'text-slate-900' },
+  brand: { chip: 'bg-brand-50', icon: 'text-brand-600', title: 'text-ink' },
+  indigo: { chip: 'bg-brand-50', icon: 'text-brand-600', title: 'text-ink' },
+  red: { chip: 'bg-critical-soft', icon: 'text-critical', title: 'text-critical' },
+  emerald: { chip: 'bg-positive-soft', icon: 'text-positive', title: 'text-ink' },
+  amber: { chip: 'bg-caution-soft', icon: 'text-caution', title: 'text-ink' },
 };
 
-export function CardHeader({ icon: Icon, title, description, tone = 'indigo', action }: CardHeaderProps) {
+export function CardHeader({ icon: Icon, title, description, tone = 'brand', action }: CardHeaderProps) {
   const t = toneClasses[tone];
   return (
-    <div className="flex items-center space-x-3">
-      <div className={cn('p-2 rounded-xl', t.chip)}>
-        <Icon className={cn('h-5 w-5', t.icon)} />
+    <div className="flex items-center gap-3">
+      <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', t.chip)}>
+        <Icon className={cn('h-[18px] w-[18px]', t.icon)} aria-hidden="true" />
       </div>
-      <div className="flex-1 min-w-0">
-        <h2 className={cn('text-lg font-bold', t.title)}>{title}</h2>
-        {description && <p className="text-xs text-slate-500">{description}</p>}
+      <div className="min-w-0 flex-1">
+        <h2 className={cn('text-[15px] font-semibold', t.title)}>{title}</h2>
+        {description && <p className="mt-0.5 text-xs text-ink-muted">{description}</p>}
       </div>
       {action}
     </div>

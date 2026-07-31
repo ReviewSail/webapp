@@ -2,67 +2,115 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ReviewSail design tokens.
+ *
+ * One brand ramp (Booking-style navy → action blue), one neutral ramp, and
+ * three state colours. State colours are for state only — a green here means
+ * "this succeeded", never "this box would look nice in green".
+ *
+ * Everything is stored as bare HSL triples so Tailwind can wrap them in
+ * hsl(var(--x) / <alpha>) and opacity modifiers keep working.
+ */
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222.2 84% 4.9%;
+    /* Brand — #002B6B navy through #0071C2 action blue */
+    --brand-50: 210 71% 95%;
+    --brand-100: 210 71% 89%;
+    --brand-200: 209 70% 79%;
+    --brand-300: 207 69% 66%;
+    --brand-400: 205 69% 51%;
+    --brand-500: 204 100% 44%;
+    --brand-600: 205 100% 38%;
+    --brand-700: 206 100% 31%;
+    --brand-800: 216 100% 29%;
+    --brand-900: 216 100% 21%;
+    --brand-950: 217 100% 14%;
+
+    /* Neutrals — a single navy-tinted ramp, so nothing reads as grey-on-blue */
+    --canvas: 216 33% 97%;
+    --line: 214 32% 91%;
+    --ink: 216 65% 12%;
+    --ink-muted: 216 19% 44%;
+    --ink-faint: 214 18% 61%;
+
+    /* Ratings. Its own token rather than borrowing --caution: the state colours
+       are darkened for text contrast, and a star filled with them reads brown.
+       This one is only ever a fill. */
+    --star: 38 92% 50%;
+
+    /* State */
+    --positive: 148 85% 26%;
+    --positive-soft: 148 60% 95%;
+    --caution: 26 90% 37%;
+    --caution-soft: 40 90% 95%;
+    --critical: 4 76% 40%;
+    --critical-soft: 4 80% 96%;
+
+    /* shadcn-compatible aliases, now pointing at real values. --primary used to
+       say blue-500 while every component rendered indigo-600; it agrees now. */
+    --background: var(--canvas);
+    --foreground: var(--ink);
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: var(--ink);
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: var(--ink);
 
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
+    --primary: var(--brand-600);
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 216 33% 96%;
+    --secondary-foreground: var(--ink);
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 216 33% 96%;
+    --muted-foreground: var(--ink-muted);
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: var(--brand-50);
+    --accent-foreground: var(--brand-800);
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: var(--critical);
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --border: var(--line);
+    --input: var(--line);
+    --ring: var(--brand-600);
 
     --radius: 0.75rem;
   }
 
+  /* Dark mode stays defined but unclaimed: components still carry literal
+     colours, so toggling .dark today would produce white-on-white. It becomes
+     real once the literal sweep finishes. */
   .dark {
-    --background: 222.2 84% 4.9%;
+    --background: 217 100% 8%;
     --foreground: 210 40% 98%;
 
-    --card: 222.2 84% 4.9%;
+    --card: 217 60% 11%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222.2 84% 4.9%;
+    --popover: 217 60% 11%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: var(--brand-500);
+    --primary-foreground: 217 100% 10%;
 
-    --secondary: 217.2 32.6% 17.5%;
+    --secondary: 216 40% 18%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 216 40% 18%;
+    --muted-foreground: 214 18% 65%;
 
-    --accent: 217.2 32.6% 17.5%;
+    --accent: 216 40% 20%;
     --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 4 60% 45%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --border: 216 40% 20%;
+    --input: 216 40% 20%;
+    --ring: var(--brand-500);
   }
 }
 
@@ -72,7 +120,41 @@
   }
   body {
     @apply bg-background text-foreground antialiased min-h-screen;
+    /* Inter's character variants — now that Inter is actually loaded, these do
+       something: a single-storey 'a' alternate is not among them, but the
+       disambiguated 1/l/i and open '6'/'9' matter in a table of guest data. */
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Focus is a product surface, not a browser default. One ring everywhere. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-canvas;
+  }
+}
+
+@layer components {
+  /*
+   * The brand gradient. Defined once, on purpose.
+   *
+   * House rule: at most one element per screen wears it. The dashboard used to
+   * stack two gradient slabs — an upsell banner and a setup wizard — directly
+   * on top of each other, and the effect of emphasising both was that neither
+   * read as important. The gradient marks the single thing that matters most on
+   * a given screen; a second use cancels the first.
+   */
+  .brand-gradient {
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--brand-800)) 0%,
+      hsl(var(--brand-600)) 100%
+    );
+  }
+
+  /* Figures that change in place — metrics, counts, table columns — so digits
+     don't jitter sideways as values update. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum", "cv02", "cv03", "cv04", "cv11";
   }
 }
 

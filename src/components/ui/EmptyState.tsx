@@ -14,8 +14,8 @@ interface EmptyStateProps {
 }
 
 const sizes = {
-  sm: { icon: 'h-8 w-8 mb-3', title: 'text-sm', description: 'text-xs' },
-  md: { icon: 'h-10 w-10 mb-4', title: 'text-lg', description: 'text-sm' },
+  sm: { icon: 'h-7 w-7 mb-3', title: 'text-sm', description: 'text-xs' },
+  md: { icon: 'h-9 w-9 mb-4', title: 'text-base', description: 'text-sm' },
 };
 
 export function EmptyState({
@@ -30,9 +30,9 @@ export function EmptyState({
   const s = sizes[size];
   const body = (
     <div className="text-center">
-      <Icon className={cn('text-slate-300 mx-auto', s.icon)} />
-      <h3 className={cn('font-semibold text-slate-700', s.title)}>{title}</h3>
-      {description && <p className={cn('text-slate-400 mt-1', s.description)}>{description}</p>}
+      <Icon className={cn('mx-auto text-ink-faint/60', s.icon)} aria-hidden="true" />
+      <h3 className={cn('font-semibold text-ink', s.title)}>{title}</h3>
+      {description && <p className={cn('mt-1 text-ink-muted', s.description)}>{description}</p>}
       {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
   );
@@ -42,7 +42,7 @@ export function EmptyState({
   }
 
   return (
-    <div className={cn('bg-white rounded-2xl border border-slate-200 shadow-sm p-12', className)}>
+    <div className={cn('rounded-xl border border-line bg-white p-12', className)}>
       {body}
     </div>
   );
