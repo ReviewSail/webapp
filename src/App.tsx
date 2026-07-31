@@ -14,6 +14,9 @@ import AlreadyReviewed from "./pages/AlreadyReviewed"
 import ResetPassword from "./pages/ResetPassword"
 import FeedbackGate from "./pages/FeedbackGate"
 import ReviewReply from "./pages/ReviewReply"
+import AcceptInvite from "./pages/AcceptInvite"
+import NotFound from "./pages/NotFound"
+import { ToastProvider } from "./components/ui/Toast"
 import { isStaff } from "./lib/roles"
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -51,9 +54,14 @@ function AppRoutes() {
       <Route path="/unsubscribe" element={<Unsubscribe />} />
       <Route path="/feedback" element={<Feedback />} />
       <Route path="/feedback-gate" element={<FeedbackGate />} />
+      {/* Short form used in SMS, where the long URL costs most of a segment.
+          The legacy /feedback-gate?request_id= route stays for links already sent. */}
+      <Route path="/r/:code" element={<FeedbackGate />} />
       <Route path="/already-reviewed" element={<AlreadyReviewed />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/login" element={<Login />} />
+      {/* Public: the invitee signs in or signs up on this page before redeeming. */}
+      <Route path="/accept-invite" element={<AcceptInvite />} />
       <Route path="/" element={
         <ProtectedRoute>
           <Layout />
@@ -71,19 +79,22 @@ function AppRoutes() {
           </AdminRoute>
         } />
       </Route>
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <ReviewSailProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
-      </ReviewSailProvider>
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <ReviewSailProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+        </ReviewSailProvider>
+      </AuthProvider>
+    </ToastProvider>
   )
 }
 

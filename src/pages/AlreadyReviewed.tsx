@@ -20,17 +20,14 @@ export default function AlreadyReviewed() {
     setLoading(true);
     setError('');
     try {
-      const { error } = await supabase
-        .from('review_requests')
-        .update({ status: 'already_reviewed' })
-        .eq('id', id);
+      // Updates the status and logs the event in one call — guests hold no
+      // direct grants on either table.
+      const { error } = await supabase.rpc('record_request_event', {
+        p_request_id: id,
+        p_event: 'already_reviewed',
+      });
 
       if (error) throw error;
-
-      await supabase.from('message_events').insert({
-        request_id: id,
-        event_type: 'already_reviewed'
-      });
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Failed to process your request.');

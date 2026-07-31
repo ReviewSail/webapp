@@ -47,6 +47,27 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // animate-fade-in and animate-slide-in were already used by the modals and
+      // the guest drawer, but were never defined anywhere, so they did nothing.
+      keyframes: {
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        "slide-in": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
+        "toast-in": {
+          from: { opacity: "0", transform: "translateY(0.5rem)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 150ms ease-out",
+        "slide-in": "slide-in 200ms ease-out",
+        "toast-in": "toast-in 180ms ease-out",
+      },
     },
   },
   plugins: [],

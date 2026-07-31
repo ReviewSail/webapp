@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Inbox, RefreshCw, Send, Eye, Check } from 'lucide-react';
 import { ReviewRequest, Order, Customer, useReviewSail } from '../../context/ReviewSailContext';
 import { GuestDetailPanel } from './GuestDetailPanel';
+import { StatusBadge } from '../ui/StatusBadge';
+import { EmptyState } from '../ui/EmptyState';
 import { format } from 'date-fns';
 
 interface RecentRequestsTableProps {
@@ -9,13 +11,15 @@ interface RecentRequestsTableProps {
   orders: Order[];
   customers: Customer[];
   totalLogs: number;
+  loading?: boolean;
 }
 
 export function RecentRequestsTable({
   recentRequests,
   orders,
   customers,
-  totalLogs
+  totalLogs,
+  loading
 }: RecentRequestsTableProps) {
   const { messageEvents, triggerSingleResend } = useReviewSail();
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -49,39 +53,29 @@ export function RecentRequestsTable({
     return result.success;
   };
 
-  const statusLabel = (status: string) => {
-    switch (status) {
-      case 'pending': return 'Pending';
-      case 'sent': return 'Sent';
-      case 'clicked': return 'Clicked';
-      case 'opted_out': return 'Opted Out';
-      case 'expired': return 'Expired';
-      case 'already_reviewed': return 'Reviewed';
-      case 'private_feedback': return 'Private Feedback';
-      default: return status;
-    }
-  };
-
-  const statusBadge = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'sent': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'clicked': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'opted_out': return 'bg-red-50 text-red-600 border-red-200';
-      case 'expired': return 'bg-slate-50 text-slate-500 border-slate-200';
-      case 'already_reviewed': return 'bg-violet-50 text-violet-700 border-violet-200';
-      case 'private_feedback': return 'bg-slate-50 text-slate-600 border-slate-300';
-      default: return 'bg-slate-50 text-slate-600 border-slate-200';
-    }
-  };
+  // "No requests yet" is a claim about the account, so don't make it until the
+  // data has actually arrived.
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-3" aria-hidden="true">
+        <div className="animate-pulse space-y-3">
+          <div className="h-4 w-40 bg-slate-200 rounded" />
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-10 bg-slate-100 rounded" />
+          ))}
+        </div>
+        <span className="sr-only">Loading recent requests…</span>
+      </div>
+    );
+  }
 
   if (recentRequests.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-        <Inbox className="h-10 w-10 text-slate-300 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-slate-700">No requests yet</h3>
-        <p className="text-sm text-slate-400 mt-1">Import guests to start sending review invites.</p>
-      </div>
+      <EmptyState
+        icon={Inbox}
+        title="No requests yet"
+        description="Import guests to start sending review invites."
+      />
     );
   }
 
@@ -132,9 +126,7 @@ export function RecentRequestsTable({
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusBadge(req.status)}`}>
-                          {statusLabel(req.status)}
-                        </span>
+                        <StatusBadge status={req.status} />
                         {order?.midstaySent && (
                           <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-200">
                             🏨 Mid-Stay ✓

@@ -32,50 +32,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .select('role')
         .eq('id', userId)
         .single();
-      
+
       if (!error && data) {
         setRole(data.role as 'admin' | 'staff');
       } else {
-        console.warn('[AuthContext] Using fallback role, failed to fetch user role:', error);
-        setRole('admin');
+        // Fail closed. This used to default to 'admin', so any hiccup reading
+        // the users row handed a staff member the Settings tab, billing, and
+        // the delete-account button. RLS would still refuse the writes, but the
+        // UI should not offer them in the first place.
+        console.warn('[AuthContext] Could not read user role; defaulting to staff:', error);
+        setRole('staff');
       }
     } catch (err) {
       console.error('[AuthContext] fetchUserRole failed:', err);
-      setRole('admin');
-    }
-  };
-
-  const handleInviteJoin = async (userId: string, email: string, userMetadata: any) => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const inviteAccountId = urlParams.get('invite_account_id');
-    
-    if (inviteAccountId) {
-      try {
-        const { data: existingUser, error: checkError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (checkError) throw checkError;
-
-        if (!existingUser) {
-          console.log('[AuthContext] Auto-joining user to invited account:', inviteAccountId);
-          const { error: joinError } = await supabase.from('users').insert({
-            id: userId,
-            account_id: inviteAccountId,
-            role: 'staff',
-            email: email,
-            full_name: userMetadata?.full_name || 'New Member'
-          });
-          if (joinError) throw joinError;
-        }
-      } catch (err) {
-        console.error('[AuthContext] Failed to auto-join invited user:', err);
-        setError(new Error('Failed to process account invitation'));
-      } finally {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
+      setRole('staff');
     }
   };
 
@@ -89,10 +59,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setError(null);
 
       if (session?.user) {
-        await Promise.all([
-          handleInviteJoin(session.user.id, session.user.email || '', session.user.user_metadata),
-          fetchUserRole(session.user.id),
-        ]);
+        await fetchUserRole(session.user.id);
       } else {
         setRole(null);
       }
@@ -114,10 +81,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setError(null);
 
         if (session?.user) {
-          await Promise.all([
-            handleInviteJoin(session.user.id, session.user.email || '', session.user.user_metadata),
-            fetchUserRole(session.user.id),
-          ]);
+          await fetchUserRole(session.user.id);
         } else {
           setRole(null);
         }

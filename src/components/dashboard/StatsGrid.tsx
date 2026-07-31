@@ -7,6 +7,7 @@ interface StatsGridProps {
   clickRate: number;
   totalClicked: number;
   totalOptedOut: number;
+  loading?: boolean;
 }
 
 export function StatsGrid({
@@ -15,8 +16,32 @@ export function StatsGrid({
   deliveryRate,
   clickRate,
   totalClicked,
-  totalOptedOut
+  totalOptedOut,
+  loading
 }: StatsGridProps) {
+  // Real numbers only. Rendering zeros mid-fetch told an account with hundreds
+  // of guests that it had none, which reads as lost data rather than loading.
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm"
+            aria-hidden="true"
+          >
+            <div className="animate-pulse space-y-3">
+              <div className="h-3 w-32 bg-slate-100 rounded" />
+              <div className="h-8 w-20 bg-slate-200 rounded" />
+              <div className="h-3 w-40 bg-slate-100 rounded mt-4" />
+            </div>
+          </div>
+        ))}
+        <span className="sr-only">Loading your stats…</span>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {/* Card 1: Sent */}

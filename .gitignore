@@ -1,1 +1,7 @@
 .dyad/
+.vercel
+.env*
+dist/
+node_modules/
+.DS_Store
+supabase/.temp/
