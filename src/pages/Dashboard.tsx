@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useReviewSail } from '../context/ReviewSailContext';
+import { useReviewSail, isActionableFeedback } from '../context/ReviewSailContext';
 import { AlertCircle, MessageSquare, BarChart3 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
-import { cn } from '../lib/utils';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { TabNav } from '../components/ui/TabNav';
+import { useToast } from '../components/ui/Toast';
 import { TrialBanner } from '../components/dashboard/TrialBanner';
 import { OnboardingWizard } from '../components/dashboard/OnboardingWizard';
 import { StatsGrid } from '../components/dashboard/StatsGrid';
@@ -17,6 +18,7 @@ export default function Dashboard() {
   const { role } = useAuth();
   const {
     activeLocationId,
+    locations,
     reviewRequests,
     orders,
     customers,
@@ -28,10 +30,11 @@ export default function Dashboard() {
   } = useReviewSail();
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [upgrading, setUpgrading] = useState(false);
 
   const activeTab = searchParams.get('tab') || 'overview';
-  const isPremium = subscriptionStatus === 'active';
 
   const handleUpgrade = async () => {
     setUpgrading(true);
@@ -39,9 +42,12 @@ export default function Dashboard() {
       const result = await subscribe();
       if (result.success && result.url) {
         window.location.href = result.url;
+        return;
       }
+      toast.error(result.error || "Couldn't start checkout. Try again in a moment.");
     } catch (err) {
       console.error('Upgrade failed:', err);
+      toast.error("Couldn't start checkout. Try again in a moment.");
     } finally {
       setUpgrading(false);
     }
@@ -51,11 +57,13 @@ export default function Dashboard() {
   const activeLocOrders = orders.filter(o => o.locationId === activeLocationId);
   const activeLocOrderIds = new Set(activeLocOrders.map(o => o.id));
   const activeLocRequests = reviewRequests.filter(r => activeLocOrderIds.has(r.orderId));
-  const activeLocFeedback = feedbacks.filter(f => {
-    if (!f.requestId) return false;
-    const req = reviewRequests.find(r => r.id === f.requestId);
-    return req && activeLocOrderIds.has(req.orderId);
-  });
+  // guest_feedback carries location_id directly, so this no longer has to walk
+  // request -> order to find the tenant — and no longer silently drops rows
+  // whose request has since been deleted.
+  const activeLocFeedback = feedbacks.filter(f => f.locationId === activeLocationId);
+  // The private-feedback panel is an action queue, so it shows only guests who
+  // need a reply. Analytics still averages every rating, happy ones included.
+  const actionableFeedback = activeLocFeedback.filter(isActionableFeedback);
 
   // Stats
   const totalSent = activeLocRequests.filter(r => ['sent', 'clicked'].includes(r.status)).length;
@@ -70,6 +78,11 @@ export default function Dashboard() {
   const totalLogs = activeLocRequests.length;
 
   const accessDenied = searchParams.get('access_denied') === 'true';
+
+  // An unset review link means every 5-star guest hits a dead end, silently.
+  // Worth shouting about, since nothing else surfaces it.
+  const activeLoc = locations.find(l => l.id === activeLocationId) || null;
+  const missingReviewUrl = !!activeLoc && !activeLoc.googlePlaceUrl?.trim();
 
   const tabs = [
     { key: 'overview', label: 'Overview', icon: BarChart3 },
@@ -92,35 +105,30 @@ export default function Dashboard() {
         </div>
       )}
 
-      <TrialBanner isPremium={isPremium} onUpgrade={handleUpgrade} upgrading={upgrading} />
+      {missingReviewUrl && activeLoc?.onboardingComplete && (
+        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start space-x-3 text-amber-800">
+          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="font-semibold text-sm">No Google review link for {activeLoc.name}</h4>
+            <p className="text-xs mt-0.5">
+              Guests who rate you 4 or 5 stars currently have nowhere to post their review — every one of them is
+              being lost.{' '}
+              <button
+                onClick={() => navigate('/settings?tab=locations')}
+                className="underline font-semibold hover:text-amber-900"
+              >
+                Add your review link
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
+
+      <TrialBanner status={subscriptionStatus} onUpgrade={handleUpgrade} upgrading={upgrading} />
 
       <OnboardingWizard />
 
-      {/* Dashboard Tabs */}
-      <div className="border-b border-slate-200">
-        <nav className="flex space-x-6">
-          {tabs.map(({ key, label, icon: Icon, badge }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={cn(
-                'pb-3 px-1 text-sm font-semibold border-b-2 transition-colors flex items-center space-x-2 relative',
-                activeTab === key
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{label}</span>
-              {badge !== undefined && badge > 0 && (
-                <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white min-w-[18px] h-4">
-                  {badge > 99 ? '99+' : badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-      </div>
+      <TabNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'overview' && (
         <div className="space-y-8">
@@ -141,7 +149,7 @@ export default function Dashboard() {
           />
 
           <PrivateFeedbackSection
-            feedbacks={activeLocFeedback}
+            feedbacks={actionableFeedback}
             reviewRequests={reviewRequests}
             orders={orders}
             customers={customers}

@@ -12,6 +12,17 @@ serve(async (req) => {
   }
 
   try {
+    // Deployed with verify_jwt=false for pg_cron; the shared secret is what
+    // actually keeps it off the open internet.
+    const cronSecret = Deno.env.get('CRON_SECRET');
+    if (!cronSecret || req.headers.get('Authorization') !== `Bearer ${cronSecret}`) {
+      console.error("[weekly-summary] Rejected unauthenticated invocation.");
+      return new Response(JSON.stringify({ error: "Unauthorized." }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log("[weekly-summary] Digest job starting...");
 
     // Allow forcing a specific frequency for manual triggers
@@ -32,6 +43,9 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Links in the digest must point at the web app, not the Supabase API host.
+    const appUrl = (Deno.env.get('APP_URL') || supabaseUrl).replace(/\/+$/, '');
 
     // Calculate date range
     const now = new Date();
@@ -178,9 +192,12 @@ serve(async (req) => {
       // Fetch feedback (private reviews captured via ReviewSail)
       let feedbackEntries: Array<{ rating: number }> = [];
       if (requestIds.length > 0) {
+        // Aliased back to `rating` so the averaging below is unchanged.
+        // Recovery messages carry no rating and must not count as zeros.
         const { data: fb, error: fbErr } = await supabase
-          .from('feedback')
-          .select('rating')
+          .from('guest_feedback')
+          .select('rating:star_rating')
+          .not('star_rating', 'is', null)
           .in('request_id', requestIds);
 
         if (!fbErr && fb) {
@@ -225,8 +242,9 @@ serve(async (req) => {
         let locFeedbacks: Array<{ rating: number }> = [];
         if (locRequestIds.length > 0) {
           const { data: locFb } = await supabase
-            .from('feedback')
-            .select('rating')
+            .from('guest_feedback')
+            .select('rating:star_rating')
+            .not('star_rating', 'is', null)
             .in('request_id', locRequestIds);
           if (locFb) locFeedbacks = locFb;
         }
@@ -383,7 +401,7 @@ serve(async (req) => {
 
                 <!-- CTA -->
                 <div style="text-align: center; margin: 28px 0 16px;">
-                  <a href="https://vqjzscdlfhgzzqhmkchw.supabase.co/dashboard" style="display: inline-block; background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 14px; text-decoration: none; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                  <a href="${appUrl}/dashboard" style="display: inline-block; background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 14px; text-decoration: none; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
                     View Full Dashboard
                   </a>
                 </div>
@@ -396,9 +414,9 @@ serve(async (req) => {
               <div style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; line-height: 1.5;">
                 <p style="margin: 0;">Sent automatically by ReviewSail on behalf of your account.</p>
                 <p style="margin: 4px 0 0;">
-                  <a href="https://vqjzscdlfhgzzqhmkchw.supabase.co/settings?tab=account" style="color: #6366f1; text-decoration: underline;">Manage digest preferences</a>
+                  <a href="${appUrl}/settings?tab=account" style="color: #6366f1; text-decoration: underline;">Manage digest preferences</a>
                   &nbsp;·&nbsp;
-                  <a href="https://vqjzscdlfhgzzqhmkchw.supabase.co/unsubscribe" style="color: #94a3b8; text-decoration: underline;">Unsubscribe</a>
+                  <a href="${appUrl}/unsubscribe" style="color: #94a3b8; text-decoration: underline;">Unsubscribe</a>
                 </p>
               </div>
             </div>

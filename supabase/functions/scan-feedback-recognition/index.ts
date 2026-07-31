@@ -70,6 +70,17 @@ serve(async (req) => {
   }
 
   try {
+    // Deployed with verify_jwt=false so the DB trigger can reach it; the shared
+    // secret is what actually keeps it off the open internet.
+    const cronSecret = Deno.env.get('CRON_SECRET')
+    if (!cronSecret || req.headers.get('Authorization') !== `Bearer ${cronSecret}`) {
+      console.error('[scan-feedback-recognition] Rejected unauthenticated invocation.')
+      return new Response(JSON.stringify({ error: 'Unauthorized.' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
@@ -82,9 +93,10 @@ serve(async (req) => {
       })
     }
 
-    // Fetch the private feedback
+    // Fetch the feedback. The trigger only fires for kind <> 'rating', so a
+    // happy tap-through never reaches this function — and never reaches OpenAI.
     const { data: fb, error: fbError } = await supabase
-      .from('private_feedback')
+      .from('guest_feedback')
       .select('id, feedback_text, guest_name, guest_email, location_id, created_at')
       .eq('id', feedback_id)
       .maybeSingle()
@@ -226,6 +238,8 @@ serve(async (req) => {
       const insertData: any = {
         account_id: accountId,
         matched_sentence: cand.matched_sentence,
+        // Names the flow, not the table — recognition_records_source_check
+        // still allows only 'midstay_reply' | 'private_feedback'.
         source: 'private_feedback',
         guest_name: fb.guest_name || null,
         created_at: new Date().toISOString()

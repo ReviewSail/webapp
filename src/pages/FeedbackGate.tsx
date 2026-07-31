@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import { supabase } from '../integrations/supabase/client';
 import { Star, Send, CheckCircle2, MapPin, Mail, MessageCircle } from 'lucide-react';
+import { decodeRequestId } from '../lib/shortLink';
 
 export default function FeedbackGate() {
   const [searchParams] = useSearchParams();
-  const requestId = searchParams.get('request_id');
+  // Reached either as /feedback-gate?request_id=<uuid> (email, and any link
+  // already sent) or as /r/<code> (SMS, where the long URL costs a segment).
+  const { code } = useParams<{ code?: string }>();
+  const requestId = searchParams.get('request_id') ?? (code ? decodeRequestId(code) : null);
   const [locationName, setLocationName] = useState('');
   const [googleUrl, setGoogleUrl] = useState('');
-  const [locationId, setLocationId] = useState('');
   const [selectedStars, setSelectedStars] = useState<number | null>(null);
   const [showPrivateForm, setShowPrivateForm] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
@@ -41,7 +44,6 @@ export default function FeedbackGate() {
       setIsDemo(true);
       setLocationName('The Grand Hotel');
       setGoogleUrl('');
-      setLocationId('');
       setRecoveryEmail('recovery@grandhotel.com');
       setLoading(false);
       return;
@@ -50,33 +52,25 @@ export default function FeedbackGate() {
     // Fetch request details: location name, google_place_url, location_id, recovery_email
     const fetchDetails = async () => {
       try {
+        // Read via RPC rather than a nested join: anon holds no grant on
+        // locations/orders, and this keeps request_ids non-enumerable.
         const { data, error } = await supabase
-          .from('review_requests')
-          .select(`
-            id,
-            orders (
-              checkout_date,
-              locations (
-                id,
-                name,
-                google_place_url,
-                recovery_email
-              )
-            )
-          `)
-          .eq('id', requestId)
+          .rpc('get_feedback_gate_context', { p_request_id: requestId })
           .maybeSingle();
 
-        if (error || !data) throw error || new Error('Request not found');
+        if (error) throw error;
+        if (!data) throw new Error('Request not found');
 
-        const order = data.orders as any;
-        const location = order?.locations;
-        if (location) {
-          setLocationName(location.name || 'Our Property');
-          setGoogleUrl(location.google_place_url || '');
-          setLocationId(location.id);
-          setRecoveryEmail(location.recovery_email || '');
-        }
+        const location = data as {
+          location_id: string;
+          location_name: string | null;
+          google_place_url: string | null;
+          recovery_email: string | null;
+        };
+
+        setLocationName(location.location_name || 'Our Property');
+        setGoogleUrl(location.google_place_url || '');
+        setRecoveryEmail(location.recovery_email || '');
       } catch (err: any) {
         console.error(err);
         setError('Unable to load request details.');
@@ -92,15 +86,13 @@ export default function FeedbackGate() {
   useEffect(() => {
     if (requestId && !loading && !isDemo) {
       const recordEvent = async () => {
-        try {
-          await supabase.from('message_events').insert({
-            request_id: requestId,
-            event_type: 'clicked',
-          });
-          await supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
-        } catch (err) {
-          console.error(err);
-        }
+        // One RPC updates the status and logs the event; guests hold no direct
+        // table grants, so request_ids can't be enumerated.
+        const { error } = await supabase.rpc('record_request_event', {
+          p_request_id: requestId,
+          p_event: 'clicked',
+        });
+        if (error) console.error('Failed to record click:', error);
       };
       recordEvent();
     }
@@ -110,14 +102,36 @@ export default function FeedbackGate() {
     setSelectedStars(rating);
 
     if (rating >= 4) {
-      // Happy guest: redirect to Google (skip for demo)
       if (!isDemo) {
-        await supabase.from('review_requests').update({ status: 'clicked' }).eq('id', requestId);
+        // Record the rating before handing off to Google. Without this, happy
+        // guests leave no trace at all and the dashboard average — computed
+        // from this data — can never rise above 3.
+        //
+        // Note: supabase-js builders are lazy thenables, so `.then()` is what
+        // actually issues the request. Calling it (rather than awaiting) is
+        // what keeps the redirect instant while still firing the write — a lost
+        // statistic is cheap, a delayed redirect costs the review itself.
+        supabase
+          .rpc('submit_guest_feedback', {
+            p_request_id: requestId,
+            p_star_rating: rating,
+          })
+          .then(({ error }) => {
+            if (error) console.error('Failed to record rating:', error);
+          });
+
+        supabase
+          .rpc('record_request_event', { p_request_id: requestId, p_event: 'clicked' })
+          .then(({ error }) => {
+            if (error) console.error('Failed to mark request clicked:', error);
+          });
       }
+
       if (googleUrl) {
         window.location.href = googleUrl;
       } else {
-        // Fallback: show a thank-you message
+        // No review URL configured for this property — the happy guest has
+        // nowhere to go, so at least thank them and keep the rating.
         setSubmitted(true);
       }
     } else {
@@ -134,20 +148,23 @@ export default function FeedbackGate() {
 
     try {
       if (!isDemo) {
-        const { error } = await supabase.from('private_feedback').insert({
-          request_id: requestId || null,
-          location_id: locationId || null,
-          star_rating: selectedStars,
-          feedback_text: feedbackText.trim(),
-          guest_name: guestName.trim() || null,
-          guest_email: guestEmail.trim() || null,
-          is_read: false,
+        // location_id is deliberately not sent: the RPC derives it from the
+        // request, so a guest cannot file a complaint against another property.
+        const { error } = await supabase.rpc('submit_guest_feedback', {
+          p_request_id: requestId,
+          p_star_rating: selectedStars,
+          p_feedback_text: feedbackText.trim(),
+          p_guest_name: guestName.trim() || null,
+          p_guest_email: guestEmail.trim() || null,
         });
 
         if (error) throw error;
 
         // Update review request status
-        await supabase.from('review_requests').update({ status: 'private_feedback' }).eq('id', requestId);
+        await supabase.rpc('record_request_event', {
+          p_request_id: requestId,
+          p_event: 'private_feedback',
+        });
       } else {
         // Demo mode: simulate a brief delay
         await new Promise(r => setTimeout(r, 500));
@@ -170,14 +187,13 @@ export default function FeedbackGate() {
 
     try {
       if (!isDemo) {
-        const { error } = await supabase.from('private_feedback').insert({
-          request_id: requestId || null,
-          location_id: locationId || null,
-          star_rating: null,
-          feedback_text: recoveryMessage.trim(),
-          guest_name: recoveryName.trim() || null,
-          guest_email: recoveryGuestEmail.trim() || null,
-          is_read: false,
+        // No star rating: the RPC files this as a 'recovery' message.
+        const { error } = await supabase.rpc('submit_guest_feedback', {
+          p_request_id: requestId,
+          p_star_rating: null,
+          p_feedback_text: recoveryMessage.trim(),
+          p_guest_name: recoveryName.trim() || null,
+          p_guest_email: recoveryGuestEmail.trim() || null,
         });
 
         if (error) throw error;

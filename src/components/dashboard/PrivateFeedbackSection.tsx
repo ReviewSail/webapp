@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Star, MessageSquare, Reply, CornerDownRight, CheckCircle, Download } from 'lucide-react';
+import { EmptyState } from '../ui/EmptyState';
 import { format } from 'date-fns';
 
 interface PrivateFeedbackSectionProps {
@@ -51,8 +52,10 @@ export function PrivateFeedbackSection({
 
       return [
         guestName,
-        fb.rating.toString(),
-        fb.comment || fb.feedbackText || '',
+        // Recovery messages have no rating; the old `fb.rating.toString()`
+        // relied on a 0 sentinel that no longer exists.
+        fb.starRating != null ? fb.starRating.toString() : '',
+        fb.feedbackText || '',
         fb.createdAt ? format(new Date(fb.createdAt), 'yyyy-MM-dd HH:mm') : '',
         fb.managerResponse || ''
       ];
@@ -99,11 +102,13 @@ export function PrivateFeedbackSection({
       </div>
 
       {feedbacks.length === 0 ? (
-        <div className="p-12 text-center text-slate-400">
-          <MessageSquare className="h-8 w-8 mx-auto mb-3 text-slate-300" />
-          <p className="text-sm font-semibold text-slate-700">No private feedback yet</p>
-          <p className="text-xs text-slate-400 mt-1">Confidential submissions will populate here automatically.</p>
-        </div>
+        <EmptyState
+          icon={MessageSquare}
+          size="sm"
+          bare
+          title="No private feedback yet"
+          description="Confidential submissions will populate here automatically."
+        />
       ) : (
         <div className="divide-y divide-slate-100">
           {feedbacks.map((fb: any) => {
@@ -129,7 +134,7 @@ export function PrivateFeedbackSection({
                   </div>
 
                   <div className="flex items-center space-x-1">
-                    {!fb.rating || fb.rating === 0 ? (
+                    {fb.starRating == null ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">
                         Recovery Message
                       </span>
@@ -138,7 +143,7 @@ export function PrivateFeedbackSection({
                         <Star
                           key={star}
                           className={`h-4.5 w-4.5 ${
-                            star <= fb.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
+                            star <= fb.starRating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
                           }`}
                         />
                       ))
@@ -147,7 +152,7 @@ export function PrivateFeedbackSection({
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-700 leading-relaxed border border-slate-100">
-                  <p className="italic">"{fb.comment || fb.feedbackText || 'No written message.'}"</p>
+                  <p className="italic">"{fb.feedbackText || 'No written message.'}"</p>
                 </div>
 
                 {fb.managerResponse ? (

@@ -11,6 +11,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { EmptyState } from '../components/ui/EmptyState';
 import {
   LineChart,
   Line,
@@ -114,13 +115,10 @@ export default function Analytics() {
     [reviewRequests, activeLocOrderIds]
   );
 
+  // Filtered on location_id directly now that guest_feedback carries it.
   const activeLocFeedbacks = useMemo(
-    () => feedbacks.filter(f => {
-      if (!f.requestId) return false;
-      const req = reviewRequests.find(r => r.id === f.requestId);
-      return req && activeLocOrderIds.has(req.orderId);
-    }),
-    [feedbacks, reviewRequests, activeLocOrderIds]
+    () => feedbacks.filter(f => f.locationId === activeLocationId),
+    [feedbacks, activeLocationId]
   );
 
   // ===== KPI CALCULATIONS =====
@@ -172,10 +170,15 @@ export default function Analytics() {
   );
 
   // 4. Average Rating
+  //
+  // Only rows that actually carry a rating. Recovery messages have none, and
+  // the old code averaged them in as a 0 sentinel — every recovery message
+  // dragged the displayed average down toward zero.
   const averageRating = useMemo(() => {
-    if (activeLocFeedbacks.length === 0) return 0;
-    const sum = activeLocFeedbacks.reduce((acc, f) => acc + f.rating, 0);
-    return sum / activeLocFeedbacks.length;
+    const rated = activeLocFeedbacks.filter(f => f.starRating != null);
+    if (rated.length === 0) return 0;
+    const sum = rated.reduce((acc, f) => acc + (f.starRating ?? 0), 0);
+    return sum / rated.length;
   }, [activeLocFeedbacks]);
 
   // ===== CHART DATA =====
@@ -329,20 +332,20 @@ export default function Analytics() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center flex flex-col items-center justify-center space-y-4">
-          <BarChart3 className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-          <h3 className="text-lg font-semibold text-slate-700">No analytics data yet</h3>
-          <p className="text-sm text-slate-400 max-w-md">
-            Send your first review request to see analytics here.
-          </p>
-          <Link
-            to="/import"
-            className="inline-flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-2.5 px-5 rounded-xl shadow-sm transition-all"
-          >
-            <Send className="h-4 w-4" />
-            <span>Import Guests</span>
-          </Link>
-        </div>
+        <EmptyState
+          icon={BarChart3}
+          title="No analytics data yet"
+          description="Send your first review request to see analytics here."
+          action={
+            <Link
+              to="/import"
+              className="inline-flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-2.5 px-5 rounded-xl shadow-sm transition-all"
+            >
+              <Send className="h-4 w-4" />
+              <span>Import Guests</span>
+            </Link>
+          }
+        />
       </div>
     );
   }

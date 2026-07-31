@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useReviewSail } from '../../context/ReviewSailContext';
+import { useReviewSail, isActionableFeedback } from '../../context/ReviewSailContext';
 import { Star, MessageSquare, Eye, Check, Search } from 'lucide-react';
+import { EmptyState } from '../ui/EmptyState';
 import { format } from 'date-fns';
 
 export function PrivateFeedbackInbox() {
@@ -38,19 +39,19 @@ export function PrivateFeedbackInbox() {
 
   // Filter and sort
   const filteredFeedbacks = (feedbacks || []).filter(fb => {
+    // Happy guests are recorded for the dashboard average but need no reply.
+    if (!isActionableFeedback(fb)) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const name = getGuestName(fb).toLowerCase();
-    const location = getLocationName(fb.locationId ?? null).toLowerCase();
-    const text = (fb.feedbackText || fb.comment || '').toLowerCase();
+    const location = getLocationName(fb.locationId).toLowerCase();
+    const text = (fb.feedbackText || '').toLowerCase();
     const email = (fb.guestEmail || '').toLowerCase();
     return name.includes(q) || location.includes(q) || text.includes(q) || email.includes(q);
   });
 
   const sortedFeedbacks = [...filteredFeedbacks].sort((a, b) => {
-    const aRead = a.isRead ?? true;
-    const bRead = b.isRead ?? true;
-    if (aRead !== bRead) return aRead ? 1 : -1;
+    if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
@@ -79,13 +80,12 @@ export function PrivateFeedbackInbox() {
       </div>
 
       {sortedFeedbacks.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-          <MessageSquare className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-slate-700">No private feedback received</h3>
-          <p className="text-xs text-slate-400 mt-1">
-            Unhappy guests who select 1–3 stars will land in this inbox.
-          </p>
-        </div>
+        <EmptyState
+          icon={MessageSquare}
+          size="sm"
+          title="No private feedback received"
+          description="Unhappy guests who select 1–3 stars will land in this inbox."
+        />
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -106,8 +106,9 @@ export function PrivateFeedbackInbox() {
                   const isUnread = !fb.isRead;
                   const guestName = getGuestName(fb);
                   const locationName = getLocationName(fb.locationId);
-                  const starRating = fb.starRating ?? fb.rating ?? 0;
-                  const feedbackText = fb.feedbackText ?? fb.comment ?? '';
+                  // Recovery messages carry no rating at all, hence the 0.
+                  const starRating = fb.starRating ?? 0;
+                  const feedbackText = fb.feedbackText ?? '';
 
                   return (
                     <tr key={fb.id} className={`hover:bg-slate-50/50 transition-colors ${isUnread ? 'bg-indigo-50/30' : ''}`}>

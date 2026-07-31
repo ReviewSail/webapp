@@ -26,28 +26,16 @@ export default function Feedback() {
 
   const fetchRequestDetails = async (id: string) => {
     try {
+      // See FeedbackGate: anon reads this context through an RPC, not a join.
       const { data, error } = await supabase
-        .from('review_requests')
-        .select(`
-          id,
-          orders (
-            locations (
-              name,
-              google_place_url
-            )
-          )
-        `)
-        .eq('id', id)
+        .rpc('get_feedback_gate_context', { p_request_id: id })
         .maybeSingle();
 
       if (error) throw error;
       if (data) {
-        const order = data.orders as any;
-        const location = order?.locations;
-        if (location) {
-          setLocationName(location.name || 'Our Property');
-          setGoogleUrl(location.google_place_url || '');
-        }
+        const location = data as { location_name: string | null; google_place_url: string | null };
+        setLocationName(location.location_name || 'Our Property');
+        setGoogleUrl(location.google_place_url || '');
       }
     } catch (err) {
       console.error('Failed to resolve request details:', err);
@@ -60,26 +48,28 @@ export default function Feedback() {
     setError('');
 
     try {
-      const { error: dbError } = await supabase
-        .from('feedback')
-        .insert({
-          request_id: requestId || null,
-          rating,
-          comment: comment.trim() || null
-        });
+      // Previously inserted directly, with request_id allowed to be null — this
+      // page could write orphan rows with no token at all. The RPC requires a
+      // valid request and derives everything else, so the id is now mandatory.
+      if (!requestId) {
+        setError('This feedback link is missing its request reference.');
+        return;
+      }
+
+      const { error: dbError } = await supabase.rpc('submit_guest_feedback', {
+        p_request_id: requestId,
+        p_star_rating: rating,
+        p_feedback_text: comment.trim() || null,
+      });
 
       if (dbError) throw dbError;
 
-      // Unconditionally trigger message event log for clicked/submitted action
+      // Marks the request clicked and logs the event in one call.
       if (requestId) {
-        await supabase.from('message_events').insert({
-          request_id: requestId,
-          event_type: 'clicked'
+        await supabase.rpc('record_request_event', {
+          p_request_id: requestId,
+          p_event: 'clicked',
         });
-        
-        await supabase.from('review_requests').update({
-          status: 'clicked'
-        }).eq('id', requestId);
       }
 
       setSuccess(true);
