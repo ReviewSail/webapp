@@ -18,6 +18,7 @@ import AcceptInvite from "./pages/AcceptInvite"
 import Inbox from "./pages/Inbox"
 import NotFound from "./pages/NotFound"
 import { ToastProvider } from "./components/ui/Toast"
+import { ThemeProvider } from "./context/ThemeContext"
 import { isStaff } from "./lib/roles"
 
 /** The first thing a returning user sees. Branded, and quiet about it. */
@@ -102,15 +103,17 @@ function AppRoutes() {
 
 function App() {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <ReviewSailProvider>
-          <Router>
-            <AppRoutes />
-          </Router>
-        </ReviewSailProvider>
-      </AuthProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <ReviewSailProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </ReviewSailProvider>
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   )
 }
 

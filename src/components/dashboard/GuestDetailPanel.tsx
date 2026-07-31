@@ -44,94 +44,94 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
       role="dialog"
       aria-modal="true"
       aria-label="Guest details"
-      className="fixed inset-y-0 right-0 w-full max-w-sm bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto animate-slide-in"
+      className="fixed inset-y-0 right-0 w-full max-w-sm bg-card border-l border-line shadow-xl z-50 overflow-y-auto animate-slide-in"
     >
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold text-slate-900">Guest Details</h3>
+          <h3 className="text-lg font-bold text-ink">Guest Details</h3>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-muted rounded-lg transition-colors"
             aria-label="Close guest details"
           >
-            <X className="h-5 w-5 text-slate-400" />
+            <X className="h-5 w-5 text-ink-faint" />
           </button>
         </div>
 
         <StatusBadge status={request.status} variant="detailed" className="mb-6" />
 
         {/* Guest Info */}
-        <div className="space-y-4 bg-slate-50 rounded-xl p-4 border border-slate-100 mb-6">
-          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Guest Information</h4>
+        <div className="space-y-4 bg-canvas rounded-xl p-4 border border-line mb-6">
+          <h4 className="text-xs font-bold text-ink-muted uppercase tracking-wider">Guest Information</h4>
           
           <div className="flex items-center space-x-3">
-            <div className="h-10 w-10 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">
+            <div className="h-10 w-10 rounded-full bg-brand-100 text-brand-700 font-bold text-sm flex items-center justify-center">
               {customer.firstName?.[0]}{customer.lastName?.[0]}
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-800">{customer.firstName} {customer.lastName}</p>
+              <p className="text-sm font-semibold text-ink">{customer.firstName} {customer.lastName}</p>
             </div>
           </div>
 
           {customer.email && (
-            <div className="flex items-center space-x-2.5 text-sm text-slate-600">
-              <Mail className="h-4 w-4 text-slate-400" />
+            <div className="flex items-center space-x-2.5 text-sm text-ink-muted">
+              <Mail className="h-4 w-4 text-ink-faint" />
               <span>{customer.email}</span>
             </div>
           )}
           
           {customer.phone && (
-            <div className="flex items-center space-x-2.5 text-sm text-slate-600">
-              <Phone className="h-4 w-4 text-slate-400" />
+            <div className="flex items-center space-x-2.5 text-sm text-ink-muted">
+              <Phone className="h-4 w-4 text-ink-faint" />
               <span>{customer.phone}</span>
             </div>
           )}
         </div>
 
         {/* Order & Request Info */}
-        <div className="space-y-4 bg-slate-50 rounded-xl p-4 border border-slate-100 mb-6">
-          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Request Timeline</h4>
+        <div className="space-y-4 bg-canvas rounded-xl p-4 border border-line mb-6">
+          <h4 className="text-xs font-bold text-ink-muted uppercase tracking-wider">Request Timeline</h4>
 
-          <div className="flex items-center space-x-2.5 text-sm text-slate-600">
-            <Calendar className="h-4 w-4 text-slate-400" />
+          <div className="flex items-center space-x-2.5 text-sm text-ink-muted">
+            <Calendar className="h-4 w-4 text-ink-faint" />
             <span>Checkout: {format(new Date(order.checkoutDate), 'MMM d, yyyy')}</span>
           </div>
 
           {request.sentAt ? (
-            <div className="flex items-center space-x-2.5 text-sm text-slate-600">
-              <Send className="h-4 w-4 text-slate-400" />
+            <div className="flex items-center space-x-2.5 text-sm text-ink-muted">
+              <Send className="h-4 w-4 text-ink-faint" />
               <span>Invite sent: {format(new Date(request.sentAt), 'MMM d, yyyy h:mm a')}</span>
             </div>
           ) : (
-            <div className="flex items-center space-x-2.5 text-sm text-slate-600">
-              <Clock className="h-4 w-4 text-slate-400" />
+            <div className="flex items-center space-x-2.5 text-sm text-ink-muted">
+              <Clock className="h-4 w-4 text-ink-faint" />
               <span>Not yet sent</span>
             </div>
           )}
 
-          <div className="flex items-center space-x-2.5 text-sm text-slate-600">
-            <Clock className="h-4 w-4 text-slate-400" />
+          <div className="flex items-center space-x-2.5 text-sm text-ink-muted">
+            <Clock className="h-4 w-4 text-ink-faint" />
             <span>Created: {format(new Date(order.checkoutDate), 'MMM d, yyyy')}</span>
           </div>
         </div>
 
         {/* Events Log */}
         {events.length > 0 && (
-          <div className="space-y-3 bg-slate-50 rounded-xl p-4 border border-slate-100 mb-6">
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Message Events</h4>
+          <div className="space-y-3 bg-canvas rounded-xl p-4 border border-line mb-6">
+            <h4 className="text-xs font-bold text-ink-muted uppercase tracking-wider">Message Events</h4>
             {events.map((evt) => {
               const isMidstay = evt.eventType === 'midstay_checkin';
               return (
-                <div key={evt.id} className="flex items-center space-x-2.5 text-sm text-slate-600">
+                <div key={evt.id} className="flex items-center space-x-2.5 text-sm text-ink-muted">
                   {isMidstay ? (
-                    <BedDouble className="h-4 w-4 text-blue-500" />
+                    <BedDouble className="h-4 w-4 text-brand-500" />
                   ) : (
-                    <MousePointerClick className="h-4 w-4 text-slate-400" />
+                    <MousePointerClick className="h-4 w-4 text-ink-faint" />
                   )}
-                  <span className={isMidstay ? 'text-blue-700 font-medium' : 'capitalize'}>
+                  <span className={isMidstay ? 'text-brand-700 font-medium' : 'capitalize'}>
                     {isMidstay ? 'Mid-stay check-in sent' : evt.eventType.replace(/_/g, ' ')}
                   </span>
-                  <span className="text-slate-400 text-xs">{format(new Date(evt.createdAt), 'MMM d, h:mm a')}</span>
+                  <span className="text-ink-faint text-xs">{format(new Date(evt.createdAt), 'MMM d, h:mm a')}</span>
                 </div>
               );
             })}
@@ -143,12 +143,12 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
           <button
             onClick={handleResend}
             disabled={sending || resendSuccess}
-            className="w-full bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+            className="w-full bg-ink text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-ink transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
           >
             {sending ? (
               <RefreshCw className="h-4 w-4 animate-spin" />
             ) : resendSuccess ? (
-              <span className="text-emerald-400">✓ Sent!</span>
+              <span className="text-positive">✓ Sent!</span>
             ) : (
               <>
                 <RefreshCw className="h-4 w-4" />

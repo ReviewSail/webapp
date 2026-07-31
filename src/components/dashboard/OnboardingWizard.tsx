@@ -117,12 +117,12 @@ export function OnboardingWizard() {
   if (activeLoc?.onboardingComplete) return null;
 
   const inputClass =
-    'w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
+    'w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
 
   return (
     // Flat navy header, not a gradient: the invite pipeline below owns the one
     // gradient this screen gets. Two of them and neither reads as the point.
-    <section className="overflow-hidden rounded-xl border border-line bg-white">
+    <section className="overflow-hidden rounded-xl border border-line bg-card">
       <div className="bg-brand-900 px-5 py-4">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-[15px] font-semibold text-white">Finish setting up</h2>
@@ -195,7 +195,7 @@ export function OnboardingWizard() {
                     ))}
                   </select>
                 ) : (
-                  <div className="flex h-[38px] items-center justify-between gap-2 rounded-lg border border-line bg-white px-3">
+                  <div className="flex h-[38px] items-center justify-between gap-2 rounded-lg border border-line bg-card px-3">
                     <span className="truncate text-sm text-ink">
                       {(timezone || browserTimezone()).replace(/_/g, ' ')}
                     </span>

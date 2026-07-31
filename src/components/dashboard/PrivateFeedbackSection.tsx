@@ -79,7 +79,7 @@ export function PrivateFeedbackSection({
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-white">
+    <div className="overflow-hidden rounded-xl border border-line bg-card">
       <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-ink">Guests waiting on a reply</h2>
@@ -167,7 +167,7 @@ export function PrivateFeedbackSection({
                           onChange={(e) => setResponseText(e.target.value)}
                           placeholder="Write your private reply…"
                           aria-label="Private reply to guest"
-                          className="w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                          className="w-full rounded-lg border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                         />
                         <div className="flex items-center justify-end gap-2">
                           <Button

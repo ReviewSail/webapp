@@ -5,6 +5,27 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 10 L50 65 L80 60 Z' fill='%234f46e5'/%3E%3Cpath d='M45 65 C45 80 35 85 20 88 L80 88 C65 85 55 80 55 65' fill='%23374151'/%3E%3C/svg%3E" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ReviewSail</title>
+    <!--
+      Resolve the theme before first paint. A React effect runs after the
+      browser has already painted, which shows a white flash on the way into
+      dark mode. Kept deliberately tiny and in sync with applyTheme() in
+      src/context/ThemeContext.tsx.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('reviewsail:theme') || 'system';
+          var dark =
+            stored === 'dark' ||
+            (stored === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {
+          document.documentElement.style.colorScheme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

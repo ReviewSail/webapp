@@ -42,7 +42,7 @@ export function EmptyState({
   }
 
   return (
-    <div className={cn('rounded-xl border border-line bg-white p-12', className)}>
+    <div className={cn('rounded-xl border border-line bg-card p-12', className)}>
       {body}
     </div>
   );

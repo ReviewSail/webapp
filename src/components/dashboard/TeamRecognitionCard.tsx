@@ -82,59 +82,59 @@ export function TeamRecognitionCard() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-pulse">
-        <div className="h-4 w-32 bg-slate-200 rounded mb-4"></div>
+      <div className="bg-card rounded-2xl border border-line shadow-sm p-6 animate-pulse">
+        <div className="h-4 w-32 bg-line rounded mb-4"></div>
         <div className="space-y-3">
-          <div className="h-8 bg-slate-100 rounded"></div>
-          <div className="h-8 bg-slate-100 rounded"></div>
+          <div className="h-8 bg-muted rounded"></div>
+          <div className="h-8 bg-muted rounded"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-        <h2 className="text-lg font-bold text-slate-900 flex items-center">
-          <MessageSquare className="h-5 w-5 mr-2 text-indigo-600" />
+    <div className="bg-card rounded-2xl border border-line shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-line bg-canvas/50">
+        <h2 className="text-lg font-bold text-ink flex items-center">
+          <MessageSquare className="h-5 w-5 mr-2 text-brand-600" />
           Recent Recognition
         </h2>
       </div>
 
       {records.length === 0 ? (
         <div className="px-6 py-8 text-center space-y-2">
-          <Quote className="h-6 w-6 text-slate-300 mx-auto" />
-          <p className="text-sm text-slate-500 max-w-md mx-auto">
+          <Quote className="h-6 w-6 text-ink-faint mx-auto" />
+          <p className="text-sm text-ink-muted max-w-md mx-auto">
             Recognition moments from guest feedback will appear here once your team is mentioned positively — whether that’s a host, co-host, cleaner, or front desk.
           </p>
         </div>
       ) : (
-        <div className="divide-y divide-slate-50">
+        <div className="divide-y divide-line">
           {records.map((record) => (
             <div key={record.id} className="px-6 py-4 space-y-2">
               <div className="flex items-start space-x-3">
-                <Quote className="h-4 w-4 text-indigo-400 shrink-0 mt-0.5" />
+                <Quote className="h-4 w-4 text-brand-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm italic text-slate-700 line-clamp-3">
+                  <p className="text-sm italic text-ink line-clamp-3">
                     "{record.matched_sentence}"
                   </p>
                   <div className="flex items-center justify-between mt-2">
-                    <div className="flex items-center space-x-2 text-xs text-slate-500">
+                    <div className="flex items-center space-x-2 text-xs text-ink-muted">
                       {record.team_member_name ? (
-                        <span className="font-semibold text-slate-800">{record.team_member_name}</span>
+                        <span className="font-semibold text-ink">{record.team_member_name}</span>
                       ) : (
-                        <span className="font-semibold text-slate-800 capitalize">
+                        <span className="font-semibold text-ink capitalize">
                           {record.matched_role || 'Unknown'}
                         </span>
                       )}
                       {record.guest_name && (
                         <>
-                          <span className="text-slate-300">·</span>
+                          <span className="text-ink-faint">·</span>
                           <span>from {record.guest_name}</span>
                         </>
                       )}
                     </div>
-                    <div className="flex items-center text-xs text-slate-400">
+                    <div className="flex items-center text-xs text-ink-faint">
                       <Clock className="h-3 w-3 mr-1" />
                       {timeAgo(record.created_at)}
                     </div>

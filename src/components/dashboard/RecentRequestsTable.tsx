@@ -57,7 +57,7 @@ export function RecentRequestsTable({
   // data has actually arrived.
   if (loading) {
     return (
-      <div className="space-y-3 rounded-xl border border-line bg-white p-5" aria-hidden="true">
+      <div className="space-y-3 rounded-xl border border-line bg-card p-5" aria-hidden="true">
         <div className="animate-pulse space-y-3">
           <div className="h-4 w-40 rounded bg-line" />
           {[0, 1, 2, 3].map((i) => (
@@ -81,7 +81,7 @@ export function RecentRequestsTable({
 
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-line bg-white">
+      <div className="overflow-hidden rounded-xl border border-line bg-card">
         <div className="flex items-baseline justify-between gap-3 border-b border-line px-5 py-4">
           <h2 className="text-[15px] font-semibold text-ink">Recent requests</h2>
           <span className="tnum text-xs text-ink-muted">{totalLogs.toLocaleString()} total</span>

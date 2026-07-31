@@ -27,8 +27,8 @@ const roleLabel = (role: string) => (role === 'admin' ? 'Admin' : 'Staff');
 
 const rolePill = (role: string) =>
   role === 'admin'
-    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-    : 'bg-slate-50 text-slate-600 border-slate-200';
+    ? 'bg-brand-50 text-brand-700 border-brand-200'
+    : 'bg-canvas text-ink-muted border-line';
 
 const formatDate = (iso: string | null) => (iso ? format(new Date(iso), 'MMM d, yyyy') : '—');
 
@@ -193,7 +193,7 @@ export function TeamSettings() {
 
         {loading ? (
           <div className="p-12 flex justify-center">
-            <RefreshCw className="h-5 w-5 animate-spin text-slate-300" />
+            <RefreshCw className="h-5 w-5 animate-spin text-ink-faint" />
           </div>
         ) : members.length <= 1 ? (
           <EmptyState
@@ -205,16 +205,16 @@ export function TeamSettings() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-100">
-              <thead className="bg-slate-50">
+            <table className="min-w-full divide-y divide-line">
+              <thead className="bg-canvas">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Member</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Joined</th>
-                  <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-ink-muted uppercase tracking-wider">Member</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-ink-muted uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-ink-muted uppercase tracking-wider">Joined</th>
+                  <th className="px-6 py-3 text-right text-xs font-bold text-ink-muted uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-line">
                 {members.map((member) => {
                   const isSelf = member.id === user?.id;
                   const isBusy = busyId === member.id;
@@ -223,19 +223,19 @@ export function TeamSettings() {
                   const isLastAdmin = member.role === 'admin' && adminCount === 1;
 
                   return (
-                    <tr key={member.id} className="hover:bg-slate-50/50 transition-colors">
+                    <tr key={member.id} className="hover:bg-canvas/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-3">
-                          <div className="h-8 w-8 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center shrink-0">
+                          <div className="h-8 w-8 rounded-full bg-brand-50 text-brand-700 font-bold text-xs flex items-center justify-center shrink-0">
                             {(member.full_name || member.email || '?').slice(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-800 truncate">
+                            <p className="text-sm font-semibold text-ink truncate">
                               {member.full_name || member.email}
-                              {isSelf && <span className="ml-2 text-xs font-normal text-slate-400">You</span>}
+                              {isSelf && <span className="ml-2 text-xs font-normal text-ink-faint">You</span>}
                             </p>
                             {member.full_name && member.email && (
-                              <p className="text-xs text-slate-400 truncate">{member.email}</p>
+                              <p className="text-xs text-ink-faint truncate">{member.email}</p>
                             )}
                           </div>
                         </div>
@@ -250,7 +250,7 @@ export function TeamSettings() {
                             value={member.role}
                             disabled={isBusy}
                             onChange={(e) => handleRoleChange(member, e.target.value as 'admin' | 'staff')}
-                            className="rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-7 text-xs font-semibold text-slate-700 focus:border-indigo-500 focus:ring-indigo-500 disabled:opacity-50"
+                            className="rounded-lg border border-line bg-card py-1 pl-2 pr-7 text-xs font-semibold text-ink focus:border-brand-500 focus:ring-brand-500 disabled:opacity-50"
                             aria-label={`Role for ${member.full_name || member.email}`}
                           >
                             <option value="admin">Admin</option>
@@ -258,7 +258,7 @@ export function TeamSettings() {
                           </select>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-ink-muted">
                         {formatDate(member.created_at)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -266,7 +266,7 @@ export function TeamSettings() {
                           <button
                             onClick={() => setConfirmRemove(member)}
                             disabled={isBusy}
-                            className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-600 transition-colors disabled:opacity-50"
+                            className="p-1.5 hover:bg-critical-soft rounded-lg text-ink-faint hover:text-critical transition-colors disabled:opacity-50"
                             title={`Remove ${member.full_name || member.email}`}
                           >
                             {isBusy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -292,7 +292,7 @@ export function TeamSettings() {
               description="Sent, but not accepted yet."
             />
           </div>
-          <div className="divide-y divide-slate-100 border-t border-slate-100">
+          <div className="divide-y divide-line border-t border-line">
             {invitations.map((invite) => {
               const isBusy = busyId === invite.id;
               return (
@@ -301,8 +301,8 @@ export function TeamSettings() {
                   className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">{invite.email}</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-sm font-semibold text-ink truncate">{invite.email}</p>
+                    <p className="text-xs text-ink-faint">
                       {roleLabel(invite.role)} · sent {formatDate(invite.created_at)} · expires{' '}
                       {formatDate(invite.expires_at)}
                     </p>
@@ -311,14 +311,14 @@ export function TeamSettings() {
                     <button
                       onClick={() => handleResend(invite)}
                       disabled={isBusy}
-                      className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 py-1.5 px-3 rounded-lg transition-colors disabled:opacity-50"
+                      className="text-xs font-semibold text-ink-muted hover:text-ink bg-muted hover:bg-line py-1.5 px-3 rounded-lg transition-colors disabled:opacity-50"
                     >
                       {isBusy ? 'Working…' : 'Resend'}
                     </button>
                     <button
                       onClick={() => handleRevoke(invite)}
                       disabled={isBusy}
-                      className="text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 py-1.5 px-3 rounded-lg transition-colors disabled:opacity-50"
+                      className="text-xs font-semibold text-critical hover:text-critical hover:bg-critical-soft py-1.5 px-3 rounded-lg transition-colors disabled:opacity-50"
                     >
                       Revoke
                     </button>
@@ -345,13 +345,13 @@ export function TeamSettings() {
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
               placeholder="teammate@example.com"
-              className="w-full rounded-xl border border-slate-200 py-2.5 px-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+              className="w-full rounded-xl border border-line py-2.5 px-3 text-sm focus:border-brand-500 focus:ring-brand-500"
               aria-label="Email address"
             />
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as 'admin' | 'staff')}
-              className="rounded-xl border border-slate-200 py-2.5 px-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+              className="rounded-xl border border-line py-2.5 px-3 text-sm focus:border-brand-500 focus:ring-brand-500"
               aria-label="Role"
             >
               <option value="staff">Staff</option>
@@ -361,48 +361,48 @@ export function TeamSettings() {
           <button
             type="submit"
             disabled={sending || !inviteEmail.trim()}
-            className="inline-flex items-center space-x-2 bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+            className="inline-flex items-center space-x-2 bg-brand-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-brand-700 transition-colors disabled:opacity-50"
           >
             {sending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             <span>{sending ? 'Sending…' : 'Send invite'}</span>
           </button>
         </form>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           Staff can see guests, feedback, and analytics. Admins can also change settings, billing,
           and the team.
         </p>
       </Card>
 
       {confirmRemove && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-card rounded-2xl max-w-md w-full shadow-2xl border border-line p-6 space-y-4">
             <div className="flex items-start justify-between">
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-lg font-bold text-ink">
                 Remove {confirmRemove.full_name || confirmRemove.email}?
               </h2>
               <button
                 onClick={() => setConfirmRemove(null)}
-                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400"
+                className="p-1 hover:bg-muted rounded-lg text-ink-faint"
                 aria-label="Cancel"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-ink-muted">
               They lose access to this account immediately. Their sign-in still exists, but it will
               show them nothing until someone invites them again.
             </p>
             <div className="flex justify-end space-x-2">
               <button
                 onClick={() => setConfirmRemove(null)}
-                className="bg-slate-100 text-slate-700 font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-200 transition-colors"
+                className="bg-muted text-ink font-semibold py-2.5 px-4 rounded-xl hover:bg-line transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleRemove(confirmRemove)}
                 disabled={busyId === confirmRemove.id}
-                className="bg-red-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
+                className="bg-critical text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-critical transition-colors disabled:opacity-50"
               >
                 {busyId === confirmRemove.id ? 'Removing…' : 'Remove access'}
               </button>

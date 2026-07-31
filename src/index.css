@@ -80,36 +80,85 @@
     --radius: 0.75rem;
   }
 
-  /* Dark mode stays defined but unclaimed: components still carry literal
-     colours, so toggling .dark today would produce white-on-white. It becomes
-     real once the literal sweep finishes. */
+  /*
+   * Dark mode.
+   *
+   * Not an inversion — a second designed palette on the same navy hue, so the
+   * product still reads as the same product with the lights off.
+   *
+   * The important trick is the brand ramp. Chips all over the app are written
+   * `bg-brand-50 text-brand-700`: a pale background with dark blue text. A
+   * straight inversion would leave dark text on a dark chip. So in dark mode
+   * the *ends* of the ramp swap roles — 50/100/200 become deep tints for
+   * backgrounds, 700/800 become bright for text — while 500/600 stay real
+   * mid-blues, because buttons must remain buttons. Every existing
+   * `bg-brand-50 text-brand-700` pair then works in both modes untouched.
+   */
   .dark {
-    --background: 217 100% 8%;
-    --foreground: 210 40% 98%;
+    /* Backgrounds: sidebar recedes below the canvas, content floats above it. */
+    --brand-950: 217 60% 7%;
+    --brand-900: 217 52% 11%;
 
-    --card: 217 60% 11%;
-    --card-foreground: 210 40% 98%;
+    /* Low end becomes deep tint (chip and panel backgrounds) */
+    --brand-50: 216 44% 17%;
+    --brand-100: 216 40% 23%;
+    --brand-200: 214 38% 32%;
+    --brand-300: 207 60% 62%;
 
-    --popover: 217 60% 11%;
-    --popover-foreground: 210 40% 98%;
+    /* Mid stays a real blue — primary actions, focus rings.
+       brand-600 deliberately does NOT lighten in dark: buttons carry white
+       labels, and a lighter fill drops that pairing to 3.8:1. Held at the
+       light-mode value, which measures 5.07:1. Presence comes from the dark
+       canvas around it, not from raising the blue. */
+    --brand-400: 205 72% 56%;
+    --brand-500: 204 90% 52%;
+    --brand-600: 205 100% 38%;
 
-    --primary: var(--brand-500);
-    --primary-foreground: 217 100% 10%;
+    /* High end becomes bright — text and icons on the deep tints */
+    --brand-700: 205 80% 72%;
+    --brand-800: 205 85% 80%;
 
-    --secondary: 216 40% 18%;
-    --secondary-foreground: 210 40% 98%;
+    --canvas: 217 45% 9%;
+    --line: 216 28% 22%;
+    --ink: 216 48% 94%;
+    --ink-muted: 215 25% 68%;
+    --ink-faint: 215 18% 52%;
 
-    --muted: 216 40% 18%;
-    --muted-foreground: 214 18% 65%;
+    /* State: lifted for legibility on a dark ground, softs become deep tints */
+    --positive: 148 62% 62%;
+    --positive-soft: 148 45% 14%;
+    --caution: 38 88% 65%;
+    --caution-soft: 33 55% 15%;
+    --critical: 4 82% 70%;
+    --critical-soft: 4 50% 16%;
+    --star: 38 92% 58%;
 
-    --accent: 216 40% 20%;
-    --accent-foreground: 210 40% 98%;
+    --background: var(--canvas);
+    --foreground: var(--ink);
 
-    --destructive: 4 60% 45%;
-    --destructive-foreground: 0 0% 100%;
+    --card: 216 40% 13%;
+    --card-foreground: var(--ink);
 
-    --border: 216 40% 20%;
-    --input: 216 40% 20%;
+    --popover: 216 40% 15%;
+    --popover-foreground: var(--ink);
+
+    --primary: var(--brand-600);
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 216 34% 17%;
+    --secondary-foreground: var(--ink);
+
+    --muted: 216 34% 17%;
+    --muted-foreground: var(--ink-muted);
+
+    --accent: var(--brand-50);
+    --accent-foreground: var(--brand-800);
+
+    --destructive: var(--critical);
+    --destructive-foreground: 216 60% 10%;
+
+    --border: var(--line);
+    --input: var(--line);
     --ring: var(--brand-500);
   }
 }
@@ -147,6 +196,17 @@
       135deg,
       hsl(var(--brand-800)) 0%,
       hsl(var(--brand-600)) 100%
+    );
+  }
+
+  /* In dark mode brand-800 is bright text, not a deep navy, so the light-mode
+     stops would run the gradient backwards. Named values here, deliberately:
+     this is the one surface whose colour should not follow the ramp swap. */
+  .dark .brand-gradient {
+    background-image: linear-gradient(
+      135deg,
+      hsl(217 70% 22%) 0%,
+      hsl(205 82% 38%) 100%
     );
   }
 

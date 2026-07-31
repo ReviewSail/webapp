@@ -61,7 +61,7 @@ export function Layout() {
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-white px-4 md:px-8">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-line bg-card px-4 md:px-8">
           <div className="flex items-center gap-3 md:hidden">
             <button
               onClick={() => setNavOpen(true)}
@@ -102,7 +102,7 @@ export function Layout() {
                 <DropdownMenu.Content
                   align="end"
                   sideOffset={6}
-                  className="animate-fade-in z-50 min-w-[13rem] rounded-xl border border-line bg-white p-1 shadow-pop"
+                  className="animate-fade-in z-50 min-w-[13rem] rounded-xl border border-line bg-card p-1 shadow-pop"
                 >
                   {locations.length === 0 && (
                     <p className="px-2.5 py-2 text-sm text-ink-muted">No properties yet</p>
@@ -148,7 +148,7 @@ export function Layout() {
                 <DropdownMenu.Content
                   align="end"
                   sideOffset={6}
-                  className="animate-fade-in z-50 min-w-[14rem] rounded-xl border border-line bg-white p-1 shadow-pop"
+                  className="animate-fade-in z-50 min-w-[14rem] rounded-xl border border-line bg-card p-1 shadow-pop"
                 >
                   {user?.email && (
                     <div className="border-b border-line px-2.5 py-2">

@@ -13,7 +13,7 @@ interface CardProps {
  */
 export function Card({ children, className }: CardProps) {
   return (
-    <div className={cn('rounded-xl border border-line bg-white', className)}>
+    <div className={cn('rounded-xl border border-line bg-card', className)}>
       {children}
     </div>
   );

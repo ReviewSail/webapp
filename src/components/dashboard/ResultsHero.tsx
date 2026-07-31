@@ -161,7 +161,10 @@ export function ResultsHero({
               </p>
               <button
                 onClick={onImportGuests}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-white/90"
+                // Literal white/navy on purpose: this button sits on the brand
+                // gradient, which is the same in both themes. Token colours
+                // would flip underneath it and put dark text on a dark chip.
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-[hsl(205_100%_31%)] transition-colors hover:bg-white/90"
               >
                 Import guests
                 <ArrowUpRight className="h-4 w-4" aria-hidden="true" />

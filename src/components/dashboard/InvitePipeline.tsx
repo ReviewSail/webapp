@@ -37,7 +37,7 @@ export function InvitePipeline({
   // of guests that it had none, which reads as lost data rather than loading.
   if (loading) {
     return (
-      <section className="rounded-xl border border-line bg-white p-5" aria-hidden="true">
+      <section className="rounded-xl border border-line bg-card p-5" aria-hidden="true">
         <div className="animate-pulse space-y-5">
           <div className="h-4 w-32 rounded bg-line" />
           <div className="h-10 rounded-lg bg-line/60" />
@@ -81,7 +81,7 @@ export function InvitePipeline({
   ].filter((s) => s.value > 0);
 
   return (
-    <section className="rounded-xl border border-line bg-white p-5">
+    <section className="rounded-xl border border-line bg-card p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-[15px] font-semibold text-ink">Invite pipeline</h2>
         <p className="tnum text-xs text-ink-muted">

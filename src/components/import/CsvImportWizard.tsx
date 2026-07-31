@@ -268,16 +268,16 @@ export default function CsvImportWizard() {
   const stepIndex = STEP_ORDER.indexOf(step);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
+    <div className="bg-card rounded-xl border border-line p-6">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <FileUp size={20} className="text-indigo-500" />
+        <h3 className="text-lg font-semibold text-ink flex items-center gap-2">
+          <FileUp size={20} className="text-brand-500" />
           Bulk Import (CSV)
         </h3>
         {step !== 'upload' && (
           <button
             onClick={reset}
-            className="text-xs font-medium text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
+            className="text-xs font-medium text-ink-muted hover:text-ink inline-flex items-center gap-1"
           >
             <X size={14} /> Start over
           </button>
@@ -289,14 +289,14 @@ export default function CsvImportWizard() {
           <div
             key={s}
             className={`h-1.5 flex-1 rounded-full transition-colors ${
-              i <= stepIndex ? 'bg-indigo-500' : 'bg-gray-200'
+              i <= stepIndex ? 'bg-brand-500' : 'bg-line'
             }`}
           />
         ))}
       </div>
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-2">
+        <div className="mb-4 p-3 rounded-lg bg-critical-soft border border-critical/20 text-critical text-sm flex items-start gap-2">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -311,7 +311,7 @@ export default function CsvImportWizard() {
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
           className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer
-            ${dragActive ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400 bg-gray-50'}
+            ${dragActive ? 'border-brand-400 bg-brand-50' : 'border-line hover:border-line bg-canvas'}
             ${!activeLocationId ? 'opacity-50 pointer-events-none' : ''}`}
         >
           <input
@@ -322,14 +322,14 @@ export default function CsvImportWizard() {
             className="hidden"
           />
           {busy ? (
-            <RefreshCw size={40} className="mx-auto mb-3 text-indigo-400 animate-spin" />
+            <RefreshCw size={40} className="mx-auto mb-3 text-brand-400 animate-spin" />
           ) : (
-            <FileUp size={40} className="mx-auto mb-3 text-gray-400" />
+            <FileUp size={40} className="mx-auto mb-3 text-ink-faint" />
           )}
-          <p className="text-sm font-medium text-gray-700">
+          <p className="text-sm font-medium text-ink">
             {busy ? 'Reading your file…' : dragActive ? 'Drop your CSV here' : 'Drag & drop a CSV file, or click to browse'}
           </p>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-ink-muted mt-1">
             You'll be able to check the columns before anything is imported.
           </p>
         </div>
@@ -339,8 +339,8 @@ export default function CsvImportWizard() {
       {step === 'map' && parsed && (
         <div className="space-y-5">
           <div>
-            <p className="text-sm text-gray-600">
-              <span className="font-medium text-gray-900">{parsed.fileName}</span> — {parsed.records.length} row
+            <p className="text-sm text-ink-muted">
+              <span className="font-medium text-ink">{parsed.fileName}</span> — {parsed.records.length} row
               {parsed.records.length === 1 ? '' : 's'}. We've matched the columns we recognised; correct anything
               that's wrong.
             </p>
@@ -349,15 +349,15 @@ export default function CsvImportWizard() {
           <div className="space-y-2">
             {IMPORT_FIELDS.map(field => (
               <div key={field.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3">
-                <label className="text-sm text-gray-700">
+                <label className="text-sm text-ink">
                   {field.label}
-                  {field.required && <span className="text-red-500 ml-0.5">*</span>}
-                  {field.hint && <span className="block text-xs text-gray-400">{field.hint}</span>}
+                  {field.required && <span className="text-critical ml-0.5">*</span>}
+                  {field.hint && <span className="block text-xs text-ink-faint">{field.hint}</span>}
                 </label>
                 <select
                   value={mapping[field.key] || ''}
                   onChange={e => setFieldMapping(field.key, e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
                 >
                   <option value="">— Not imported —</option>
                   {parsed.headers.map(header => (
@@ -370,15 +370,15 @@ export default function CsvImportWizard() {
 
           {(dateFormatAmbiguous || !!mapping.checkoutDate) && (
             <div className={`p-3 rounded-lg border text-sm ${
-              dateFormatAmbiguous ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
+              dateFormatAmbiguous ? 'bg-caution-soft border-caution/20' : 'bg-canvas border-line'
             }`}>
               <div className="flex items-start gap-2 mb-2">
-                {dateFormatAmbiguous && <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />}
+                {dateFormatAmbiguous && <AlertTriangle size={16} className="mt-0.5 shrink-0 text-caution" />}
                 <div>
-                  <p className={`font-medium ${dateFormatAmbiguous ? 'text-amber-800' : 'text-gray-700'}`}>
+                  <p className={`font-medium ${dateFormatAmbiguous ? 'text-caution' : 'text-ink'}`}>
                     Date format
                   </p>
-                  <p className={`text-xs ${dateFormatAmbiguous ? 'text-amber-700' : 'text-gray-500'}`}>
+                  <p className={`text-xs ${dateFormatAmbiguous ? 'text-caution' : 'text-ink-muted'}`}>
                     {dateFormatAmbiguous
                       ? "These dates could be read two ways. Pick the right one — check the preview below to confirm."
                       : 'Detected from your file. Change it if the preview looks wrong.'}
@@ -388,7 +388,7 @@ export default function CsvImportWizard() {
               <select
                 value={dateFormat}
                 onChange={e => setDateFormat(e.target.value as DateFormat)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
               >
                 {DATE_FORMAT_OPTIONS.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -398,21 +398,21 @@ export default function CsvImportWizard() {
           )}
 
           <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+            <p className="text-xs font-medium text-ink-muted uppercase tracking-wide mb-2">
               Preview — first {Math.min(PREVIEW_ROWS, previewRows.length)} rows
             </p>
-            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+            <div className="overflow-x-auto border border-line rounded-lg">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
+                <thead className="bg-canvas">
                   <tr>
                     {IMPORT_FIELDS.map(f => (
-                      <th key={f.key} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
+                      <th key={f.key} className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">
                         {f.label}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-line">
                   {previewRows.map(row => (
                     <tr key={row.lineNumber}>
                       <td className="px-3 py-2 whitespace-nowrap">{row.firstName || <Empty />}</td>
@@ -433,13 +433,13 @@ export default function CsvImportWizard() {
           </div>
 
           {missingRequired.length > 0 && (
-            <p className="text-sm text-amber-700 flex items-center gap-2">
+            <p className="text-sm text-caution flex items-center gap-2">
               <AlertTriangle size={15} />
               Map {missingRequired.map(f => f.label.toLowerCase()).join(' and ')} to continue.
             </p>
           )}
           {missingRequired.length === 0 && !hasContactColumn && (
-            <p className="text-sm text-amber-700 flex items-center gap-2">
+            <p className="text-sm text-caution flex items-center gap-2">
               <AlertTriangle size={15} />
               Map an email or phone column — guests can't be contacted without one.
             </p>
@@ -448,14 +448,14 @@ export default function CsvImportWizard() {
           <div className="flex justify-between pt-1">
             <button
               onClick={reset}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-ink-muted hover:text-ink"
             >
               <ArrowLeft size={16} /> Choose another file
             </button>
             <button
               onClick={goToReview}
               disabled={busy || missingRequired.length > 0 || !hasContactColumn}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {busy ? <RefreshCw size={16} className="animate-spin" /> : <ArrowRight size={16} />}
               Check {parsed.records.length} row{parsed.records.length === 1 ? '' : 's'}
@@ -475,8 +475,8 @@ export default function CsvImportWizard() {
           </div>
 
           {counts.duplicates > 0 && (
-            <p className="text-sm text-gray-600 flex items-start gap-2">
-              <CopyCheck size={16} className="mt-0.5 shrink-0 text-gray-400" />
+            <p className="text-sm text-ink-muted flex items-start gap-2">
+              <CopyCheck size={16} className="mt-0.5 shrink-0 text-ink-faint" />
               {counts.duplicates} guest{counts.duplicates === 1 ? ' has' : 's have'} already been imported for the same
               check-out date and will be skipped, so nobody gets a second request.
             </p>
@@ -486,22 +486,22 @@ export default function CsvImportWizard() {
               so up front is the difference between "this worked" and "why has
               nothing sent?" a week later. */}
           {counts.upcoming > 0 && (
-            <p className="text-sm text-gray-600 flex items-start gap-2">
-              <CalendarClock size={16} className="mt-0.5 shrink-0 text-gray-400" />
+            <p className="text-sm text-ink-muted flex items-start gap-2">
+              <CalendarClock size={16} className="mt-0.5 shrink-0 text-ink-faint" />
               {counts.upcoming} {counts.upcoming === 1 ? 'stay is' : 'stays are'} still upcoming. Those invites are
               scheduled automatically and send the day each guest checks out.
             </p>
           )}
 
           {problemRows.length > 0 && (
-            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+            <div className="border border-line rounded-lg divide-y divide-line">
               {(showAllIssues ? problemRows : problemRows.slice(0, 8)).map(row => (
                 <div key={row.lineNumber} className="px-3 py-2 flex items-start gap-3 text-sm">
-                  <span className="text-xs text-gray-400 font-mono pt-0.5 shrink-0">L{row.lineNumber}</span>
-                  <span className="text-gray-700 shrink-0 max-w-[10rem] truncate">
+                  <span className="text-xs text-ink-faint font-mono pt-0.5 shrink-0">L{row.lineNumber}</span>
+                  <span className="text-ink shrink-0 max-w-[10rem] truncate">
                     {[row.firstName, row.lastName].filter(Boolean).join(' ') || '(no name)'}
                   </span>
-                  <span className={row.status === 'error' ? 'text-red-600' : 'text-amber-700'}>
+                  <span className={row.status === 'error' ? 'text-critical' : 'text-caution'}>
                     {row.issues.map(i => i.message).join('; ')}
                   </span>
                 </div>
@@ -509,7 +509,7 @@ export default function CsvImportWizard() {
               {problemRows.length > 8 && (
                 <button
                   onClick={() => setShowAllIssues(v => !v)}
-                  className="w-full px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-gray-50"
+                  className="w-full px-3 py-2 text-xs font-medium text-brand-600 hover:bg-canvas"
                 >
                   {showAllIssues ? 'Show fewer' : `Show all ${problemRows.length} rows with issues`}
                 </button>
@@ -520,7 +520,7 @@ export default function CsvImportWizard() {
           {counts.errors > 0 && (
             <button
               onClick={downloadErrorRows}
-              className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+              className="inline-flex items-center gap-2 text-sm font-medium text-brand-600 hover:text-brand-700"
             >
               <Download size={15} /> Download the {counts.errors} failed row
               {counts.errors === 1 ? '' : 's'} to fix and re-upload
@@ -530,14 +530,14 @@ export default function CsvImportWizard() {
           <div className="flex justify-between pt-1">
             <button
               onClick={() => setStep('map')}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-ink-muted hover:text-ink"
             >
               <ArrowLeft size={16} /> Back to columns
             </button>
             <button
               onClick={runImport}
               disabled={busy || counts.ready === 0}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {busy ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} />}
               {busy ? 'Importing…' : `Import ${counts.ready} guest${counts.ready === 1 ? '' : 's'}`}
@@ -549,25 +549,25 @@ export default function CsvImportWizard() {
       {/* Step 4 — Result */}
       {step === 'result' && result && (
         <div className="space-y-4 text-center py-4">
-          <CheckCircle size={40} className="mx-auto text-green-500" />
+          <CheckCircle size={40} className="mx-auto text-positive" />
           <div>
-            <p className="text-lg font-semibold text-gray-900">
+            <p className="text-lg font-semibold text-ink">
               Imported {result.imported} guest{result.imported === 1 ? '' : 's'}
             </p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-ink-muted mt-1">
               Review requests are queued and will send at your property's preferred hour.
             </p>
           </div>
 
           {(result.skippedDuplicates > 0 || counts.errors > 0) && (
-            <div className="text-sm text-gray-600 space-y-1">
+            <div className="text-sm text-ink-muted space-y-1">
               {result.skippedDuplicates > 0 && (
                 <p>{result.skippedDuplicates} already-imported guest{result.skippedDuplicates === 1 ? '' : 's'} skipped.</p>
               )}
               {counts.errors > 0 && (
                 <p>
                   {counts.errors} row{counts.errors === 1 ? '' : 's'} could not be imported.{' '}
-                  <button onClick={downloadErrorRows} className="text-indigo-600 hover:underline font-medium">
+                  <button onClick={downloadErrorRows} className="text-brand-600 hover:underline font-medium">
                     Download them
                   </button>
                 </p>
@@ -577,7 +577,7 @@ export default function CsvImportWizard() {
 
           <button
             onClick={reset}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
           >
             <FileUp size={16} /> Import another file
           </button>
@@ -587,7 +587,7 @@ export default function CsvImportWizard() {
   );
 }
 
-const Empty = () => <span className="text-gray-300">—</span>;
+const Empty = () => <span className="text-ink-faint">—</span>;
 
 /**
  * Shows a parsed date as unambiguous text so a wrong format choice is visible
@@ -595,21 +595,21 @@ const Empty = () => <span className="text-gray-300">—</span>;
  */
 const DateCell = ({ iso, mapped }: { iso: string | null; mapped: boolean }) => {
   if (!mapped) return <Empty />;
-  if (!iso) return <span className="text-red-500 text-xs">unreadable</span>;
+  if (!iso) return <span className="text-critical text-xs">unreadable</span>;
   const parsed = parseImportDate(iso, 'YMD');
   return <span>{parsed ? formatDateForDisplay(parsed) : iso}</span>;
 };
 
 const Tile = ({ label, value, tone }: { label: string; value: number; tone: 'green' | 'amber' | 'red' | 'gray' }) => {
   const tones = {
-    green: 'bg-green-50 border-green-200 text-green-700',
-    amber: 'bg-amber-50 border-amber-200 text-amber-700',
-    red: 'bg-red-50 border-red-200 text-red-700',
-    gray: 'bg-gray-50 border-gray-200 text-gray-600',
+    green: 'bg-positive-soft border-positive/20 text-positive',
+    amber: 'bg-caution-soft border-caution/20 text-caution',
+    red: 'bg-critical-soft border-critical/20 text-critical',
+    gray: 'bg-canvas border-line text-ink-muted',
   } as const;
 
   return (
-    <div className={`rounded-lg border p-3 ${value > 0 ? tones[tone] : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+    <div className={`rounded-lg border p-3 ${value > 0 ? tones[tone] : 'bg-canvas border-line text-ink-faint'}`}>
       <p className="text-2xl font-semibold leading-none">{value}</p>
       <p className="text-xs mt-1">{label}</p>
     </div>

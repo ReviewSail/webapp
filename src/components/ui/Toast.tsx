@@ -42,7 +42,7 @@ const VARIANTS: Record<ToastVariant, { className: string; icon: typeof CheckCirc
     iconClass: 'text-critical',
   },
   info: {
-    className: 'bg-white border-line text-ink',
+    className: 'bg-card border-line text-ink',
     icon: Info,
     iconClass: 'text-brand-600',
   },
