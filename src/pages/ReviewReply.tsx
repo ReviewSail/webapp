@@ -142,50 +142,50 @@ export default function ReviewReply() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Review Replies</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-2xl font-bold text-ink">Review Replies</h1>
+        <p className="text-sm text-ink-muted mt-1">
           Paste a Google review, select a topic and tone, then generate an AI draft reply.
         </p>
       </div>
 
       {/* Input Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+      <div className="bg-card rounded-2xl border border-line shadow-sm p-6 space-y-5">
         <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-indigo-50 rounded-xl">
-            <FileText className="h-5 w-5 text-indigo-600" />
+          <div className="p-2.5 bg-brand-50 rounded-xl">
+            <FileText className="h-5 w-5 text-brand-600" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Review Details</h2>
-            <p className="text-xs text-slate-500">Paste the full review text you want to reply to.</p>
+            <h2 className="text-lg font-bold text-ink">Review Details</h2>
+            <p className="text-xs text-ink-muted">Paste the full review text you want to reply to.</p>
           </div>
         </div>
 
         {/* Hotel name display */}
         {activeLoc?.name && (
-          <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600">
-            Replying as <span className="font-semibold text-slate-800">{activeLoc.name}</span>
+          <div className="bg-canvas rounded-lg px-3 py-2 text-xs text-ink-muted">
+            Replying as <span className="font-semibold text-ink">{activeLoc.name}</span>
           </div>
         )}
 
         {/* Review text */}
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1">Review Text</label>
+          <label className="block text-xs font-bold text-ink mb-1">Review Text</label>
           <textarea
             rows={4}
             value={reviewText}
             onChange={(e) => setReviewText(e.target.value)}
             placeholder="Paste the Google review here..."
-            className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white resize-y"
+            className="w-full rounded-xl border-line shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm py-2.5 px-3 border bg-card resize-y"
           />
         </div>
 
         {/* Topic dropdown */}
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1">Review Topic</label>
+          <label className="block text-xs font-bold text-ink mb-1">Review Topic</label>
           <select
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white"
+            className="w-full rounded-xl border-line shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm py-2.5 px-3 border bg-card"
           >
             {REVIEW_TOPICS.map((t) => (
               <option key={t.value} value={t.value}>{t.label}</option>
@@ -195,7 +195,7 @@ export default function ReviewReply() {
 
         {/* Tone dropdown */}
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1">Tone</label>
+          <label className="block text-xs font-bold text-ink mb-1">Tone</label>
           <div className="flex space-x-2">
             {TONES.map((t) => (
               <button
@@ -203,8 +203,8 @@ export default function ReviewReply() {
                 onClick={() => setTone(t.value)}
                 className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
                   tone === t.value
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-brand-600 text-white border-brand-600'
+                    : 'bg-card text-ink-muted border-line hover:bg-canvas'
                 }`}
               >
                 {t.label}
@@ -214,18 +214,18 @@ export default function ReviewReply() {
         </div>
 
         {/* Template guidance */}
-        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+        <div className="bg-canvas rounded-xl p-4 border border-line">
           <div className="flex items-start space-x-2.5">
-            <FileText className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+            <FileText className="h-4 w-4 text-ink-faint shrink-0 mt-0.5" />
             <div>
-              <p className="text-xs font-semibold text-slate-700">Topic Template Guidance</p>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">{template.email}</p>
+              <p className="text-xs font-semibold text-ink">Topic Template Guidance</p>
+              <p className="text-xs text-ink-muted mt-1 leading-relaxed">{template.email}</p>
             </div>
           </div>
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-800 p-3.5 rounded-xl text-xs border border-red-200 flex items-start space-x-2">
+          <div className="bg-critical-soft text-critical p-3.5 rounded-xl text-xs border border-critical/20 flex items-start space-x-2">
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -234,7 +234,7 @@ export default function ReviewReply() {
         <button
           onClick={handleGenerate}
           disabled={generating || !reviewText.trim()}
-          className="w-full bg-indigo-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 text-sm"
+          className="w-full bg-brand-600 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-brand-700 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 text-sm"
         >
           {generating ? (
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -247,35 +247,35 @@ export default function ReviewReply() {
 
       {/* Draft Card */}
       {draft && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="bg-card rounded-2xl border border-line shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
-              <Sparkles className="h-5 w-5 text-indigo-600" />
+            <h2 className="text-lg font-bold text-ink flex items-center space-x-2">
+              <Sparkles className="h-5 w-5 text-brand-600" />
               <span>Generated Draft</span>
             </h2>
             <div className="flex items-center space-x-2">
               <button
                 onClick={handleGenerate}
                 disabled={generating}
-                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-700 transition-colors"
+                className="p-2 hover:bg-muted rounded-lg text-ink-muted hover:text-ink transition-colors"
                 title="Regenerate"
               >
                 <RotateCcw className="h-4 w-4" />
               </button>
               <button
                 onClick={handleCopy}
-                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-700 transition-colors relative"
+                className="p-2 hover:bg-muted rounded-lg text-ink-muted hover:text-ink transition-colors relative"
                 title="Copy reply"
               >
                 {copied ? (
-                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                  <CheckCircle className="h-4 w-4 text-positive" />
                 ) : (
                   <Copy className="h-4 w-4" />
                 )}
               </button>
               <button
                 onClick={handleReset}
-                className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-700 transition-colors"
+                className="p-2 hover:bg-muted rounded-lg text-ink-muted hover:text-ink transition-colors"
                 title="Reset"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -288,17 +288,17 @@ export default function ReviewReply() {
             rows={6}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="w-full rounded-xl border-slate-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 px-3 border bg-white resize-y"
+            className="w-full rounded-xl border-line shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm py-2.5 px-3 border bg-card resize-y"
           />
 
           <div className="flex items-center justify-between">
             {copied && (
-              <span className="text-xs text-emerald-600 flex items-center space-x-1">
+              <span className="text-xs text-positive flex items-center space-x-1">
                 <CheckCircle className="h-3.5 w-3.5" />
                 <span>Copied!</span>
               </span>
             )}
-            <span className="text-xs text-slate-400 flex items-center space-x-1">
+            <span className="text-xs text-ink-faint flex items-center space-x-1">
               <AlertCircle className="h-3.5 w-3.5" />
               <span>AI drafts should always be reviewed before posting publicly.</span>
             </span>
@@ -308,7 +308,7 @@ export default function ReviewReply() {
           <div className="flex space-x-3">
             <button
               onClick={handleCopy}
-              className="flex-1 bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-center space-x-2 text-sm"
+              className="flex-1 bg-ink text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-ink transition-colors flex items-center justify-center space-x-2 text-sm"
             >
               <Copy className="h-4 w-4" />
               <span>{copied ? 'Copied!' : 'Copy Reply'}</span>
@@ -316,14 +316,14 @@ export default function ReviewReply() {
             <button
               onClick={handleGenerate}
               disabled={generating}
-              className="flex-1 bg-indigo-50 text-indigo-700 font-semibold py-2.5 px-4 rounded-xl hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 text-sm"
+              className="flex-1 bg-brand-50 text-brand-700 font-semibold py-2.5 px-4 rounded-xl hover:bg-brand-100 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 text-sm"
             >
               <RotateCcw className="h-4 w-4" />
               <span>Regenerate</span>
             </button>
             <button
               onClick={handleReset}
-              className="flex-1 bg-white text-slate-700 font-semibold py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center space-x-2 text-sm"
+              className="flex-1 bg-card text-ink font-semibold py-2.5 px-4 rounded-xl border border-line hover:bg-canvas transition-colors flex items-center justify-center space-x-2 text-sm"
             >
               <RefreshCw className="h-4 w-4" />
               <span>Reset</span>

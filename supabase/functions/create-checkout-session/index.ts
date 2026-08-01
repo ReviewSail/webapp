@@ -58,9 +58,28 @@ serve(async (req) => {
     const origin = req.headers.get('origin') || 'http://localhost:5173'
 
     if (!stripeSecretKey) {
+      // The mock URL only does anything in a dev build — ReviewSailContext
+      // gates the handler behind import.meta.env.DEV. Returned to a deployed
+      // client it just redirected to the dashboard, changed nothing and
+      // reported no error, so checkout appeared to silently do nothing.
+      //
+      // Localhost is the test for "this is a dev build", rather than a new env
+      // var that has to be remembered: it needs no configuration and fails
+      // closed everywhere else.
+      const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      if (!isLocalOrigin) {
+        console.error("[create-checkout-session] STRIPE_SECRET_KEY is not configured; refusing to mock for a deployed client.");
+        return new Response(JSON.stringify({
+          error: "Payments aren't set up yet. Please contact support.",
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 503,
+        });
+      }
+
       console.log("[create-checkout-session] Stripe Secret Key is missing. Triggering Mock checkout link.");
       // Return a special mock flag so client can activate instantly
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         url: `${origin}/dashboard?mock_checkout_success=true&account_id=${accountId}`,
         isMock: true
       }), {
@@ -85,10 +104,15 @@ serve(async (req) => {
           'Authorization': `Bearer ${stripeSecretKey}`,
           'Content-Type': 'application/x-www-form-urlencoded'
         },
+        // Stripe takes nested params as bracketed keys. Passing an object here
+        // stringified it to "metadata=[object Object]", so every Stripe
+        // customer this created carried no account_id at all. The subscription
+        // metadata set further down was correct, which is the only reason the
+        // webhook could still resolve the account.
         body: new URLSearchParams({
           name: account.name,
           email: user.email || '',
-          metadata: { account_id: accountId }
+          'metadata[account_id]': accountId,
         }).toString()
       })
       

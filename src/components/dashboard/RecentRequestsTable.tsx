@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Inbox, RefreshCw, Send, Eye, Check } from 'lucide-react';
-import { ReviewRequest, Order, Customer, useReviewSail } from '../../context/ReviewSailContext';
+import { Inbox, RefreshCw, Eye, Check } from 'lucide-react';
+import { ReviewRequest, Order, Customer, useReviewSail, canResendRequest } from '../../context/ReviewSailContext';
 import { GuestDetailPanel } from './GuestDetailPanel';
 import { StatusBadge } from '../ui/StatusBadge';
 import { EmptyState } from '../ui/EmptyState';
@@ -57,11 +57,11 @@ export function RecentRequestsTable({
   // data has actually arrived.
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-3" aria-hidden="true">
+      <div className="space-y-3 rounded-xl border border-line bg-card p-5" aria-hidden="true">
         <div className="animate-pulse space-y-3">
-          <div className="h-4 w-40 bg-slate-200 rounded" />
+          <div className="h-4 w-40 rounded bg-line" />
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-10 bg-slate-100 rounded" />
+            <div key={i} className="h-10 rounded bg-line/60" />
           ))}
         </div>
         <span className="sr-only">Loading recent requests…</span>
@@ -81,26 +81,23 @@ export function RecentRequestsTable({
 
   return (
     <>
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center">
-            <Send className="h-5 w-5 mr-2 text-indigo-600" />
-            <span>Recent Requests</span>
-          </h2>
-          <span className="text-xs text-slate-400">{totalLogs} total</span>
+      <div className="overflow-hidden rounded-xl border border-line bg-card">
+        <div className="flex items-baseline justify-between gap-3 border-b border-line px-5 py-4">
+          <h2 className="text-[15px] font-semibold text-ink">Recent requests</h2>
+          <span className="tnum text-xs text-ink-muted">{totalLogs.toLocaleString()} total</span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-100">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Guest</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Sent</th>
-                <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+          <table className="min-w-full">
+            <thead>
+              <tr className="border-b border-line">
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-ink-muted">Guest</th>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-ink-muted">Status</th>
+                <th className="px-5 py-2.5 text-left text-xs font-medium text-ink-muted">Sent</th>
+                <th className="px-5 py-2.5 text-right text-xs font-medium text-ink-muted">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-line">
               {recentRequests.map((req) => {
                 const order = orders.find(o => o.id === req.orderId);
                 const customer = order ? customers.find(c => c.id === order.customerId) : null;
@@ -108,28 +105,28 @@ export function RecentRequestsTable({
                 const isSuccess = successId === req.id;
 
                 return (
-                  <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-3">
-                        <div className="h-8 w-8 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                  <tr key={req.id} className="transition-colors hover:bg-canvas">
+                    <td className="whitespace-nowrap px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[11px] font-semibold text-brand-700">
                           {customer ? `${customer.firstName?.[0]}${customer.lastName?.[0]}` : '?'}
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-800">
-                            {customer ? `${customer.firstName} ${customer.lastName}` : 'Unknown Guest'}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-ink">
+                            {customer ? `${customer.firstName} ${customer.lastName}` : 'Unknown guest'}
                           </p>
                           {customer?.email && (
-                            <p className="text-xs text-slate-400">{customer.email}</p>
+                            <p className="truncate text-xs text-ink-muted">{customer.email}</p>
                           )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
+                    <td className="whitespace-nowrap px-5 py-3">
+                      <div className="flex items-center gap-2">
                         <StatusBadge status={req.status} />
                         {order?.midstaySent && (
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-200">
-                            🏨 Mid-Stay ✓
+                          <span className="rounded-full border border-brand-100 bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">
+                            Mid-stay sent
                           </span>
                         )}
                         {order && !order.midstaySent && order.status === 'completed' && order.checkinDate && (() => {
@@ -139,8 +136,8 @@ export function RecentRequestsTable({
                           const now = Date.now();
                           if (checkin.getTime() < now - oneDayMs && checkout.getTime() > now + oneDayMs) {
                             return (
-                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-500 border-blue-200">
-                                ⏳ Mid-Stay Pending
+                              <span className="rounded-full border border-line bg-canvas px-2.5 py-0.5 text-xs font-medium text-ink-muted">
+                                Mid-stay due
                               </span>
                             );
                           }
@@ -148,29 +145,33 @@ export function RecentRequestsTable({
                         })()}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    <td className="tnum whitespace-nowrap px-5 py-3 text-sm text-ink-muted">
                       {req.sentAt ? format(new Date(req.sentAt), 'MMM d, h:mm a') : '—'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <div className="flex items-center justify-end space-x-2">
+                    <td className="whitespace-nowrap px-5 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => handleOpenDrawer(req.id)}
-                          className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+                          className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-line/50 hover:text-ink"
                           title="View details"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        {req.status !== 'private_feedback' && req.status !== 'clicked' && (
+                        {/* Was `!== 'private_feedback' && !== 'clicked'`, which
+                            left Resend live on already_reviewed and opted_out —
+                            the two statuses that exist because the guest asked
+                            not to be contacted again. */}
+                        {canResendRequest(req.status) && (
                           <button
                             onClick={() => handleResend(req.id)}
                             disabled={isSending || isSuccess}
-                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
+                            className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-line/50 hover:text-ink disabled:opacity-50"
                             title="Resend invite"
                           >
                             {isSending ? (
                               <RefreshCw className="h-4 w-4 animate-spin" />
                             ) : isSuccess ? (
-                              <Check className="h-4 w-4 text-emerald-500" />
+                              <Check className="h-4 w-4 text-positive" />
                             ) : (
                               <RefreshCw className="h-4 w-4" />
                             )}

@@ -69,7 +69,7 @@ export function BillingSettings() {
     <button
       onClick={handleUpgrade}
       disabled={upgrading}
-      className="inline-flex items-center space-x-2 bg-indigo-600 text-white font-semibold py-2.5 px-6 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+      className="inline-flex items-center space-x-2 bg-brand-600 text-white font-semibold py-2.5 px-6 rounded-xl hover:bg-brand-700 transition-colors disabled:opacity-50"
     >
       {upgrading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
       <span>{upgrading ? 'Connecting…' : `Upgrade to ${plan} — ${PLAN_PRICE}`}</span>
@@ -80,7 +80,7 @@ export function BillingSettings() {
     <button
       onClick={handleManage}
       disabled={openingPortal}
-      className="inline-flex items-center space-x-2 bg-slate-100 text-slate-700 font-semibold py-2.5 px-4 rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50"
+      className="inline-flex items-center space-x-2 bg-muted text-ink font-semibold py-2.5 px-4 rounded-xl hover:bg-line transition-colors disabled:opacity-50"
     >
       {openingPortal ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
       <span>{openingPortal ? 'Opening…' : 'Manage subscription'}</span>
@@ -136,16 +136,16 @@ export function BillingSettings() {
   const endedOn = subscriptionStatus === 'canceled' ? periodEnd : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
+    <div className="bg-card rounded-2xl border border-line shadow-sm p-8 space-y-6">
       <div className="flex items-start space-x-4">
-        <div className="flex items-center justify-center h-12 w-12 shrink-0 rounded-full bg-indigo-100 text-indigo-600">
+        <div className="flex items-center justify-center h-12 w-12 shrink-0 rounded-full bg-brand-100 text-brand-600">
           <Sparkles className="h-6 w-6" />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold text-slate-900">
+          <h2 className="text-xl font-bold text-ink">
             {endedOn ? `${plan} ended ${endedOn}` : `${plan} — ${PLAN_PRICE}`}
           </h2>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-ink-muted mt-1">
             {endedOn
               ? 'Automated invites are paused. Restart your plan to pick up where you left off.'
               : 'Everything you need to turn happy guests into public reviews.'}
@@ -155,8 +155,8 @@ export function BillingSettings() {
 
       <ul className="space-y-2">
         {INCLUDED.map((item) => (
-          <li key={item} className="flex items-start space-x-2.5 text-sm text-slate-600">
-            <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+          <li key={item} className="flex items-start space-x-2.5 text-sm text-ink-muted">
+            <CheckCircle className="h-4 w-4 text-positive shrink-0 mt-0.5" />
             <span>{item}</span>
           </li>
         ))}
@@ -167,7 +167,7 @@ export function BillingSettings() {
         {subscriptionStatus === 'canceled' && manageButton}
       </div>
 
-      <p className="flex items-center space-x-1.5 text-xs text-slate-400">
+      <p className="flex items-center space-x-1.5 text-xs text-ink-faint">
         <CreditCard className="h-3.5 w-3.5" />
         <span>Payments and invoices are handled by Stripe. Cancel any time.</span>
       </p>
@@ -176,9 +176,9 @@ export function BillingSettings() {
 }
 
 const tones = {
-  emerald: { chip: 'bg-emerald-100 text-emerald-600', border: 'border-slate-200' },
-  amber: { chip: 'bg-amber-100 text-amber-600', border: 'border-amber-200' },
-  red: { chip: 'bg-red-100 text-red-600', border: 'border-red-200' },
+  emerald: { chip: 'bg-positive-soft text-positive', border: 'border-line' },
+  amber: { chip: 'bg-caution-soft text-caution', border: 'border-caution/20' },
+  red: { chip: 'bg-critical-soft text-critical', border: 'border-critical/20' },
 };
 
 function StatusCard({
@@ -196,14 +196,14 @@ function StatusCard({
 }) {
   const t = tones[tone];
   return (
-    <div className={`bg-white rounded-2xl border ${t.border} shadow-sm p-8 space-y-5`}>
+    <div className={`bg-card rounded-2xl border ${t.border} shadow-sm p-8 space-y-5`}>
       <div className="flex items-start space-x-4">
         <div className={`flex items-center justify-center h-12 w-12 shrink-0 rounded-full ${t.chip}`}>
           <Icon className="h-6 w-6" />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold text-slate-900">{title}</h2>
-          <p className="text-sm text-slate-500 mt-1">{body}</p>
+          <h2 className="text-xl font-bold text-ink">{title}</h2>
+          <p className="text-sm text-ink-muted mt-1">{body}</p>
         </div>
       </div>
       <div>{action}</div>

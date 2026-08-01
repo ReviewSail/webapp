@@ -174,7 +174,13 @@ export type MappedRow = {
   raw: Record<string, string>;
 };
 
-export type RowIssue = { level: 'error' | 'warning'; message: string };
+/**
+ * 'info' states a fact about the row without implying anything is wrong. It
+ * exists for upcoming stays: an OTA export is mostly future bookings, and
+ * flagging every one of them as a warning would make a healthy import look
+ * broken.
+ */
+export type RowIssue = { level: 'error' | 'warning' | 'info'; message: string };
 
 export type ValidatedRow = MappedRow & {
   issues: RowIssue[];
@@ -252,12 +258,21 @@ export const validateRow = (row: MappedRow, today: Date = new Date()): Validated
         level: 'warning',
         message: `Checked out ${ageDays} days ago — will expire without being sent`,
       });
+    } else if (ageDays < 0) {
+      // Not a problem: the sender holds the invite until the day of checkout.
+      // Saying so is the only way the owner can tell that an import of next
+      // month's arrivals has done what they expected.
+      const daysAway = Math.abs(ageDays);
+      issues.push({
+        level: 'info',
+        message: `Checks out in ${daysAway} ${daysAway === 1 ? 'day' : 'days'} — the invite sends then`,
+      });
     }
   }
 
   const status = issues.some(i => i.level === 'error')
     ? 'error'
-    : issues.length > 0
+    : issues.some(i => i.level === 'warning')
       ? 'warning'
       : 'ok';
 

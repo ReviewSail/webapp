@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../integrations/supabase/client';
-import { Star, MessageSquare, CheckCircle2, MapPin, Sparkles, Send } from 'lucide-react';
+import { Star, MessageSquare, CheckCircle2, MapPin, Send } from 'lucide-react';
 
 export default function Feedback() {
   const [searchParams] = useSearchParams();
   const [requestId, setRequestId] = useState<string | null>(null);
-  const [rating, setRating] = useState<number>(5);
+  // No default. Pre-selecting 5 meant a guest who typed a complaint and hit
+  // send without touching the stars was recorded as a 5-star rating, which fed
+  // straight into the dashboard average.
+  const [rating, setRating] = useState<number | null>(null);
   const [comment, setComment] = useState<string>('');
   const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,6 +59,11 @@ export default function Feedback() {
         return;
       }
 
+      if (rating === null) {
+        setError('Please choose a star rating first.');
+        return;
+      }
+
       const { error: dbError } = await supabase.rpc('submit_guest_feedback', {
         p_request_id: requestId,
         p_star_rating: rating,
@@ -82,30 +90,38 @@ export default function Feedback() {
   };
 
   if (success) {
+    // The star gate, applied where it belongs: only a guest who enjoyed the
+    // stay is pointed at the public review page. Everyone else gets a promise
+    // that a person will read what they wrote.
+    const isHappy = rating !== null && rating >= 4;
+
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-md border border-slate-200 text-center">
-          <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-emerald-100 text-emerald-600">
-            <CheckCircle2 className="h-8 w-8" />
+      <div className="min-h-screen flex items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-6 bg-white p-8 rounded-xl border border-line text-center">
+          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-positive-soft text-positive">
+            <CheckCircle2 className="h-6 w-6" />
           </div>
           <div>
-            <h2 className="mt-4 text-2xl font-black text-slate-900">Feedback Submitted!</h2>
-            <p className="mt-2 text-sm text-slate-500 leading-relaxed">
-              Thank you for sharing your private review with us. Your insights help our team continuously improve our experiences.
+            <h2 className="text-xl font-semibold tracking-[-0.02em] text-ink">Thank you</h2>
+            <p className="mt-2 text-sm text-ink-muted leading-relaxed">
+              {isHappy
+                ? `Your feedback has gone straight to the team at ${locationName}.`
+                : `Your feedback has gone straight to the team at ${locationName}. Someone will read it personally, and they may be in touch.`}
             </p>
           </div>
 
-          {googleUrl && (
-            <div className="bg-gradient-to-r from-indigo-50 to-indigo-100/50 p-5 rounded-xl border border-indigo-100 text-center space-y-3">
-              <Sparkles className="h-5 w-5 text-indigo-600 mx-auto" />
-              <p className="text-xs font-semibold text-slate-700">Would you mind sharing your review publicly on Google too?</p>
+          {googleUrl && isHappy && (
+            <div className="rounded-xl border border-line bg-canvas p-5 text-center space-y-3">
+              <p className="text-sm text-ink">
+                Glad you enjoyed it. Would you share that on Google?
+              </p>
               <a
                 href={googleUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-xs py-2 px-4 rounded-lg shadow-sm transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 active:bg-brand-800"
               >
-                <span>Write a Google Review</span>
+                <span>Write a Google review</span>
                 <Star className="h-3.5 w-3.5 fill-white text-white" />
               </a>
             </div>
@@ -116,42 +132,36 @@ export default function Feedback() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-lg w-full bg-white p-8 rounded-2xl shadow-lg border border-slate-200 space-y-6">
+    <div className="min-h-screen flex items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-lg w-full bg-white p-8 rounded-xl border border-line space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Share Your Experience</h1>
-          <p className="text-sm text-slate-500 mt-1 flex items-center justify-center">
-            <MapPin className="h-4 w-4 text-indigo-600 mr-1 shrink-0" />
+          <h1 className="text-xl font-semibold tracking-[-0.02em] text-ink">How was your stay?</h1>
+          <p className="text-sm text-ink-muted mt-1 flex items-center justify-center">
+            <MapPin className="h-4 w-4 text-ink-faint mr-1 shrink-0" />
             <span>{locationName}</span>
           </p>
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-700 p-3.5 rounded-xl text-xs border border-red-200">
+          <div className="bg-critical-soft text-critical p-3.5 rounded-lg text-xs border border-critical/20">
             {error}
           </div>
         )}
 
-        {/* Unconditional Google Review Shortcut */}
-        {googleUrl && (
-          <div className="bg-indigo-50/60 p-4 rounded-xl border border-indigo-100 text-center space-y-2">
-            <p className="text-xs text-slate-600 font-medium">Want to publish your rating directly to Google Maps right now?</p>
-            <a
-              href={googleUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-1.5 px-3.5 rounded-lg transition-colors shadow-sm"
-            >
-              <span>Go straight to Google Review</span>
-              <Star className="h-3.5 w-3.5 fill-white text-white" />
-            </a>
-          </div>
-        )}
+        {/*
+          There used to be an unconditional "Go straight to Google Review"
+          button here, shown before the guest had rated anything — and every
+          invite and reminder email links to this page. It routed around the
+          star gate that is the entire point of the product: an unhappy guest
+          could be one click from a public one-star review.
 
+          The Google link now appears only after submission, and only for guests
+          who rated the stay well. See the success view above.
+        */}
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Star selector */}
           <div className="space-y-2 text-center">
-            <label className="block text-sm font-semibold text-slate-700">How would you rate your stay?</label>
+            <label className="block text-sm font-medium text-ink">Your rating</label>
             <div className="flex items-center justify-center space-x-1.5 pt-1">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
@@ -163,10 +173,10 @@ export default function Feedback() {
                   className="p-1 hover:scale-110 transition-transform"
                 >
                   <Star
-                    className={`h-9 w-9 ${
-                      star <= (hoverRating ?? rating)
-                        ? 'fill-amber-400 text-amber-400'
-                        : 'text-slate-300'
+                    className={`h-9 w-9 transition-colors ${
+                      star <= (hoverRating ?? rating ?? 0)
+                        ? 'fill-star text-star'
+                        : 'text-line'
                     }`}
                   />
                 </button>
@@ -176,29 +186,32 @@ export default function Feedback() {
 
           {/* Comment Box */}
           <div className="space-y-1.5">
-            <label className="block text-sm font-semibold text-slate-700 flex items-center">
-              <MessageSquare className="h-4 w-4 text-slate-400 mr-1.5" />
-              <span>Private Feedback Message</span>
+            <label htmlFor="guest-comment" className="text-sm font-medium text-ink flex items-center">
+              <MessageSquare className="h-4 w-4 text-ink-faint mr-1.5" />
+              <span>Tell us more</span>
             </label>
-            <p className="text-[11px] text-slate-500 leading-relaxed">This message goes directly and confidentially to our management team.</p>
+            <p className="text-xs text-ink-muted leading-relaxed">
+              This goes privately to the management team — it is not published anywhere.
+            </p>
             <textarea
+              id="guest-comment"
               rows={4}
               required
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Tell us what went well, or how we could have made your experience better..."
-              className="w-full text-sm rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 px-3 border bg-white"
+              placeholder="What went well, or what would have made it better?"
+              className="w-full text-sm rounded-lg border border-line bg-white py-2.5 px-3 text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
 
           {/* Submit */}
           <button
             type="submit"
-            disabled={loading}
-            className="w-full bg-slate-900 text-white hover:bg-slate-800 text-sm font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors flex items-center justify-center space-x-1.5 disabled:opacity-50"
+            disabled={loading || rating === null}
+            className="w-full bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 text-sm font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <Send className="h-4 w-4" />
-            <span>{loading ? 'Submitting...' : 'Submit Confidential Review'}</span>
+            <span>{loading ? 'Sending…' : 'Send feedback'}</span>
           </button>
         </form>
       </div>

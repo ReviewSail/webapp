@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Star, MessageSquare, Reply, CornerDownRight, CheckCircle, Download } from 'lucide-react';
 import { EmptyState } from '../ui/EmptyState';
+import { Button } from '../ui/Button';
 import { format } from 'date-fns';
 
 interface PrivateFeedbackSectionProps {
@@ -78,26 +79,19 @@ export function PrivateFeedbackSection({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden mt-8">
-      <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900 flex items-center">
-            <MessageSquare className="h-5 w-5 mr-2 text-indigo-600" />
-            <span>Private Feedback & Service Recovery</span>
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Read and respond directly to confidential 1-5 star ratings sent via guest invites.
+    <div className="overflow-hidden rounded-xl border border-line bg-card">
+      <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold text-ink">Guests waiting on a reply</h2>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Private ratings sent straight to you, not to Google.
           </p>
         </div>
 
         {feedbacks.length > 0 && (
-          <button
-            onClick={handleExportFeedbackCSV}
-            className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2 px-3.5 rounded-xl shadow-sm transition-all shrink-0"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>Export Feedback CSV</span>
-          </button>
+          <Button variant="secondary" size="sm" icon={Download} onClick={handleExportFeedbackCSV}>
+            Export CSV
+          </Button>
         )}
       </div>
 
@@ -106,44 +100,44 @@ export function PrivateFeedbackSection({
           icon={MessageSquare}
           size="sm"
           bare
-          title="No private feedback yet"
-          description="Confidential submissions will populate here automatically."
+          title="Nothing waiting on you"
+          description="Private ratings from guests will land here as invites go out."
         />
       ) : (
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-line">
           {feedbacks.map((fb: any) => {
             const request = reviewRequests.find((r: any) => r.id === fb.requestId);
             const order = request ? orders.find((o: any) => o.id === request.orderId) : null;
             const customer = order ? customers.find((c: any) => c.id === order.customerId) : null;
 
             return (
-              <div key={fb.id} className="p-6 hover:bg-slate-50/30 transition-colors space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center space-x-3">
-                    <div className="h-9 w-9 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center">
+              <div key={fb.id} className="space-y-3 p-5 transition-colors hover:bg-canvas/60">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[11px] font-semibold text-brand-700">
                       {fb.guestName ? fb.guestName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : customer ? `${customer.firstName[0]}${customer.lastName[0]}` : '??'}
                     </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-800">
-                        {fb.guestName || (customer ? `${customer.firstName} ${customer.lastName}` : 'Confidential Guest')}
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-medium text-ink">
+                        {fb.guestName || (customer ? `${customer.firstName} ${customer.lastName}` : 'Confidential guest')}
                       </h4>
-                      <p className="text-xs text-slate-400">
-                        {fb.guestEmail || customer?.email || 'No email registered'}
+                      <p className="truncate text-xs text-ink-muted">
+                        {fb.guestEmail || customer?.email || 'No email on file'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-1">
+                  <div className="flex shrink-0 items-center gap-0.5">
                     {fb.starRating == null ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">
-                        Recovery Message
+                      <span className="inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-700">
+                        Recovery message
                       </span>
                     ) : (
                       [1, 2, 3, 4, 5].map((star) => (
                         <Star
                           key={star}
-                          className={`h-4.5 w-4.5 ${
-                            star <= fb.starRating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
+                          className={`h-4 w-4 ${
+                            star <= fb.starRating ? 'fill-star text-star' : 'text-line'
                           }`}
                         />
                       ))
@@ -151,67 +145,71 @@ export function PrivateFeedbackSection({
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-700 leading-relaxed border border-slate-100">
-                  <p className="italic">"{fb.feedbackText || 'No written message.'}"</p>
+                <div className="rounded-lg border border-line bg-canvas p-3.5 text-[13px] leading-relaxed text-ink">
+                  <p>{fb.feedbackText || 'No written message.'}</p>
                 </div>
 
                 {fb.managerResponse ? (
-                  <div className="pl-6 flex items-start space-x-2.5">
-                    <CornerDownRight className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
-                    <div className="bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100/40 flex-1 text-xs text-slate-700">
-                      <span className="font-bold text-indigo-900 block mb-1">Your Response:</span>
-                      <p className="italic text-slate-600">"{fb.managerResponse}"</p>
+                  <div className="flex items-start gap-2.5 pl-5">
+                    <CornerDownRight className="mt-0.5 h-4 w-4 shrink-0 text-ink-faint" />
+                    <div className="flex-1 rounded-lg border border-brand-100 bg-brand-50 p-3.5 text-[13px] text-ink">
+                      <span className="mb-1 block text-xs font-medium text-brand-800">You replied</span>
+                      <p className="text-ink-muted">{fb.managerResponse}</p>
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-end">
                     {activeReplyId === fb.id ? (
-                      <div className="w-full space-y-2 mt-2">
+                      <div className="w-full space-y-2">
                         <textarea
                           rows={2}
                           value={responseText}
                           onChange={(e) => setResponseText(e.target.value)}
-                          placeholder="Draft your private response..."
-                          className="w-full text-xs rounded-xl border-slate-300 shadow-sm focus:border-indigo-500 py-2 px-3 border bg-white"
+                          placeholder="Write your private reply…"
+                          aria-label="Private reply to guest"
+                          className="w-full rounded-lg border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                         />
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => {
                               setActiveReplyId(null);
                               setResponseText('');
                             }}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] py-1.5 px-3 rounded-lg"
                           >
                             Cancel
-                          </button>
-                          <button
+                          </Button>
+                          <Button
+                            size="sm"
+                            icon={Reply}
+                            loading={submitting}
+                            disabled={!responseText.trim()}
                             onClick={() => handleSendResponse(fb.id)}
-                            disabled={submitting || !responseText.trim()}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg flex items-center space-x-1"
                           >
-                            <Reply className="h-3 w-3" />
-                            <span>{submitting ? 'Sending...' : 'Send Reply'}</span>
-                          </button>
+                            Send reply
+                          </Button>
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         {successId === fb.id && (
-                          <span className="text-[10px] font-semibold text-emerald-600 flex items-center">
-                            <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                            Response saved!
+                          <span className="flex items-center gap-1 text-xs font-medium text-positive">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            Reply sent
                           </span>
                         )}
-                        <button
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={Reply}
                           onClick={() => {
                             setActiveReplyId(fb.id);
                             setResponseText('');
                           }}
-                          className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-semibold py-1.5 px-3 rounded-lg flex items-center space-x-1 shadow-sm transition-colors"
                         >
-                          <Reply className="h-3.5 w-3.5" />
-                          <span>Respond to Guest</span>
-                        </button>
+                          Reply to guest
+                        </Button>
                       </div>
                     )}
                   </div>

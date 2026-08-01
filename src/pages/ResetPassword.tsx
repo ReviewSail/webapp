@@ -80,21 +80,21 @@ export default function ResetPassword() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <RefreshCw className="h-8 w-8 animate-spin text-indigo-600" />
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <RefreshCw className="h-8 w-8 animate-spin text-brand-600" />
       </div>
     );
   }
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-md border border-slate-200 text-center">
-          <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-emerald-100 text-emerald-600">
+      <div className="flex min-h-screen items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8 bg-card p-8 rounded-2xl shadow-md border border-line text-center">
+          <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-positive-soft text-positive">
             <CheckCircle2 className="h-8 w-8" />
           </div>
-          <h2 className="text-2xl font-extrabold text-slate-900">Password Updated!</h2>
-          <p className="text-sm text-slate-500 leading-relaxed">
+          <h2 className="text-2xl font-extrabold text-ink">Password Updated!</h2>
+          <p className="text-sm text-ink-muted leading-relaxed">
             Your password has been changed successfully. You'll be redirected to the login page shortly.
           </p>
         </div>
@@ -103,23 +103,23 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 bg-white p-10 rounded-xl shadow-sm border border-slate-200">
+    <div className="flex min-h-screen items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-8 bg-card p-10 rounded-xl shadow-sm border border-line">
         <div className="text-center">
-          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 text-indigo-600 mb-4">
+          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-brand-100 text-brand-600 mb-4">
             <KeyRound className="h-6 w-6" />
           </div>
-          <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h2 className="text-3xl font-extrabold text-ink tracking-tight">
             Set New Password
           </h2>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-ink-muted">
             Enter your new password below.
           </p>
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           {error && (
-            <div className="bg-red-50 text-red-700 p-3.5 rounded-xl text-xs border border-red-200 flex items-start space-x-2.5">
+            <div className="bg-critical-soft text-critical p-3.5 rounded-xl text-xs border border-critical/20 flex items-start space-x-2.5">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -128,7 +128,7 @@ export default function ResetPassword() {
           <div className="space-y-4">
             {/* New Password */}
             <div>
-              <label htmlFor="new-password" className="block text-xs font-bold text-slate-700 mb-1">
+              <label htmlFor="new-password" className="block text-xs font-bold text-ink mb-1">
                 New Password
               </label>
               <div className="relative">
@@ -140,13 +140,13 @@ export default function ResetPassword() {
                   minLength={6}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="appearance-none rounded-md relative block w-full px-3 py-2.5 border border-slate-300 placeholder-slate-500 text-slate-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm pr-10"
+                  className="appearance-none rounded-md relative block w-full px-3 py-2.5 border border-line placeholder-slate-500 text-ink focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm pr-10"
                   placeholder="At least 6 characters"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-ink-faint hover:text-ink-muted"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -156,7 +156,7 @@ export default function ResetPassword() {
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirm-password" className="block text-xs font-bold text-slate-700 mb-1">
+              <label htmlFor="confirm-password" className="block text-xs font-bold text-ink mb-1">
                 Confirm New Password
               </label>
               <input
@@ -167,7 +167,7 @@ export default function ResetPassword() {
                 minLength={6}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="appearance-none rounded-md relative block w-full px-3 py-2.5 border border-slate-300 placeholder-slate-500 text-slate-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2.5 border border-line placeholder-slate-500 text-ink focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm"
                 placeholder="Re-enter your new password"
               />
             </div>
@@ -177,7 +177,7 @@ export default function ResetPassword() {
             <button
               type="submit"
               disabled={submitting || !newPassword || !confirmPassword}
-              className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-bold rounded-md text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 disabled:opacity-50 transition-colors"
+              className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-bold rounded-md text-white bg-ink hover:bg-ink focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-line disabled:opacity-50 transition-colors"
             >
               {submitting ? (
                 <RefreshCw className="h-5 w-5 animate-spin" />

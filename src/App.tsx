@@ -15,15 +15,28 @@ import ResetPassword from "./pages/ResetPassword"
 import FeedbackGate from "./pages/FeedbackGate"
 import ReviewReply from "./pages/ReviewReply"
 import AcceptInvite from "./pages/AcceptInvite"
+import Inbox from "./pages/Inbox"
 import NotFound from "./pages/NotFound"
 import { ToastProvider } from "./components/ui/Toast"
+import { ThemeProvider } from "./context/ThemeContext"
+import { SailMark } from "./components/brand/SailMark"
 import { isStaff } from "./lib/roles"
+
+/** The first thing a returning user sees. Branded, and quiet about it. */
+const RouteLoader = () => (
+  <div className="flex min-h-screen items-center justify-center bg-canvas">
+    <div className="flex items-center gap-2.5 text-ink-muted">
+      <SailMark variant="container" className="h-7 w-7 shrink-0 animate-pulse" />
+      <span className="text-sm font-medium">Loading ReviewSail…</span>
+    </div>
+  </div>
+);
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { session, loading } = useAuth();
 
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen bg-slate-50">Loading...</div>;
+    return <RouteLoader />;
   }
 
   if (!session) {
@@ -37,7 +50,7 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { role, loading } = useAuth();
 
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen bg-slate-50">Loading...</div>;
+    return <RouteLoader />;
   }
 
   if (isStaff(role)) {
@@ -72,6 +85,9 @@ function AppRoutes() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="import" element={<SyncGuests />} />
         <Route path="guests" element={<Guests />} />
+        {/* Was a tab on the Dashboard. Old links keep working — Dashboard
+            redirects ?tab=feedback here. */}
+        <Route path="inbox" element={<Inbox />} />
         <Route path="reply" element={<ReviewReply />} />
         <Route path="settings" element={
           <AdminRoute>
@@ -86,15 +102,17 @@ function AppRoutes() {
 
 function App() {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <ReviewSailProvider>
-          <Router>
-            <AppRoutes />
-          </Router>
-        </ReviewSailProvider>
-      </AuthProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <ReviewSailProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </ReviewSailProvider>
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   )
 }
 

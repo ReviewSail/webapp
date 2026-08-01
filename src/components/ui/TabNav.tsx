@@ -16,9 +16,9 @@ interface TabNavProps {
 
 export function TabNav({ tabs, active, onChange }: TabNavProps) {
   return (
-    <div className="border-b border-slate-200">
+    <div className="border-b border-line">
       {/* Settings has six tabs; on a phone they scroll rather than wrap. */}
-      <nav className="flex space-x-6 overflow-x-auto" role="tablist">
+      <nav className="flex gap-5 overflow-x-auto" role="tablist">
         {tabs.map(({ key, label, icon: Icon, badge }) => (
           <button
             key={key}
@@ -26,16 +26,16 @@ export function TabNav({ tabs, active, onChange }: TabNavProps) {
             aria-selected={active === key}
             onClick={() => onChange(key)}
             className={cn(
-              'pb-3 px-1 text-sm font-semibold border-b-2 transition-colors flex items-center space-x-2 shrink-0',
+              'flex shrink-0 items-center gap-2 border-b-2 px-1 pb-2.5 text-sm font-medium transition-colors',
               active === key
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'border-brand-600 text-brand-700'
+                : 'border-transparent text-ink-muted hover:text-ink'
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-4 w-4" aria-hidden="true" />
             <span>{label}</span>
             {badge !== undefined && badge > 0 && (
-              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white min-w-[18px] h-4">
+              <span className="tnum inline-flex h-4 min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[10px] font-semibold text-white">
                 {badge > 99 ? '99+' : badge}
               </span>
             )}

@@ -1,11 +1,16 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useReviewSail } from '../context/ReviewSailContext';
-import { Search, User, Mail, Phone, Eye } from 'lucide-react';
+import { Search, User, Mail, Phone, Eye, FileUp } from 'lucide-react';
 import { GuestDetailPanel } from '../components/dashboard/GuestDetailPanel';
+import { PageHeader } from '../components/ui/PageHeader';
+import { EmptyState } from '../components/ui/EmptyState';
+import { Button } from '../components/ui/Button';
 import { format } from 'date-fns';
 
 export default function Guests() {
   const { customers, reviewRequests, orders, messageEvents, triggerSingleResend } = useReviewSail();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -55,43 +60,71 @@ export default function Guests() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Guests</h1>
-        <p className="text-sm text-slate-500 mt-1">All customer records and their latest review request status.</p>
-      </div>
+      <PageHeader
+        title="Guests"
+        description="Everyone you've imported, and where their review invite got to."
+        action={
+          <Button icon={FileUp} onClick={() => navigate('/import')}>
+            Import guests
+          </Button>
+        }
+      />
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, email, or phone..."
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:border-indigo-500 focus:ring-indigo-500"
+          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-line bg-card text-sm focus:border-brand-500 focus:ring-brand-500"
         />
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-card rounded-2xl border border-line shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-100">
-            <thead className="bg-slate-50">
+          <table className="min-w-full divide-y divide-line">
+            <thead className="bg-canvas">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Guest</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contact</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Last Request</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Details</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-ink-muted uppercase tracking-wider">Guest</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-ink-muted uppercase tracking-wider">Contact</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-ink-muted uppercase tracking-wider">Last Request</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-ink-muted uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-bold text-ink-muted uppercase tracking-wider">Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-line">
               {filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                    <User className="h-8 w-8 mx-auto mb-3 text-slate-300" />
-                    <p className="text-sm font-semibold text-slate-700">No guests found</p>
-                    <p className="text-xs text-slate-400 mt-1">Import or add guests to see them here.</p>
+                  <td colSpan={5}>
+                    {/* A failed search and an empty account are different
+                        situations. Offering "Import guests" to someone who just
+                        mistyped a name is noise; withholding it from someone
+                        with no guests at all is the dead end this page had. */}
+                    {search.trim() ? (
+                      <EmptyState
+                        icon={Search}
+                        size="sm"
+                        bare
+                        title="No guests match that search"
+                        description="Try part of a name, an email address, or a phone number."
+                      />
+                    ) : (
+                      <EmptyState
+                        icon={User}
+                        size="sm"
+                        bare
+                        title="No guests yet"
+                        description="Import a checkout report and ReviewSail invites each guest the day they leave."
+                        action={
+                          <Button icon={FileUp} onClick={() => navigate('/import')}>
+                            Import guests
+                          </Button>
+                        }
+                      />
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -112,48 +145,48 @@ export default function Guests() {
 
                   const statusBadge = (status: string) => {
                     switch (status) {
-                      case 'pending': return 'bg-amber-50 text-amber-700 border-amber-200';
-                      case 'sent': return 'bg-blue-50 text-blue-700 border-blue-200';
-                      case 'clicked': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                      case 'opted_out': return 'bg-red-50 text-red-600 border-red-200';
-                      case 'expired': return 'bg-slate-50 text-slate-500 border-slate-200';
-                      case 'already_reviewed': return 'bg-violet-50 text-violet-700 border-violet-200';
-                      default: return 'bg-slate-50 text-slate-600 border-slate-200';
+                      case 'pending': return 'bg-caution-soft text-caution border-caution/20';
+                      case 'sent': return 'bg-brand-50 text-brand-700 border-brand-200';
+                      case 'clicked': return 'bg-positive-soft text-positive border-positive/20';
+                      case 'opted_out': return 'bg-critical-soft text-critical border-critical/20';
+                      case 'expired': return 'bg-canvas text-ink-muted border-line';
+                      case 'already_reviewed': return 'bg-brand-50 text-brand-700 border-brand-200';
+                      default: return 'bg-canvas text-ink-muted border-line';
                     }
                   };
 
                   return (
-                    <tr key={customer.id} className="hover:bg-slate-50/50 transition-colors">
+                    <tr key={customer.id} className="hover:bg-canvas/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-3">
-                          <div className="h-8 w-8 rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center justify-center">
+                          <div className="h-8 w-8 rounded-full bg-brand-50 text-brand-700 font-bold text-xs flex items-center justify-center">
                             {customer.firstName?.[0]}{customer.lastName?.[0]}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-slate-800">{customer.firstName} {customer.lastName}</p>
+                            <p className="text-sm font-semibold text-ink">{customer.firstName} {customer.lastName}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="space-y-1">
                           {customer.email && (
-                            <div className="flex items-center space-x-1.5 text-xs text-slate-500">
+                            <div className="flex items-center space-x-1.5 text-xs text-ink-muted">
                               <Mail className="h-3 w-3" />
                               <span>{customer.email}</span>
                             </div>
                           )}
                           {customer.phone && (
-                            <div className="flex items-center space-x-1.5 text-xs text-slate-500">
+                            <div className="flex items-center space-x-1.5 text-xs text-ink-muted">
                               <Phone className="h-3 w-3" />
                               <span>{customer.phone}</span>
                             </div>
                           )}
                           {!customer.email && !customer.phone && (
-                            <span className="text-xs text-slate-400">No contact info</span>
+                            <span className="text-xs text-ink-faint">No contact info</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-ink-muted">
                         {latestRequest?.sentAt ? format(new Date(latestRequest.sentAt), 'MMM d, h:mm a') : '—'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -163,13 +196,13 @@ export default function Guests() {
                               {statusLabel(latestRequest.status)}
                             </span>
                           ) : (
-                            <span className="text-xs text-slate-400">No requests</span>
+                            <span className="text-xs text-ink-faint">No requests</span>
                           )}
                           {latestRequest && (() => {
                             const order = orders.find(o => o.id === latestRequest.orderId);
                             if (order?.midstaySent) {
                               return (
-                                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-200">
+                                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-brand-50 text-brand-700 border-brand-200">
                                   🏨 Mid-Stay ✓
                                 </span>
                               );
@@ -181,7 +214,7 @@ export default function Guests() {
                               const now = Date.now();
                               if (checkin.getTime() < now - oneDayMs && checkout.getTime() > now + oneDayMs) {
                                 return (
-                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-blue-50 text-blue-500 border-blue-200">
+                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-brand-50 text-brand-500 border-brand-200">
                                     ⏳ Mid-Stay Pending
                                   </span>
                                 );
@@ -195,7 +228,7 @@ export default function Guests() {
                         {latestRequest && (
                           <button
                             onClick={() => handleOpenDrawer(latestRequest.id)}
-                            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+                            className="p-1.5 hover:bg-muted rounded-lg text-ink-faint hover:text-ink-muted transition-colors"
                             title="View details"
                           >
                             <Eye className="h-4 w-4" />

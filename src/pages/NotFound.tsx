@@ -7,20 +7,20 @@ import { Compass } from 'lucide-react';
  */
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 py-12 px-4">
-      <div className="w-full max-w-md text-center space-y-6 bg-white p-10 rounded-2xl shadow-sm border border-slate-200">
-        <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-indigo-50 text-indigo-600">
+    <div className="flex min-h-screen items-center justify-center bg-canvas py-12 px-4">
+      <div className="w-full max-w-md text-center space-y-6 bg-card p-10 rounded-2xl shadow-sm border border-line">
+        <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-brand-50 text-brand-600">
           <Compass className="h-7 w-7" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-slate-900">This page doesn't exist</h1>
-          <p className="text-sm text-slate-500 mt-2">
+          <h1 className="text-xl font-bold text-ink">This page doesn't exist</h1>
+          <p className="text-sm text-ink-muted mt-2">
             The link may be out of date, or the address may have a typo in it.
           </p>
         </div>
         <Link
           to="/dashboard"
-          className="inline-flex items-center bg-indigo-600 text-white font-semibold py-2.5 px-5 rounded-xl hover:bg-indigo-700 transition-colors"
+          className="inline-flex items-center bg-brand-600 text-white font-semibold py-2.5 px-5 rounded-xl hover:bg-brand-700 transition-colors"
         >
           Go to your dashboard
         </Link>

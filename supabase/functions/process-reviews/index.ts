@@ -240,6 +240,57 @@ serve(async (req) => {
     );
     console.log(`[process-reviews] Loaded ${optedOutEmails.size} opted-out emails, ${optedOutPhones.size} opted-out phones.`);
 
+    /**
+     * Has the guest actually left?
+     *
+     * Every OTA export is forward-looking — a Booking.com or Airbnb reservations
+     * download is mostly stays that have not happened yet. Phase 1 only ever
+     * asked whether a stay was *too old* (>14 days) and treated everything else
+     * as ready, so the first import an owner ever did sent "thanks for staying"
+     * to guests who had not arrived. Phase 3 learned this in migration 0022 and
+     * compares calendar days at the property; Phases 1 and 2 now do the same.
+     *
+     * Compared as calendar days, not instants: checkout_date holds midnight UTC
+     * of the date the host typed, so an instant comparison would hold a guest
+     * who left this morning until tomorrow.
+     */
+    const hasCheckedOut = (order: any, location: any): boolean => {
+      const checkoutDay = utcDateOnly(order?.checkout_date);
+      // No checkout date recorded — nothing to wait for; the old behaviour of
+      // sending immediately is preserved.
+      if (!checkoutDay) return true;
+      return checkoutDay <= localDateFor(location?.timezone);
+    };
+
+    /**
+     * Accounts allowed to send.
+     *
+     * subscription_status was written by the Stripe webhook and read by the UI,
+     * but nothing on the sending path ever looked at it — so unpaid accounts
+     * kept sending while TrialBanner told them "automated invites are switched
+     * off". The claim is now true.
+     *
+     * Loaded once as a set rather than joined per request: the table is small
+     * and this keeps the per-request check to a Set lookup.
+     */
+    const { data: sendingAccounts, error: accountsError } = await supabase
+      .from('accounts')
+      .select('id, subscription_status')
+      .in('subscription_status', ['active', 'trialing']);
+
+    if (accountsError) {
+      // Failing open would send on behalf of every unpaid account. Failing
+      // closed delays invites by one cron tick, which is recoverable.
+      console.error('[process-reviews] Could not load billing state; sending nothing this run:', accountsError);
+      throw accountsError;
+    }
+
+    const payingAccountIds = new Set((sendingAccounts || []).map(a => a.id));
+    console.log(`[process-reviews] ${payingAccountIds.size} account(s) on an active plan.`);
+
+    /** True when this location's account may send. */
+    const canSend = (location: any): boolean => payingAccountIds.has(location?.account_id);
+
     // --- PHASE 1: PROCESS PENDING REVIEW REQUESTS ---
     let query = supabase
       .from('review_requests')
@@ -250,6 +301,7 @@ serve(async (req) => {
           checkout_date,
           locations (
             id,
+            account_id,
             name,
             google_place_url,
             enable_email,
@@ -268,8 +320,20 @@ serve(async (req) => {
         )
       `);
 
+    /**
+     * Statuses a manual resend may target. Mirrors RESENDABLE_STATUSES in
+     * src/context/ReviewSailContext.tsx — keep the two in step.
+     *
+     * Single-request mode previously applied no status filter at all, so the
+     * dashboard's resend button would re-send to a guest who had clicked
+     * "Already left us a review? We won't contact you again", and flip the row
+     * back to 'sent'. `opted_out` was caught further down by the opt-out table
+     * check, but `already_reviewed` was not caught anywhere.
+     */
+    const RESENDABLE_STATUSES = ['pending', 'sent'];
+
     if (specificRequestId) {
-      query = query.eq('id', specificRequestId);
+      query = query.eq('id', specificRequestId).in('status', RESENDABLE_STATUSES);
     } else {
       query = query.eq('status', 'pending').limit(50);
     }
@@ -279,6 +343,20 @@ serve(async (req) => {
     if (fetchError) {
       console.error("[process-reviews] Error fetching requests:", fetchError);
       throw fetchError;
+    }
+
+    // Ownership was already verified above, so an empty result here means the
+    // row exists but is not resendable. Say so plainly — reporting a no-op as a
+    // successful send is what put a tick next to "resent" on guests who had
+    // opted out.
+    if (specificRequestId && (!pendingRequests || pendingRequests.length === 0)) {
+      console.log(`[process-reviews] Refusing resend of ${specificRequestId}: not in a resendable state.`);
+      return new Response(JSON.stringify({
+        error: "This guest has already responded or opted out, so the invite can't be sent again.",
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const processedResults = [];
@@ -308,6 +386,21 @@ serve(async (req) => {
           }
         }
 
+        // Stay is still ahead of the guest. Leave it pending — it becomes
+        // sendable on its own the day they check out.
+        if (!hasCheckedOut(order, location)) {
+          console.log(`[process-reviews] Request ${request.id} checks out ${utcDateOnly(order.checkout_date)}; holding until after checkout.`);
+          continue;
+        }
+
+        // A manual resend from the dashboard still respects billing — the
+        // button is only reachable by an account that can see the dashboard,
+        // but the plan is what authorises the send.
+        if (!canSend(location)) {
+          console.log(`[process-reviews] Request ${request.id} held: account ${location.account_id} has no active plan.`);
+          continue;
+        }
+
         if (!specificRequestId) {
           const preferredHour = location.preferred_send_hour ?? 10;
           const localHour = localHourFor(location.timezone);
@@ -328,7 +421,6 @@ serve(async (req) => {
         const isEmailEnabled = location.enable_email !== false;
         const isSmsEnabled = location.enable_sms !== false;
 
-        const cleanEmail = customer.email || '';
         // Carries the request, not the address. The address used to travel in
         // the query string, which meant anyone could unsubscribe anyone simply
         // by editing the link.
@@ -355,9 +447,17 @@ serve(async (req) => {
         console.log(`[process-reviews] Request ${request.id} composed | EMAIL(${emailMessage.length}): ${emailMessage.slice(0, 90)} | SMS(${smsMessage.length}): ${smsMessage}`);
 
         let sendSuccess = false;
+        // Whether a provider was actually called. This is what separates "no
+        // Resend/Twilio credentials configured, so nothing could be sent" from
+        // "Resend answered 500". Both used to fall through the mock branch
+        // below and mark the request `sent`, which meant a real outage silently
+        // consumed invites: the row was final, nothing retried it, and the
+        // dashboard reported a clean send.
+        let attemptedSend = false;
 
         // Email via Resend
         if (isEmailEnabled && customer.email && resendApiKey && resendFromEmail) {
+          attemptedSend = true;
           try {
             console.log(`[process-reviews] Sending Resend email for request ${request.id}`);
             const emailResponse = await fetch('https://api.resend.com/emails', {
@@ -393,6 +493,7 @@ serve(async (req) => {
         }
 
         if (!smsOptedOut && isSmsEnabled && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
+          attemptedSend = true;
           try {
             console.log(`[process-reviews] Sending Twilio SMS for request ${request.id} (${smsMessage.length} chars)`);
             const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
@@ -423,46 +524,54 @@ serve(async (req) => {
           }
         }
 
-        // Fallback mock
+        // A provider was called and every call failed. Leave the request
+        // `pending` so the next sweep retries it — the 14-day expiry check at
+        // the top of this loop is what eventually stops it.
+        if (!sendSuccess && attemptedSend) {
+          console.error(`[process-reviews] All configured channels failed for request ${request.id}; leaving it pending to retry.`);
+          processedResults.push({ id: request.id, type: 'pending', status: 'send_failed' });
+          continue;
+        }
+
+        // Nothing was even attempted: no provider credentials, or the guest has
+        // no address on the enabled channels. Mock mode, so the flow can still
+        // be exercised end to end without Resend or Twilio.
         if (!sendSuccess) {
-          console.warn(`[process-reviews] Mock mode: invite queued for request ${request.id}`);
+          console.warn(`[process-reviews] Mock mode: no provider called for request ${request.id}; marking sent.`);
           sendSuccess = true;
         }
 
-        if (sendSuccess) {
-          await supabase
-            .from('review_requests')
-            .update({
-              status: 'sent',
-              sent_at: new Date().toISOString()
-            })
-            .eq('id', request.id);
-
-          await supabase.from('message_events').insert({
-            request_id: request.id,
-            event_type: 'sent'
-          });
-
-          processedResults.push({
-            id: request.id,
-            type: 'pending',
+        // Both failure paths returned above, so this is a genuine send.
+        await supabase
+          .from('review_requests')
+          .update({
             status: 'sent',
-            // Single-request mode is the "send a test to myself" path, so hand
-            // back exactly what was composed. Omitted for the bulk cron sweep,
-            // which would otherwise dump every guest's message into the log.
-            ...(specificRequestId
-              ? {
-                  emailPreview: emailMessage,
-                  // Suppressed rather than composed-and-sent, so the caller can
-                  // tell an opt-out apart from a missing Twilio credential.
-                  smsPreview: smsOptedOut ? null : smsMessage,
-                  smsSuppressedReason: smsOptedOut ? 'phone_opted_out' : null,
-                }
-              : {}),
-          });
-        } else {
-          processedResults.push({ id: request.id, type: 'pending', status: 'failed' });
-        }
+            sent_at: new Date().toISOString()
+          })
+          .eq('id', request.id);
+
+        await supabase.from('message_events').insert({
+          request_id: request.id,
+          event_type: 'sent'
+        });
+
+        processedResults.push({
+          id: request.id,
+          type: 'pending',
+          status: 'sent',
+          // Single-request mode is the "send a test to myself" path, so hand
+          // back exactly what was composed. Omitted for the bulk cron sweep,
+          // which would otherwise dump every guest's message into the log.
+          ...(specificRequestId
+            ? {
+                emailPreview: emailMessage,
+                // Suppressed rather than composed-and-sent, so the caller can
+                // tell an opt-out apart from a missing Twilio credential.
+                smsPreview: smsOptedOut ? null : smsMessage,
+                smsSuppressedReason: smsOptedOut ? 'phone_opted_out' : null,
+              }
+            : {}),
+        });
       }
     }
 
@@ -480,6 +589,7 @@ serve(async (req) => {
             checkout_date,
             locations (
               id,
+              account_id,
               name,
               google_place_url,
               enable_email,
@@ -543,6 +653,15 @@ serve(async (req) => {
                 }
               }
 
+              // Same gate as Phase 1: never chase a review for a stay that has
+              // not finished.
+              if (!hasCheckedOut(order, location)) continue;
+
+              if (!canSend(location)) {
+                console.log(`[process-reviews] Reminder for ${request.id} held: no active plan.`);
+                continue;
+              }
+
               const preferredHour = location.preferred_send_hour ?? 10;
               if (localHourFor(location.timezone) !== preferredHour) continue;
 
@@ -555,7 +674,6 @@ serve(async (req) => {
               const isEmailEnabled = location.enable_email !== false;
               const isSmsEnabled = location.enable_sms !== false;
 
-              const cleanEmail = customer.email || '';
               const unsubUrl = `${appUrl}/unsubscribe?request_id=${request.id}`;
               const feedbackUrl = `${appUrl}/feedback?request_id=${request.id}`;
               const alreadyReviewedUrl = `${appUrl}/already-reviewed?request_id=${request.id}`;
@@ -577,8 +695,10 @@ serve(async (req) => {
               );
 
               let sendSuccess = false;
+              let attemptedSend = false;
 
               if (isEmailEnabled && customer.email && resendApiKey && resendFromEmail) {
+                attemptedSend = true;
                 try {
                   const emailResponse = await fetch('https://api.resend.com/emails', {
                     method: 'POST',
@@ -604,7 +724,12 @@ serve(async (req) => {
                 console.log(`[process-reviews] Skipping reminder SMS for request ${request.id} — phone opted out.`);
               }
 
-              if (!sendSuccess && !reminderSmsOptedOut && isSmsEnabled && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
+              // Not gated on `!sendSuccess`. It used to be, which meant a guest
+              // with both an address and a phone never received the reminder
+              // SMS — the email succeeding suppressed it. Phase 1 has always
+              // sent both channels when both are enabled; this now matches.
+              if (!reminderSmsOptedOut && isSmsEnabled && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
+                attemptedSend = true;
                 try {
                   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
                   const twilioAuth = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
@@ -634,20 +759,24 @@ serve(async (req) => {
                 }
               }
 
+              // Failed for real: don't log reminder_sent, or the next sweep
+              // would see it and never try again.
+              if (!sendSuccess && attemptedSend) {
+                console.error(`[process-reviews] Reminder failed on every channel for request ${request.id}; will retry.`);
+                processedResults.push({ id: request.id, type: 'reminder', status: 'send_failed' });
+                continue;
+              }
+
               if (!sendSuccess) {
-                console.warn(`[process-reviews] Mock mode: reminder queued for request ${request.id}`);
+                console.warn(`[process-reviews] Mock mode: no provider called for reminder ${request.id}; marking sent.`);
                 sendSuccess = true;
               }
 
-              if (sendSuccess) {
-                await supabase.from('message_events').insert({
-                  request_id: request.id,
-                  event_type: 'reminder_sent'
-                });
-                processedResults.push({ id: request.id, type: 'reminder', status: 'reminder_sent' });
-              } else {
-                processedResults.push({ id: request.id, type: 'reminder', status: 'failed' });
-              }
+              await supabase.from('message_events').insert({
+                request_id: request.id,
+                event_type: 'reminder_sent'
+              });
+              processedResults.push({ id: request.id, type: 'reminder', status: 'reminder_sent' });
             }
           }
         }
@@ -687,6 +816,7 @@ serve(async (req) => {
           ),
           locations (
             id,
+            account_id,
             name,
             midstay_enabled,
             midstay_day,
@@ -732,6 +862,11 @@ serve(async (req) => {
 
           if (location.midstay_enabled === false) {
             console.log(`[process-reviews] Mid-stay: Location "${location.name}" has mid-stay disabled, skipping order ${order.id}.`);
+            continue;
+          }
+
+          if (!canSend(location)) {
+            console.log(`[process-reviews] Mid-stay: order ${order.id} held, no active plan.`);
             continue;
           }
 
@@ -790,8 +925,10 @@ serve(async (req) => {
           const midstaySmsText = `Hi ${customer.first_name}, hope your stay at ${location.name} is going well! Anything we can do to improve it? Just reply. Reply STOP to opt out`;
 
           let sendSuccess = false;
+          let attemptedSend = false;
 
           if (location.enable_email !== false && customer.email && resendApiKey && resendFromEmail) {
+            attemptedSend = true;
             try {
               console.log(`[process-reviews] Mid-stay: Sending Resend email for order ${order.id}`);
               const emailResponse = await fetch('https://api.resend.com/emails', {
@@ -825,7 +962,10 @@ serve(async (req) => {
             console.log(`[process-reviews] Mid-stay: Skipping SMS for order ${order.id} — phone opted out.`);
           }
 
-          if (!sendSuccess && !midstaySmsOptedOut && location.enable_sms !== false && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
+          // As in Phase 2, no longer gated on the email having failed: with both
+          // channels enabled the owner asked for both.
+          if (!midstaySmsOptedOut && location.enable_sms !== false && customer.phone && twilioAccountSid && twilioAuthToken && twilioFromNumber) {
+            attemptedSend = true;
             try {
               console.log(`[process-reviews] Mid-stay: Sending Twilio SMS for order ${order.id} (${midstaySmsText.length} chars)`);
               const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
@@ -856,30 +996,35 @@ serve(async (req) => {
             }
           }
 
+          // Failed for real: leave midstay_sent false so a later sweep on the
+          // same local day can try again.
+          if (!sendSuccess && attemptedSend) {
+            console.error(`[process-reviews] Mid-stay failed on every channel for order ${order.id}; will retry today.`);
+            processedResults.push({ id: order.id, type: 'midstay', status: 'send_failed' });
+            continue;
+          }
+
           if (!sendSuccess) {
-            console.warn(`[process-reviews] Mid-stay mock: check-in queued for order ${order.id}`);
+            console.warn(`[process-reviews] Mid-stay mock: no provider called for order ${order.id}; marking sent.`);
             sendSuccess = true;
           }
 
-          if (sendSuccess) {
-            const nowIso = new Date().toISOString();
-            await supabase
-              .from('orders')
-              .update({
-                midstay_sent: true,
-                midstay_sent_at: nowIso
-              })
-              .eq('id', order.id);
+          // Both failure paths returned above, so this is a genuine send.
+          const nowIso = new Date().toISOString();
+          await supabase
+            .from('orders')
+            .update({
+              midstay_sent: true,
+              midstay_sent_at: nowIso
+            })
+            .eq('id', order.id);
 
-            await supabase.from('message_events').insert({
-              request_id: reviewRequest.id,
-              event_type: 'midstay_checkin'
-            });
+          await supabase.from('message_events').insert({
+            request_id: reviewRequest.id,
+            event_type: 'midstay_checkin'
+          });
 
-            processedResults.push({ id: order.id, type: 'midstay', status: 'midstay_checkin_sent' });
-          } else {
-            processedResults.push({ id: order.id, type: 'midstay', status: 'failed' });
-          }
+          processedResults.push({ id: order.id, type: 'midstay', status: 'midstay_checkin_sent' });
         }
       }
     }

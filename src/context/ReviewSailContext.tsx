@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from './AuthContext';
+import { readFunctionError } from '../lib/functionError';
 import type { DigestSetting } from '../types/reviewSail';
 
 export type { DigestSetting } from '../types/reviewSail';
@@ -48,6 +49,24 @@ export type ReviewRequest = {
   status: 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed' | 'private_feedback';
   sentAt?: string;
 };
+
+/**
+ * Can this request be sent again?
+ *
+ * Only where the guest has not yet answered. Every other status is either the
+ * guest having acted — `clicked`, `private_feedback`, `already_reviewed` and
+ * `opted_out` are all "stop contacting me about this stay", two of them
+ * explicitly — or `expired`, which Phase 1 of process-reviews would simply
+ * re-expire on the next sweep.
+ *
+ * This is a courtesy check, not the control: process-reviews enforces the same
+ * rule server-side, since the dashboard is not the only thing that can call it.
+ * Keep the two in step.
+ */
+export const RESENDABLE_STATUSES: ReadonlyArray<ReviewRequest['status']> = ['pending', 'sent'];
+
+export const canResendRequest = (status: ReviewRequest['status']): boolean =>
+  RESENDABLE_STATUSES.includes(status);
 
 export type OptOut = {
   id: string;
@@ -535,7 +554,11 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
   const triggerSingleResend = async (requestId: string) => {
     try {
       const { error } = await supabase.functions.invoke('process-reviews', { body: { review_request_id: requestId } });
-      if (error) throw error;
+      // A non-2xx response arrives as a FunctionsHttpError whose real message
+      // is in the response body, not err.message — which is how "this guest has
+      // opted out" was surfacing as a bare "Edge Function returned a non-2xx
+      // status code".
+      if (error) throw new Error(await readFunctionError(error, 'Resend process failed'));
       await refreshData();
       return { success: true };
     } catch (err: any) {
@@ -877,23 +900,40 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
     if (!userData?.account_id) return;
 
-    const existing = state.digestSetting;
-    if (existing) {
-      const { error } = await supabase
-        .from('digest_settings')
-        .update({ frequency, enabled, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('digest_settings')
-        .insert({ user_id: session.user.id, account_id: userData.account_id, frequency, enabled });
-      if (error) throw error;
-    }
+    // One row per user (digest_settings has UNIQUE(user_id)), so this is an
+    // upsert rather than a branch on whether we happen to have seen the row.
+    //
+    // The insert branch this replaces never read the new row's id back and
+    // stored '' instead. The next toggle in the same session then took the
+    // update branch and issued `.eq('id', '')`, which Postgres rejects as an
+    // invalid uuid — so the setting silently stopped saving after the first
+    // change, and only a reload made it work again.
+    const { data, error } = await supabase
+      .from('digest_settings')
+      .upsert(
+        {
+          user_id: session.user.id,
+          account_id: userData.account_id,
+          frequency,
+          enabled,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
 
     setState(prev => ({
       ...prev,
-      digestSetting: { id: existing?.id || '', userId: session.user.id, accountId: userData.account_id, frequency, enabled },
+      digestSetting: {
+        id: data.id,
+        userId: data.user_id,
+        accountId: data.account_id,
+        frequency: data.frequency as 'weekly' | 'monthly',
+        enabled: data.enabled,
+      },
     }));
   };
 

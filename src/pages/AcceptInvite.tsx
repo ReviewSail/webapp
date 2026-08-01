@@ -59,11 +59,11 @@ export default function AcceptInvite() {
   }, [token, session, refreshData, navigate]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-6 bg-white p-8 sm:p-10 rounded-2xl shadow-sm border border-slate-200">
+    <div className="flex min-h-screen items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-6 bg-card p-8 sm:p-10 rounded-2xl shadow-sm border border-line">
         <div className="text-center">
-          <span className="inline-flex items-center space-x-1.5 text-xl font-bold text-slate-900 tracking-tight">
-            <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-sm font-black">R</span>
+          <span className="inline-flex items-center space-x-1.5 text-xl font-bold text-ink tracking-tight">
+            <span className="bg-brand-600 text-white px-1.5 py-0.5 rounded text-sm font-black">R</span>
             <span>ReviewSail</span>
           </span>
         </div>
@@ -79,7 +79,7 @@ export default function AcceptInvite() {
             <Panel tone="error" title="Invite not accepted" body={error || ''} />
             <Link
               to="/dashboard"
-              className="block text-center text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+              className="block text-center text-sm font-semibold text-brand-600 hover:text-brand-700"
             >
               Go to ReviewSail
             </Link>
@@ -91,13 +91,13 @@ export default function AcceptInvite() {
             body="Taking you to the dashboard…"
           />
         ) : authLoading || status === 'redeeming' || session ? (
-          <div className="flex flex-col items-center py-6 space-y-3 text-slate-500">
-            <RefreshCw className="h-6 w-6 animate-spin text-indigo-600" />
+          <div className="flex flex-col items-center py-6 space-y-3 text-ink-muted">
+            <RefreshCw className="h-6 w-6 animate-spin text-brand-600" />
             <p className="text-sm">Accepting your invite…</p>
           </div>
         ) : (
           <>
-            <p className="text-center text-sm text-slate-600">
+            <p className="text-center text-sm text-ink-muted">
               Sign in or create your account to accept this invite. Use the email address the
               invitation was sent to.
             </p>
@@ -121,13 +121,13 @@ function Panel({ tone, title, body }: { tone: 'success' | 'error'; title: string
   return (
     <div
       className={`p-4 rounded-xl border flex items-start space-x-2.5 text-sm ${
-        isError ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+        isError ? 'bg-critical-soft border-critical/20 text-critical' : 'bg-positive-soft border-positive/20 text-positive'
       }`}
     >
       {isError ? (
-        <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+        <AlertCircle className="h-5 w-5 text-critical shrink-0 mt-0.5" />
       ) : (
-        <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+        <CheckCircle className="h-5 w-5 text-positive shrink-0 mt-0.5" />
       )}
       <div>
         <h2 className="font-semibold">{title}</h2>

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1500" width="2400" height="1500">
+<defs>
+  <linearGradient id="gCont" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#14294A"/><stop offset=".5" stop-color="#0A1728"/><stop offset="1" stop-color="#050C17"/>
+  </linearGradient>
+  <linearGradient id="gFront" x1=".05" y1="0" x2=".95" y2="1">
+    <stop offset="0" stop-color="#6FC0F5"/><stop offset="1" stop-color="#0071C2"/>
+  </linearGradient>
+  <linearGradient id="gBack" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#1D80CC"/><stop offset="1" stop-color="#00429E"/>
+  </linearGradient>
+  <linearGradient id="gPage" x1="0" y1="0" x2=".7" y2="1">
+    <stop offset="0" stop-color="#0E1B30"/><stop offset="1" stop-color="#060D18"/>
+  </linearGradient>
+</defs>
+<rect width="2400" height="1500" fill="url(#gPage)"/>
+<text x="120" y="130" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="34" font-weight="600" letter-spacing="-0.5" fill="#FFFFFF" fill-opacity="1" text-anchor="start">ReviewSail</text>
+<text x="120" y="175" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="400" letter-spacing="2.5" fill="#8FA3BF" fill-opacity="1" text-anchor="start">App mark / 2026</text>
+<rect x="120" y="205" width="2160" height="1" fill="#FFFFFF" fill-opacity="0.10"/>
+<g transform="translate(120,285) scale(8.12500)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="120" y="880" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" font-weight="400" letter-spacing="1.5" fill="#8FA3BF" fill-opacity="1" text-anchor="start">icon.svg</text>
+<text x="120" y="915" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="start">Gradient sails, dark container</text>
+<text x="760" y="320" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" font-weight="600" letter-spacing="3" fill="#8FA3BF" fill-opacity="1" text-anchor="start">SCALE</text>
+<g transform="translate(760,360) scale(3.00000)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="856.0" y="590" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="middle">192</text>
+<g transform="translate(992,456) scale(1.50000)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="1040.0" y="590" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="middle">96</text>
+<g transform="translate(1128,488) scale(1.00000)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="1160.0" y="590" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="middle">64</text>
+<g transform="translate(1232,504) scale(0.75000)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="1256.0" y="590" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="middle">48</text>
+<g transform="translate(1320,520) scale(0.50000)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="1336.0" y="590" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="middle">32</text>
+<g transform="translate(1392,536) scale(0.25000)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="1400.0" y="590" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="middle">16</text>
+<rect x="760" y="660" width="470" height="330" rx="20" fill="#F2F5F9"/>
+<g transform="translate(855,700) scale(3.90625)"><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)"/></g>
+<text x="995" y="955" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="18" font-weight="400" letter-spacing="0.5" fill="#5A6B85" fill-opacity="1" text-anchor="middle">icon-mark.svg  ·  transparent</text>
+<g transform="translate(1290,690) scale(2.03125)"><rect width="64" height="64" rx="14.5" fill="url(#gCont)"/><path d="M23.5 16.5 L28 51.5 L9.5 48.5 C12 37 17.5 25.5 23.5 16.5 Z" fill="url(#gBack)"/><path d="M35.8 9.5 C49 22.5 56.5 37 54 49.5 L30.5 52 Z" fill="url(#gFront)" stroke="#0A1728" stroke-width="3.2" paint-order="stroke"/></g>
+<text x="1450" y="790" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="76" font-weight="600" letter-spacing="-2" fill="#FFFFFF" fill-opacity="1" text-anchor="start">ReviewSail</text>
+<text x="1450" y="845" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="18" font-weight="400" letter-spacing="0.5" fill="#7E93B2" fill-opacity="1" text-anchor="start">logo-lockup.svg  ·  marketing only, never in-app</text>
+<text x="120" y="1090" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" font-weight="600" letter-spacing="3" fill="#8FA3BF" fill-opacity="1" text-anchor="start">PALETTE</text>
+<rect x="120" y="1130" width="240" height="150" rx="16" fill="#0A1728" stroke="#FFFFFF" stroke-opacity=".10"/>
+<text x="140" y="1330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21" font-weight="500" letter-spacing="0.5" fill="#E8EEF7" fill-opacity="1" text-anchor="start">#0A1728</text>
+<text x="140" y="1362" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="start">container</text>
+<rect x="388" y="1130" width="240" height="150" rx="16" fill="#00429E" stroke="#FFFFFF" stroke-opacity=".10"/>
+<text x="408" y="1330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21" font-weight="500" letter-spacing="0.5" fill="#E8EEF7" fill-opacity="1" text-anchor="start">#00429E</text>
+<text x="408" y="1362" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="start">back / deep</text>
+<rect x="656" y="1130" width="240" height="150" rx="16" fill="#0071C2" stroke="#FFFFFF" stroke-opacity=".10"/>
+<text x="676" y="1330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21" font-weight="500" letter-spacing="0.5" fill="#E8EEF7" fill-opacity="1" text-anchor="start">#0071C2</text>
+<text x="676" y="1362" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="start">brand-600</text>
+<rect x="924" y="1130" width="240" height="150" rx="16" fill="#1D80CC" stroke="#FFFFFF" stroke-opacity=".10"/>
+<text x="944" y="1330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21" font-weight="500" letter-spacing="0.5" fill="#E8EEF7" fill-opacity="1" text-anchor="start">#1D80CC</text>
+<text x="944" y="1362" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="start">back / light</text>
+<rect x="1192" y="1130" width="240" height="150" rx="16" fill="#6FC0F5" stroke="#FFFFFF" stroke-opacity=".10"/>
+<text x="1212" y="1330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="21" font-weight="500" letter-spacing="0.5" fill="#E8EEF7" fill-opacity="1" text-anchor="start">#6FC0F5</text>
+<text x="1212" y="1362" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" letter-spacing="0" fill="#7E93B2" fill-opacity="1" text-anchor="start">front / light</text>
+<text x="120" y="1440" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="18" font-weight="400" letter-spacing="0" fill="#6B80A0" fill-opacity="1" text-anchor="start">Two sail planes and the gap between them. No hull, no waterline.</text>
+</svg>

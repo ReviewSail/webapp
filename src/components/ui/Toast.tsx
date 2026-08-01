@@ -32,19 +32,19 @@ export function useToast() {
 
 const VARIANTS: Record<ToastVariant, { className: string; icon: typeof CheckCircle; iconClass: string }> = {
   success: {
-    className: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+    className: 'bg-positive-soft border-positive/20 text-positive',
     icon: CheckCircle,
-    iconClass: 'text-emerald-600',
+    iconClass: 'text-positive',
   },
   error: {
-    className: 'bg-red-50 border-red-200 text-red-800',
+    className: 'bg-critical-soft border-critical/20 text-critical',
     icon: AlertCircle,
-    iconClass: 'text-red-600',
+    iconClass: 'text-critical',
   },
   info: {
-    className: 'bg-white border-slate-200 text-slate-700',
+    className: 'bg-card border-line text-ink',
     icon: Info,
-    iconClass: 'text-indigo-600',
+    iconClass: 'text-brand-600',
   },
 };
 

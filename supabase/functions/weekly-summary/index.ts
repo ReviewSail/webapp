@@ -25,20 +25,31 @@ serve(async (req) => {
 
     console.log("[weekly-summary] Digest job starting...");
 
-    // Allow forcing a specific frequency for manual triggers
-    let forcedFrequency: 'weekly' | 'monthly' | null = null;
+    /**
+     * Which cadence this run is for. Each cadence has its own cron entry
+     * (see migration 0030) and only ever mails the people who asked for it.
+     *
+     * This used to be a "forced" override that *also* bypassed the per-user
+     * frequency check, defaulting to weekly when absent. Since the only
+     * scheduled caller posts an empty body, every run was a weekly run, and the
+     * check below then skipped everyone who had chosen Monthly — so the monthly
+     * digest could never be sent to anybody, and the Settings option was inert.
+     */
+    let requestedFrequency: 'weekly' | 'monthly' = 'weekly';
     try {
       const body = await req.json();
       if (body && body.frequency && ['weekly', 'monthly'].includes(body.frequency)) {
-        forcedFrequency = body.frequency as 'weekly' | 'monthly';
-        console.log(`[weekly-summary] Forced frequency: ${forcedFrequency}`);
+        requestedFrequency = body.frequency as 'weekly' | 'monthly';
       }
     } catch {
-      // No body or invalid JSON — proceed normally
+      // No body or invalid JSON — treat as the weekly run.
     }
+    console.log(`[weekly-summary] Running the ${requestedFrequency} digest.`);
 
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@maprated.com';
+    // Was reviews@maprated.com — a leftover from the old brand, and a domain
+    // Resend will not send from. Matches the default every other function uses.
+    const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'reviews@reviewsail.com';
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -51,7 +62,7 @@ serve(async (req) => {
     const now = new Date();
     let periodStart: Date;
 
-    if (forcedFrequency === 'monthly') {
+    if (requestedFrequency === 'monthly') {
       periodStart = new Date(now);
       periodStart.setMonth(periodStart.getMonth() - 1);
     } else {
@@ -60,8 +71,8 @@ serve(async (req) => {
     }
 
     const periodStartISO = periodStart.toISOString();
-    const periodLabel = forcedFrequency === 'monthly' ? 'Monthly' : 'Weekly';
-    const periodLabelLower = forcedFrequency === 'monthly' ? 'monthly' : 'weekly';
+    const periodLabel = requestedFrequency === 'monthly' ? 'Monthly' : 'Weekly';
+    const periodLabelLower = requestedFrequency;
 
     console.log(`[weekly-summary] Period: ${periodLabel}, starting ${periodStartISO}`);
 
@@ -279,9 +290,11 @@ serve(async (req) => {
           continue;
         }
 
-        // Skip if frequency doesn't match (unless forced)
-        if (!forcedFrequency && userFrequency !== periodLabelLower) {
-          console.log(`[weekly-summary] Skipping user ${admin.email}: prefers ${userFrequency}, running ${periodLabelLower}.`);
+        // The recipient's own preference decides which run mails them, always.
+        // There is no override: a manual trigger that ignored this would post a
+        // weekly digest to someone who explicitly asked for monthly.
+        if (userFrequency !== requestedFrequency) {
+          console.log(`[weekly-summary] Skipping user ${admin.email}: prefers ${userFrequency}, this is the ${requestedFrequency} run.`);
           totalSkipped++;
           continue;
         }
