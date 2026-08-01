@@ -2,9 +2,12 @@ import { useState, useMemo, useEffect } from 'react';
 import { Building2, MapPin, AlertCircle, FileUp, ChevronDown, ChevronUp, Map, CheckCircle2, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useReviewSail } from '../../context/ReviewSailContext';
+import { useAuth } from '../../context/AuthContext';
+import { isStaff } from '../../lib/roles';
 import { assessGoogleReviewUrl } from '../../lib/googleReviewUrl';
 import { TIMEZONES, browserTimezone, describeSendTime } from '../../lib/timezones';
 import { Button } from '../ui/Button';
+import { Notice } from '../ui/Notice';
 import { cn } from '../../lib/utils';
 
 /*
@@ -23,6 +26,7 @@ const STEPS = ['Your property', 'Review link', 'Guests'];
 
 export function OnboardingWizard() {
   const { locations, activeLocationId, updateLocationSettings, completeOnboarding } = useReviewSail();
+  const { role } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [showGoogleHelp, setShowGoogleHelp] = useState(false);
@@ -115,6 +119,19 @@ export function OnboardingWizard() {
   };
 
   if (activeLoc?.onboardingComplete) return null;
+
+  // Every step here writes to `locations`, which RLS keeps admin-only. Handing
+  // a staff member the form would give them three screens that each fail 42501
+  // on save, with no way to tell why. Say who has to do it instead.
+  if (isStaff(role)) {
+    return (
+      <Notice tone="caution" title="Setup isn't finished yet">
+        An administrator needs to finish setting up
+        {activeLoc ? ` ${activeLoc.name}` : ' this property'} before invites can go out. Guests and
+        feedback will show up here once they have.
+      </Notice>
+    );
+  }
 
   const inputClass =
     'w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';

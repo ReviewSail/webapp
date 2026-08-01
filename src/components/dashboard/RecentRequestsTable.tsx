@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Inbox, RefreshCw, Eye, Check } from 'lucide-react';
-import { ReviewRequest, Order, Customer, useReviewSail } from '../../context/ReviewSailContext';
+import { ReviewRequest, Order, Customer, useReviewSail, canResendRequest } from '../../context/ReviewSailContext';
 import { GuestDetailPanel } from './GuestDetailPanel';
 import { StatusBadge } from '../ui/StatusBadge';
 import { EmptyState } from '../ui/EmptyState';
@@ -157,7 +157,11 @@ export function RecentRequestsTable({
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        {req.status !== 'private_feedback' && req.status !== 'clicked' && (
+                        {/* Was `!== 'private_feedback' && !== 'clicked'`, which
+                            left Resend live on already_reviewed and opted_out —
+                            the two statuses that exist because the guest asked
+                            not to be contacted again. */}
+                        {canResendRequest(req.status) && (
                           <button
                             onClick={() => handleResend(req.id)}
                             disabled={isSending || isSuccess}

@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { Users, UserPlus, Mail, Trash2, RefreshCw, Send, X } from 'lucide-react';
 import { supabase } from '../../integrations/supabase/client';
 import { useAuth } from '../../context/AuthContext';
+import { readFunctionError } from '../../lib/functionError';
 import { Card, CardHeader } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { useToast } from '../ui/Toast';
@@ -89,8 +90,7 @@ export function TeamSettings() {
       });
       // A non-2xx response arrives as an error whose body holds our message.
       if (error) {
-        const detail = await readFunctionError(error);
-        throw new Error(detail);
+        throw new Error(await readFunctionError(error, "Couldn't send the invite. Try again."));
       }
       setInviteEmail('');
       setInviteRole('staff');
@@ -130,7 +130,7 @@ export function TeamSettings() {
       const { error } = await supabase.functions.invoke('invite-team-member', {
         body: { email: invitation.email, role: invitation.role },
       });
-      if (error) throw new Error(await readFunctionError(error));
+      if (error) throw new Error(await readFunctionError(error, "Couldn't resend the invite. Try again."));
       toast.success(`Invite resent to ${invitation.email}.`);
       await load();
     } catch (err: any) {
@@ -412,18 +412,4 @@ export function TeamSettings() {
       )}
     </div>
   );
-}
-
-/**
- * supabase.functions.invoke surfaces a non-2xx response as a FunctionsHttpError
- * whose real message is in the response body, not err.message.
- */
-async function readFunctionError(error: any): Promise<string> {
-  try {
-    const body = await error?.context?.json?.();
-    if (body?.error) return body.error;
-  } catch {
-    // Fall through to the generic message below.
-  }
-  return error?.message || "Couldn't send the invite. Try again.";
 }

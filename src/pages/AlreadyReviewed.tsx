@@ -11,8 +11,15 @@ export default function AlreadyReviewed() {
   const requestId = searchParams.get('request_id');
 
   useEffect(() => {
+    // Without the else, a link that lost its request_id left `loading` true
+    // forever and the guest sat on a spinner that would never resolve.
     if (requestId) {
       handleAlreadyReviewed(requestId);
+    } else {
+      setLoading(false);
+      setError(
+        'This link is missing its reference. Please use the link from your most recent message.',
+      );
     }
   }, [requestId]);
 

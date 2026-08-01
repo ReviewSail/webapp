@@ -3,6 +3,7 @@ import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { SailMark } from '../components/brand/SailMark';
 import { Navigate } from 'react-router-dom';
 
 /**
@@ -51,9 +52,7 @@ export default function Login() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
         <div className="flex items-center gap-2.5 text-ink-muted">
-          <span className="flex h-6 w-6 animate-pulse items-center justify-center rounded-md bg-brand-600 text-[13px] font-bold text-white">
-            R
-          </span>
+          <SailMark variant="container" className="h-7 w-7 shrink-0 animate-pulse" />
           <span className="text-sm font-medium">Loading ReviewSail…</span>
         </div>
       </div>
@@ -68,10 +67,8 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-6 bg-card p-8 rounded-xl border border-line">
         <div className="text-center">
-          <span className="inline-flex items-center gap-2 text-xl font-semibold tracking-[-0.02em] text-ink">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-600 text-sm font-bold text-white">
-              R
-            </span>
+          <span className="inline-flex items-center gap-2.5 text-xl font-semibold tracking-[-0.02em] text-ink">
+            <SailMark variant="container" className="h-8 w-8 shrink-0" />
             <span>ReviewSail</span>
           </span>
           <p className="mt-2 text-sm text-ink-muted">Sign in to manage your review invites</p>

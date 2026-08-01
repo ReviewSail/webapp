@@ -71,7 +71,11 @@ export default function Dashboard() {
   const totalClicked = activeLocRequests.filter(r => r.status === 'clicked').length;
   const totalOptedOut = activeLocRequests.filter(r => r.status === 'opted_out').length;
 
-  const deliveryRate = totalSent > 0 ? Math.round(((totalSent) / (totalSent + totalPending || 1)) * 100) : 100;
+  // Reads 0, not 100, when nothing has gone out. The old form returned 100 for
+  // an account with ten pending invites and none sent, which is the exact
+  // moment the number most needs to be honest.
+  const totalQueued = totalSent + totalPending;
+  const deliveryRate = totalQueued > 0 ? Math.round((totalSent / totalQueued) * 100) : 0;
   const clickRate = totalSent > 0 ? Math.round((totalClicked / totalSent) * 100) : 0;
 
   const recentRequests = activeLocRequests.slice(0, 20);
@@ -118,7 +122,13 @@ export default function Dashboard() {
         </Notice>
       )}
 
-      <TrialBanner status={subscriptionStatus} onUpgrade={handleUpgrade} upgrading={upgrading} />
+      {/* Admins only. RLS keeps the accounts row unreadable to staff, so their
+          subscriptionStatus always resolves to 'inactive' — which would tell a
+          staff member on a paid account that invites are switched off, and
+          offer them an upgrade button that billing then refuses (403). */}
+      {isAdmin(role) && (
+        <TrialBanner status={subscriptionStatus} onUpgrade={handleUpgrade} upgrading={upgrading} />
+      )}
 
       <OnboardingWizard />
 

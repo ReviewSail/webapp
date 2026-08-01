@@ -136,8 +136,11 @@ export default function SettingsPage() {
   const handleDeleteLocation = async (id: string) => {
     try {
       await deleteLocation(id);
+      toast.success('Location deleted.');
     } catch (err: any) {
-      console.error(err);
+      // Was console.error only, so a refused delete looked like nothing had
+      // happened — the row simply stayed on screen with no explanation.
+      toast.error(err.message || "Couldn't delete that location. Try again.");
     }
   };
 
@@ -187,12 +190,17 @@ export default function SettingsPage() {
 
   const handleDigestChange = async (enabled: boolean, freq?: 'weekly' | 'monthly') => {
     const f = freq || digestFrequency;
+    const previous = { enabled: digestEnabled, frequency: digestFrequency };
     setDigestEnabled(enabled);
     setDigestFrequency(f);
     try {
       await updateDigestSetting(f, enabled);
-    } catch (err) {
-      console.error('Failed to update digest setting', err);
+    } catch (err: any) {
+      // This used to console.error only, so a failed write left the toggle
+      // showing the new value and the database holding the old one.
+      setDigestEnabled(previous.enabled);
+      setDigestFrequency(previous.frequency);
+      toast.error(err.message || "Couldn't save your digest preference. Try again.");
     }
   };
 
@@ -222,7 +230,13 @@ export default function SettingsPage() {
   ];
 
   const setActiveTab = (tab: string) => {
-    setSearchParams({ tab });
+    // Merge rather than replace: passing a bare object dropped every other
+    // query parameter, so switching tabs discarded things like ?access_denied.
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tab);
+      return next;
+    });
   };
 
   return (

@@ -21,6 +21,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const JOBS = [
   ['public/icon.svg',      'public/icon-512.png',       512],
   ['public/icon.svg',      'public/icon-192.png',       192],
+  // Apple wants exactly 180 for the touch icon; pointing the 180 declaration
+  // at the 192 file made the markup disagree with the asset.
+  ['public/icon.svg',      'public/icon-180.png',       180],
   ['public/favicon.svg',   'public/icon-32.png',         32],
   ['public/favicon.svg',   'public/icon-16.png',         16],
   ['public/icon-mark.svg', 'public/icon-mark-1024.png', 1024],

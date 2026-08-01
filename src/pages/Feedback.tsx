@@ -6,7 +6,10 @@ import { Star, MessageSquare, CheckCircle2, MapPin, Send } from 'lucide-react';
 export default function Feedback() {
   const [searchParams] = useSearchParams();
   const [requestId, setRequestId] = useState<string | null>(null);
-  const [rating, setRating] = useState<number>(5);
+  // No default. Pre-selecting 5 meant a guest who typed a complaint and hit
+  // send without touching the stars was recorded as a 5-star rating, which fed
+  // straight into the dashboard average.
+  const [rating, setRating] = useState<number | null>(null);
   const [comment, setComment] = useState<string>('');
   const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,6 +59,11 @@ export default function Feedback() {
         return;
       }
 
+      if (rating === null) {
+        setError('Please choose a star rating first.');
+        return;
+      }
+
       const { error: dbError } = await supabase.rpc('submit_guest_feedback', {
         p_request_id: requestId,
         p_star_rating: rating,
@@ -85,7 +93,7 @@ export default function Feedback() {
     // The star gate, applied where it belongs: only a guest who enjoyed the
     // stay is pointed at the public review page. Everyone else gets a promise
     // that a person will read what they wrote.
-    const isHappy = rating >= 4;
+    const isHappy = rating !== null && rating >= 4;
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">
@@ -166,7 +174,7 @@ export default function Feedback() {
                 >
                   <Star
                     className={`h-9 w-9 transition-colors ${
-                      star <= (hoverRating ?? rating)
+                      star <= (hoverRating ?? rating ?? 0)
                         ? 'fill-star text-star'
                         : 'text-line'
                     }`}
@@ -199,7 +207,7 @@ export default function Feedback() {
           {/* Submit */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || rating === null}
             className="w-full bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 text-sm font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <Send className="h-4 w-4" />

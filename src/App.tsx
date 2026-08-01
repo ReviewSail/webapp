@@ -19,15 +19,14 @@ import Inbox from "./pages/Inbox"
 import NotFound from "./pages/NotFound"
 import { ToastProvider } from "./components/ui/Toast"
 import { ThemeProvider } from "./context/ThemeContext"
+import { SailMark } from "./components/brand/SailMark"
 import { isStaff } from "./lib/roles"
 
 /** The first thing a returning user sees. Branded, and quiet about it. */
 const RouteLoader = () => (
   <div className="flex min-h-screen items-center justify-center bg-canvas">
     <div className="flex items-center gap-2.5 text-ink-muted">
-      <span className="flex h-6 w-6 animate-pulse items-center justify-center rounded-md bg-brand-600 text-[13px] font-bold text-white">
-        R
-      </span>
+      <SailMark variant="container" className="h-7 w-7 shrink-0 animate-pulse" />
       <span className="text-sm font-medium">Loading ReviewSail…</span>
     </div>
   </div>
