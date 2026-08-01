@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
@@ -30,6 +31,12 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  test: {
+    // Pure logic runs fine without a DOM, but the import wizard is the piece
+    // most worth testing and it has to render.
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
   },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

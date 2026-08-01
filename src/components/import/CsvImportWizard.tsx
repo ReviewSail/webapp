@@ -12,22 +12,35 @@ import {
   ArrowRight,
   CopyCheck,
   CalendarClock,
+  Sparkles,
+  ChevronDown,
+  ChevronRight,
+  Info,
 } from 'lucide-react';
 import { useReviewSail } from '../../context/ReviewSailContext';
 import {
   IMPORT_FIELDS,
-  autoDetectMapping,
+  RESERVATION_SOURCES,
+  detectMapping,
+  toColumnMapping,
+  missingRequirements,
+  isNameMapped,
   detectDateFormat,
   mapRow,
   validateRow,
   dedupeKey,
+  groupIssues,
+  downloadCsv,
   parseImportDate,
   formatDateForDisplay,
   type ColumnMapping,
   type DateFormat,
   type ImportFieldKey,
+  type MatchConfidence,
+  type ReservationSource,
   type ValidatedRow,
 } from '../../lib/csvImport';
+import { detectPlatform, hasReachableContact, type PlatformDetection } from '../../lib/csvFingerprints';
 
 type Step = 'upload' | 'map' | 'review' | 'result';
 
@@ -57,12 +70,22 @@ export default function CsvImportWizard() {
 
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping>({});
-  const [dateFormat, setDateFormat] = useState<DateFormat>('DMY');
-  const [dateFormatAmbiguous, setDateFormatAmbiguous] = useState(false);
+  const [confidence, setConfidence] = useState<Partial<Record<ImportFieldKey, MatchConfidence>>>({});
+  /** Set only when the owner picks a convention by hand; otherwise we infer. */
+  const [dateFormatOverride, setDateFormatOverride] = useState<DateFormat | null>(null);
+
+  const [platform, setPlatform] = useState<PlatformDetection | null>(null);
+  /** Detected files collapse the column list; this reopens it. */
+  const [showColumns, setShowColumns] = useState(true);
+  /** Applied to any row whose file didn't carry its own source column. */
+  const [fallbackSource, setFallbackSource] = useState<ReservationSource>('direct');
 
   const [validated, setValidated] = useState<ValidatedRow[]>([]);
-  const [showAllIssues, setShowAllIssues] = useState(false);
-  const [result, setResult] = useState<{ imported: number; skippedDuplicates: number } | null>(null);
+  const [excluded, setExcluded] = useState<Set<number>>(new Set());
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [result, setResult] = useState<
+    { imported: number; skippedDuplicates: number; failed: number } | null
+  >(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,10 +93,16 @@ export default function CsvImportWizard() {
     setStep('upload');
     setParsed(null);
     setMapping({});
+    setConfidence({});
+    setDateFormatOverride(null);
+    setPlatform(null);
+    setShowColumns(true);
+    setFallbackSource('direct');
     setValidated([]);
+    setExcluded(new Set());
+    setOpenGroups(new Set());
     setResult(null);
     setError('');
-    setShowAllIssues(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -102,21 +131,37 @@ export default function CsvImportWizard() {
           return;
         }
 
-        const detected = autoDetectMapping(headers);
-        setParsed({ fileName: file.name, headers, records });
-        setMapping(detected);
+        // A recognised OTA export tells us more than header-by-header guessing
+        // can, so it takes precedence when one matches.
+        const knownPlatform = detectPlatform(headers);
+        let detected: ColumnMapping;
 
-        // Seed the date convention from the check-out column if we found one.
-        const checkoutHeader = detected.checkoutDate;
-        if (checkoutHeader) {
-          const samples = records.slice(0, 50).map(r => (r[checkoutHeader] ?? '').toString());
-          const detection = detectDateFormat(samples);
-          setDateFormat(detection.format);
-          setDateFormatAmbiguous(detection.ambiguous);
+        if (knownPlatform) {
+          detected = knownPlatform.mapping;
+          setPlatform(knownPlatform);
+          setFallbackSource(knownPlatform.source);
+          // Collapse the column list — the owner shouldn't have to confirm work
+          // we're confident about, but the toggle keeps it one click away.
+          setShowColumns(false);
+          setConfidence(
+            Object.fromEntries(
+              IMPORT_FIELDS.map(f => [f.key, detected[f.key] ? 'matched' : 'none']),
+            ) as Partial<Record<ImportFieldKey, MatchConfidence>>,
+          );
         } else {
-          setDateFormatAmbiguous(true);
+          const detection = detectMapping(headers);
+          detected = toColumnMapping(detection);
+          setPlatform(null);
+          setShowColumns(true);
+          setConfidence(
+            Object.fromEntries(
+              IMPORT_FIELDS.map(f => [f.key, detection[f.key].confidence]),
+            ) as Partial<Record<ImportFieldKey, MatchConfidence>>,
+          );
         }
 
+        setParsed({ fileName: file.name, headers, records });
+        setMapping(detected);
         setStep('map');
       },
       error: err => {
@@ -153,10 +198,35 @@ export default function CsvImportWizard() {
       else delete next[field];
       return next;
     });
+    // Once the owner has made the call, our confidence in our own guess is
+    // no longer worth showing.
+    setConfidence(prev => ({ ...prev, [field]: undefined }));
+    // A different date column deserves a fresh reading, not the convention
+    // they picked for the previous one.
+    if (field === 'checkoutDate') setDateFormatOverride(null);
   };
 
-  const missingRequired = IMPORT_FIELDS.filter(f => f.required && !mapping[f.key]);
-  const hasContactColumn = !!mapping.email || !!mapping.phone;
+  /**
+   * Inferred from whichever column is mapped to check-out *right now*.
+   *
+   * Derived rather than captured at upload: the owner can map a date column by
+   * hand after the fact, and a convention detected from the file we guessed at
+   * would then be stale — or, on a file with no dates at all, invented.
+   */
+  const dateDetection = useMemo(() => {
+    const header = mapping.checkoutDate;
+    if (!parsed || !header) return null;
+    return detectDateFormat(parsed.records.slice(0, 50).map(r => (r[header] ?? '').toString()));
+  }, [parsed, mapping.checkoutDate]);
+
+  const dateFormat: DateFormat = dateFormatOverride ?? dateDetection?.format ?? 'DMY';
+  const dateFormatAmbiguous = !dateFormatOverride && !!dateDetection?.ambiguous;
+
+  const missing = missingRequirements(mapping);
+
+  /** Columns worth showing in the preview: the combined-name input is an
+      instruction to us, not a value the owner needs to see echoed back. */
+  const previewFields = IMPORT_FIELDS.filter(f => f.key !== 'fullName');
 
   const previewRows = useMemo(() => {
     if (!parsed) return [];
@@ -188,6 +258,10 @@ export default function CsvImportWizard() {
       });
 
       setValidated(rows);
+      // Rows that can't be imported start excluded, so the checkboxes read as
+      // "what will be imported" rather than needing to be decoded.
+      setExcluded(new Set(rows.filter(r => r.status === 'error').map(r => r.lineNumber)));
+      setOpenGroups(new Set());
       setStep('review');
     } catch (e: any) {
       setError(e.message || 'Could not check for existing guests.');
@@ -198,34 +272,62 @@ export default function CsvImportWizard() {
 
   // --- Step 3: review -----------------------------------------------------
 
+  /** Rows the owner has not excluded and that are importable in principle. */
+  const importableRows = useMemo(
+    () =>
+      validated.filter(
+        r => (r.status === 'ok' || r.status === 'warning') && !excluded.has(r.lineNumber),
+      ),
+    [validated, excluded],
+  );
+
   const counts = useMemo(() => ({
-    ready: validated.filter(r => r.status === 'ok' || r.status === 'warning').length,
+    ready: importableRows.length,
     warnings: validated.filter(r => r.status === 'warning').length,
     duplicates: validated.filter(r => r.status === 'duplicate').length,
     errors: validated.filter(r => r.status === 'error').length,
+    // Rows the owner deselected by hand, over and above the failed ones.
+    excluded: validated.filter(r => r.status !== 'error' && excluded.has(r.lineNumber)).length,
     // Stays that have not finished yet. Counted from the issue rather than the
     // status, because an upcoming stay is a perfectly healthy row.
     upcoming: validated.filter(r => r.issues.some(i => i.level === 'info')).length,
-  }), [validated]);
+  }), [validated, excluded, importableRows]);
 
-  const problemRows = useMemo(
-    () => validated.filter(r => r.status === 'error' || r.status === 'warning'),
+  const issueGroups = useMemo(() => groupIssues(validated), [validated]);
+
+  const rowsByLine = useMemo(
+    () => new Map(validated.map(r => [r.lineNumber, r])),
     [validated],
   );
+
+  const toggleExcluded = (lineNumber: number) => {
+    setExcluded(prev => {
+      const next = new Set(prev);
+      if (next.has(lineNumber)) next.delete(lineNumber);
+      else next.add(lineNumber);
+      return next;
+    });
+  };
+
+  const excludeAll = (lineNumbers: number[]) => {
+    setExcluded(prev => new Set([...prev, ...lineNumbers]));
+  };
 
   const runImport = async () => {
     setBusy(true);
     setError('');
 
-    const importable = validated.filter(r => r.status === 'ok' || r.status === 'warning');
     const response = await bulkImport(
-      importable.map(r => ({
+      importableRows.map(r => ({
         firstName: r.firstName,
         lastName: r.lastName,
         email: r.email,
         phone: r.phone,
         checkoutDate: r.checkoutDate!,
         checkinDate: r.checkinDate,
+        // A per-row source column wins; otherwise everything in this file gets
+        // the detected platform or the owner's choice.
+        source: r.source || fallbackSource,
       })),
     );
 
@@ -240,6 +342,7 @@ export default function CsvImportWizard() {
       imported: response.imported,
       // Duplicates caught at review plus any the context caught on re-check.
       skippedDuplicates: counts.duplicates + response.skippedDuplicates,
+      failed: response.failed,
     });
     setStep('result');
   };
@@ -255,12 +358,7 @@ export default function CsvImportWizard() {
       })),
     );
 
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = parsed.fileName.replace(/\.csv$/i, '') + '-errors.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(parsed.fileName.replace(/\.csv$/i, '') + '-errors.csv', csv);
   };
 
   // --- Render -------------------------------------------------------------
@@ -341,34 +439,93 @@ export default function CsvImportWizard() {
           <div>
             <p className="text-sm text-ink-muted">
               <span className="font-medium text-ink">{parsed.fileName}</span> — {parsed.records.length} row
-              {parsed.records.length === 1 ? '' : 's'}. We've matched the columns we recognised; correct anything
-              that's wrong.
+              {parsed.records.length === 1 ? '' : 's'}.
+              {!platform && " We've matched the columns we recognised; correct anything that's wrong."}
             </p>
           </div>
 
-          <div className="space-y-2">
-            {IMPORT_FIELDS.map(field => (
-              <div key={field.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3">
-                <label className="text-sm text-ink">
-                  {field.label}
-                  {field.required && <span className="text-critical ml-0.5">*</span>}
-                  {field.hint && <span className="block text-xs text-ink-faint">{field.hint}</span>}
-                </label>
-                <select
-                  value={mapping[field.key] || ''}
-                  onChange={e => setFieldMapping(field.key, e.target.value)}
-                  className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
-                >
-                  <option value="">— Not imported —</option>
-                  {parsed.headers.map(header => (
-                    <option key={header} value={header}>{header}</option>
-                  ))}
-                </select>
+          {platform && (
+            <div className="p-3 rounded-lg border border-brand-200 bg-brand-50">
+              <div className="flex items-start gap-2">
+                <Sparkles size={16} className="mt-0.5 shrink-0 text-brand-600" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-brand-700">
+                    Detected {platform.label} export — mapping applied automatically
+                  </p>
+                  <p className="text-xs text-brand-600 mt-0.5">
+                    Check the preview below. Nothing is saved until you import.
+                  </p>
+                  {!hasReachableContact(platform.mapping) && (
+                    <p className="text-xs text-caution mt-1.5">
+                      This export has no email or phone column, so these guests can't be contacted yet.
+                      {platform.key === 'airbnb'
+                        ? ' Airbnb hides guest addresses — add a phone column, or export from your channel manager instead.'
+                        : ' Map a contact column below if your file has one.'}
+                    </p>
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
+              <button
+                onClick={() => setShowColumns(v => !v)}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:text-brand-800"
+              >
+                {showColumns ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {showColumns ? 'Hide columns' : 'Review or adjust columns'}
+              </button>
+            </div>
+          )}
 
-          {(dateFormatAmbiguous || !!mapping.checkoutDate) && (
+          {/* Never stay collapsed when there's something the owner must fix —
+              a hidden dropdown and a disabled button is a dead end. */}
+          {(showColumns || missing.length > 0) && (
+            <div className="space-y-2">
+              {IMPORT_FIELDS.map(field => (
+                <div key={field.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3">
+                  <label className="text-sm text-ink">
+                    {field.label}
+                    {field.required && <span className="text-critical ml-0.5">*</span>}
+                    <ConfidenceBadge confidence={confidence[field.key]} />
+                    {field.hint && <span className="block text-xs text-ink-faint">{field.hint}</span>}
+                  </label>
+                  <select
+                    aria-label={field.label}
+                    value={mapping[field.key] || ''}
+                    onChange={e => setFieldMapping(field.key, e.target.value)}
+                    className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                  >
+                    <option value="">— Not imported —</option>
+                    {parsed.headers.map(header => (
+                      <option key={header} value={header}>{header}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Only worth asking when the file itself doesn't say. */}
+          {!mapping.source && (
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3">
+              <label className="text-sm text-ink">
+                Reservation source
+                <span className="block text-xs text-ink-faint">Applied to every row in this file</span>
+              </label>
+              <select
+                aria-label="Reservation source"
+                value={fallbackSource}
+                onChange={e => setFallbackSource(e.target.value as ReservationSource)}
+                className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+              >
+                {RESERVATION_SOURCES.map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Only when a date column is actually mapped. Warning about how to
+              read dates in a file that has none is pure noise. */}
+          {!!mapping.checkoutDate && (
             <div className={`p-3 rounded-lg border text-sm ${
               dateFormatAmbiguous ? 'bg-caution-soft border-caution/20' : 'bg-canvas border-line'
             }`}>
@@ -386,8 +543,9 @@ export default function CsvImportWizard() {
                 </div>
               </div>
               <select
+                aria-label="Date format"
                 value={dateFormat}
-                onChange={e => setDateFormat(e.target.value as DateFormat)}
+                onChange={e => setDateFormatOverride(e.target.value as DateFormat)}
                 className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
               >
                 {DATE_FORMAT_OPTIONS.map(opt => (
@@ -405,7 +563,7 @@ export default function CsvImportWizard() {
               <table className="min-w-full text-sm">
                 <thead className="bg-canvas">
                   <tr>
-                    {IMPORT_FIELDS.map(f => (
+                    {previewFields.map(f => (
                       <th key={f.key} className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">
                         {f.label}
                       </th>
@@ -425,6 +583,10 @@ export default function CsvImportWizard() {
                       <td className="px-3 py-2 whitespace-nowrap">
                         <DateCell iso={row.checkinDate} mapped={!!mapping.checkinDate} />
                       </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {RESERVATION_SOURCES.find(s => s.value === (row.source || fallbackSource))?.label
+                          || <Empty />}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -432,16 +594,13 @@ export default function CsvImportWizard() {
             </div>
           </div>
 
-          {missingRequired.length > 0 && (
-            <p className="text-sm text-caution flex items-center gap-2">
-              <AlertTriangle size={15} />
-              Map {missingRequired.map(f => f.label.toLowerCase()).join(' and ')} to continue.
-            </p>
-          )}
-          {missingRequired.length === 0 && !hasContactColumn && (
-            <p className="text-sm text-caution flex items-center gap-2">
-              <AlertTriangle size={15} />
-              Map an email or phone column — guests can't be contacted without one.
+          {missing.length > 0 && (
+            <p className="text-sm text-caution flex items-start gap-2">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              <span>
+                Still need {missing.join(', ').replace(/, ([^,]*)$/, ' and $1')} before you can continue.
+                {!isNameMapped(mapping) && ' If your file has one combined name column, map it to Full name.'}
+              </span>
             </p>
           )}
 
@@ -454,7 +613,7 @@ export default function CsvImportWizard() {
             </button>
             <button
               onClick={goToReview}
-              disabled={busy || missingRequired.length > 0 || !hasContactColumn}
+              disabled={busy || missing.length > 0}
               className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {busy ? <RefreshCw size={16} className="animate-spin" /> : <ArrowRight size={16} />}
@@ -493,28 +652,87 @@ export default function CsvImportWizard() {
             </p>
           )}
 
-          {problemRows.length > 0 && (
+          {issueGroups.length > 0 && (
             <div className="border border-line rounded-lg divide-y divide-line">
-              {(showAllIssues ? problemRows : problemRows.slice(0, 8)).map(row => (
-                <div key={row.lineNumber} className="px-3 py-2 flex items-start gap-3 text-sm">
-                  <span className="text-xs text-ink-faint font-mono pt-0.5 shrink-0">L{row.lineNumber}</span>
-                  <span className="text-ink shrink-0 max-w-[10rem] truncate">
-                    {[row.firstName, row.lastName].filter(Boolean).join(' ') || '(no name)'}
-                  </span>
-                  <span className={row.status === 'error' ? 'text-critical' : 'text-caution'}>
-                    {row.issues.map(i => i.message).join('; ')}
-                  </span>
-                </div>
-              ))}
-              {problemRows.length > 8 && (
-                <button
-                  onClick={() => setShowAllIssues(v => !v)}
-                  className="w-full px-3 py-2 text-xs font-medium text-brand-600 hover:bg-canvas"
-                >
-                  {showAllIssues ? 'Show fewer' : `Show all ${problemRows.length} rows with issues`}
-                </button>
-              )}
+              {issueGroups.map(group => {
+                const groupKey = `${group.level}:${group.message}`;
+                const isOpen = openGroups.has(groupKey);
+                const tone =
+                  group.level === 'error' ? 'text-critical'
+                    : group.level === 'warning' ? 'text-caution'
+                      : 'text-ink-muted';
+
+                return (
+                  <div key={groupKey}>
+                    <button
+                      onClick={() =>
+                        setOpenGroups(prev => {
+                          const next = new Set(prev);
+                          if (next.has(groupKey)) next.delete(groupKey);
+                          else next.add(groupKey);
+                          return next;
+                        })
+                      }
+                      className="w-full px-3 py-2.5 flex items-center gap-2 text-sm text-left hover:bg-canvas"
+                    >
+                      {isOpen ? <ChevronDown size={14} className="shrink-0 text-ink-faint" />
+                        : <ChevronRight size={14} className="shrink-0 text-ink-faint" />}
+                      <span className="font-medium text-ink shrink-0">{group.count}</span>
+                      <span className={`${tone} min-w-0 truncate`}>{group.message}</span>
+                    </button>
+
+                    {isOpen && (
+                      <div className="bg-canvas border-t border-line">
+                        {group.lineNumbers.map(line => {
+                          const row = rowsByLine.get(line);
+                          if (!row) return null;
+                          const canImport = row.status === 'ok' || row.status === 'warning';
+                          return (
+                            <label
+                              key={line}
+                              className={`px-3 py-1.5 flex items-center gap-3 text-sm ${
+                                canImport ? 'cursor-pointer hover:bg-card' : 'opacity-60'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={canImport && !excluded.has(line)}
+                                disabled={!canImport}
+                                onChange={() => toggleExcluded(line)}
+                                className="shrink-0 accent-brand-600"
+                              />
+                              <span className="text-xs text-ink-faint font-mono shrink-0">L{line}</span>
+                              <span className="text-ink truncate">
+                                {[row.firstName, row.lastName].filter(Boolean).join(' ') || '(no name)'}
+                              </span>
+                              <span className="text-ink-faint text-xs truncate ml-auto">
+                                {row.email || row.phone || 'no contact'}
+                              </span>
+                            </label>
+                          );
+                        })}
+
+                        {group.level !== 'error' && (
+                          <button
+                            onClick={() => excludeAll(group.lineNumbers)}
+                            className="w-full px-3 py-2 text-xs font-medium text-brand-600 hover:bg-card text-left"
+                          >
+                            Exclude all {group.count} of these rows
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+          )}
+
+          {counts.excluded > 0 && (
+            <p className="text-sm text-ink-muted flex items-start gap-2">
+              <Info size={16} className="mt-0.5 shrink-0 text-ink-faint" />
+              You've excluded {counts.excluded} row{counts.excluded === 1 ? '' : 's'}. They won't be imported.
+            </p>
           )}
 
           {counts.errors > 0 && (
@@ -559,21 +777,35 @@ export default function CsvImportWizard() {
             </p>
           </div>
 
-          {(result.skippedDuplicates > 0 || counts.errors > 0) && (
-            <div className="text-sm text-ink-muted space-y-1">
-              {result.skippedDuplicates > 0 && (
-                <p>{result.skippedDuplicates} already-imported guest{result.skippedDuplicates === 1 ? '' : 's'} skipped.</p>
-              )}
-              {counts.errors > 0 && (
-                <p>
-                  {counts.errors} row{counts.errors === 1 ? '' : 's'} could not be imported.{' '}
-                  <button onClick={downloadErrorRows} className="text-brand-600 hover:underline font-medium">
-                    Download them
-                  </button>
-                </p>
-              )}
-            </div>
-          )}
+          {/* Three explicit numbers, always. "Imported 12" alone leaves the
+              owner guessing what happened to the other 40 rows in their file. */}
+          <div className="grid grid-cols-3 gap-3 text-left">
+            <Tile label="Imported" value={result.imported} tone="green" />
+            <Tile label="Skipped" value={result.skippedDuplicates + counts.excluded} tone="gray" />
+            <Tile label="Failed" value={result.failed + counts.errors} tone="red" />
+          </div>
+
+          <div className="text-sm text-ink-muted space-y-1">
+            {result.skippedDuplicates > 0 && (
+              <p>{result.skippedDuplicates} already-imported guest{result.skippedDuplicates === 1 ? '' : 's'} skipped.</p>
+            )}
+            {counts.excluded > 0 && (
+              <p>{counts.excluded} row{counts.excluded === 1 ? '' : 's'} you excluded.</p>
+            )}
+            {result.failed > 0 && (
+              <p className="text-critical">
+                {result.failed} row{result.failed === 1 ? '' : 's'} could not be saved. Try importing those again.
+              </p>
+            )}
+            {counts.errors > 0 && (
+              <p>
+                {counts.errors} row{counts.errors === 1 ? '' : 's'} had errors and were not imported.{' '}
+                <button onClick={downloadErrorRows} className="text-brand-600 hover:underline font-medium">
+                  Download them
+                </button>
+              </p>
+            )}
+          </div>
 
           <button
             onClick={reset}
@@ -588,6 +820,27 @@ export default function CsvImportWizard() {
 }
 
 const Empty = () => <span className="text-ink-faint">—</span>;
+
+/**
+ * How much to trust a suggested column. Absent once the owner picks a column
+ * themselves — at that point it's their answer, not our guess.
+ */
+const ConfidenceBadge = ({ confidence }: { confidence?: MatchConfidence }) => {
+  if (!confidence) return null;
+
+  const styles: Record<MatchConfidence, { label: string; className: string }> = {
+    matched: { label: 'Matched', className: 'bg-positive-soft text-positive' },
+    review: { label: 'Needs review', className: 'bg-caution-soft text-caution' },
+    none: { label: 'Not found', className: 'bg-canvas text-ink-muted border border-line' },
+  };
+  const { label, className } = styles[confidence];
+
+  return (
+    <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium align-middle ${className}`}>
+      {label}
+    </span>
+  );
+};
 
 /**
  * Shows a parsed date as unambiguous text so a wrong format choice is visible
