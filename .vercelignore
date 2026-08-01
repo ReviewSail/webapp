@@ -1,0 +1,21 @@
+# Leading slashes matter. A bare `supabase` would also match
+# src/integrations/supabase/, stripping the Supabase client out of the build.
+# These patterns are anchored to the repo root on purpose.
+
+# node_modules is committed to this repo (~24k files, 288MB), which stalls the
+# CLI upload before a build ever starts. Vercel installs its own from the
+# lockfile, so ours is never needed.
+/node_modules
+
+# Not part of the frontend build.
+/supabase
+/scripts
+/dist
+/design
+/.claude
+/.dyad
+
+# Tests don't ship.
+/src/test
+*.test.ts
+*.test.tsx
