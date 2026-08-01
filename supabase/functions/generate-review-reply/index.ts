@@ -52,11 +52,12 @@ serve(async (req) => {
       })
     }
 
-    const toneInstruction = {
+    const TONE_INSTRUCTIONS: Record<string, string> = {
       warm: 'Write the reply in a warm and personal tone, making the guest feel valued.',
       professional: 'Write the reply in a professional and formal tone, maintaining business etiquette.',
       concise: 'Write the reply concisely, using short sentences and keeping to the point.',
-    }[tone] || 'Write the reply in a warm and professional tone.'
+    }
+    const toneInstruction = TONE_INSTRUCTIONS[tone] || 'Write the reply in a warm and professional tone.'
 
     const templateBlurb = templateGuidance
       ? `Use this as a structural guide: "${templateGuidance}"`

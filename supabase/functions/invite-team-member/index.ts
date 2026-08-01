@@ -120,8 +120,16 @@ serve(async (req) => {
       .eq('id', accountId)
       .single()
 
-    const appUrl = (Deno.env.get('APP_URL') || supabaseUrl).replace(/\/+$/, '')
-    const origin = (req.headers.get('origin') || appUrl).replace(/\/+$/, '')
+    // APP_URL wins over the request's Origin header. The link in this email is
+    // a credential — it carries the invite token — and Origin is supplied by
+    // whatever client called the function, so letting it choose the host meant
+    // the token could be addressed somewhere other than the real app. Origin is
+    // only a fallback for deployments that have not set APP_URL.
+    const appUrl = Deno.env.get('APP_URL')?.replace(/\/+$/, '')
+    if (!appUrl) {
+      console.warn('[invite-team-member] APP_URL is not set; falling back to the request origin for the invite link.')
+    }
+    const origin = (appUrl || req.headers.get('origin') || supabaseUrl).replace(/\/+$/, '')
     const inviteLink = `${origin}/accept-invite?token=${encodeURIComponent(token)}`
 
     const propertyName = escapeHtml(account?.name || 'the team')

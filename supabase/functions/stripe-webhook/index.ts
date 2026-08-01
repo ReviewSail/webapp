@@ -141,38 +141,70 @@ serve(async (req) => {
     const toIso = (seconds: number | null | undefined) =>
       typeof seconds === 'number' ? new Date(seconds * 1000).toISOString() : null
 
+    /**
+     * Stripe moved `current_period_end` off the Subscription object and onto
+     * its items in API version 2025-03-31. Read whichever shape this account's
+     * pinned version sends: on a recent version the top-level field is simply
+     * absent, which silently produced a null renewal date everywhere.
+     */
+    const periodEndOf = (subscription: any): string | null =>
+      toIso(subscription?.current_period_end)
+      ?? toIso(subscription?.items?.data?.[0]?.current_period_end)
+
+    /**
+     * Same story for the invoice → subscription link, which moved to
+     * `parent.subscription_details.subscription`. Either field may be an id or
+     * an expanded object.
+     */
+    const subscriptionIdOf = (value: any): string | null => {
+      const raw = value?.subscription ?? value?.parent?.subscription_details?.subscription
+      if (!raw) return null
+      return typeof raw === 'string' ? raw : (raw.id ?? null)
+    }
+
     if (type === 'checkout.session.completed') {
       const session = data.object
       const stripeCustomerId = session.customer
-      const subscriptionId = session.subscription
-      
+      const subscriptionId = subscriptionIdOf(session)
+
       // Look for account ID from metadata
       let accountId = session.metadata?.account_id || session.subscription_data?.metadata?.account_id
-      
-      // If not in session metadata, let's check subscription metadata
+
+      // The session carries no period end, so fetch the subscription itself.
+      // This used to happen only when account_id was missing from the session
+      // metadata, which meant a normal checkout recorded no renewal date at all
+      // — Billing showed "Active" with no date until some later event arrived.
+      let subscription: any = null
       const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
-      if (!accountId && subscriptionId && stripeSecretKey) {
+      if (subscriptionId && stripeSecretKey) {
         try {
           const subRes = await fetch(`https://api.stripe.com/v1/subscriptions/${subscriptionId}`, {
             headers: { 'Authorization': `Bearer ${stripeSecretKey}` }
           })
           if (subRes.ok) {
-            const subData = await subRes.json()
-            accountId = subData.metadata?.account_id
+            subscription = await subRes.json()
+            accountId = accountId || subscription.metadata?.account_id
+          } else {
+            console.error('[stripe-webhook] Could not fetch subscription:', await subRes.text())
           }
         } catch (err) {
-          console.error("[stripe-webhook] Error fetching subscription metadata:", err)
+          console.error("[stripe-webhook] Error fetching subscription:", err)
         }
       }
 
       console.log(`[stripe-webhook] Checkout completed. Stripe Customer ID: ${stripeCustomerId}, Account ID: ${accountId}`);
 
+      const periodEnd = subscription ? periodEndOf(subscription) : null
+
       const patch: Record<string, unknown> = {
-        subscription_status: 'active',
+        // Trust the subscription's own status when we have it: checkout can
+        // complete straight into a trial.
+        subscription_status: subscription ? mapStatus(subscription.status) : 'active',
         plan_name: 'Premium Pro',
-        cancel_at_period_end: false,
+        cancel_at_period_end: !!subscription?.cancel_at_period_end,
       }
       if (subscriptionId) patch.stripe_subscription_id = subscriptionId
+      if (periodEnd) patch.current_period_end = periodEnd
 
       if (accountId) {
         await patchAccount({ column: 'id', value: accountId }, { ...patch, stripe_customer_id: stripeCustomerId })
@@ -191,7 +223,7 @@ serve(async (req) => {
         await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, {
           subscription_status: mapStatus(subscription.status),
           stripe_subscription_id: subscription.id,
-          current_period_end: toIso(subscription.current_period_end),
+          current_period_end: periodEndOf(subscription),
           cancel_at_period_end: !!subscription.cancel_at_period_end,
         })
         console.log(
@@ -209,7 +241,7 @@ serve(async (req) => {
         await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, {
           subscription_status: 'canceled',
           cancel_at_period_end: false,
-          current_period_end: toIso(subscription.current_period_end),
+          current_period_end: periodEndOf(subscription),
         })
         console.log(`[stripe-webhook] Account matching Stripe Customer ID ${stripeCustomerId} marked as canceled.`)
       }
@@ -224,8 +256,12 @@ serve(async (req) => {
     } else if (type === 'invoice.paid') {
       const invoice = data.object
       const stripeCustomerId = invoice.customer
-      // Only a subscription invoice should reactivate a plan.
-      if (stripeCustomerId && invoice.subscription) {
+      // Only a subscription invoice should reactivate a plan. Read the link
+      // through subscriptionIdOf: `invoice.subscription` moved to
+      // `invoice.parent.subscription_details.subscription` in API version
+      // 2025-03-31, and on a recent version this condition was never true — so
+      // a recovered payment never cleared past_due.
+      if (stripeCustomerId && subscriptionIdOf(invoice)) {
         const periodEnd = toIso(invoice.lines?.data?.[0]?.period?.end)
         await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, {
           subscription_status: 'active',
