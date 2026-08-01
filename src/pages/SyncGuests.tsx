@@ -14,8 +14,17 @@ import {
   Calendar,
   Mail,
   Phone as PhoneIcon,
-  User
+  User,
+  Download,
+  Building2
 } from 'lucide-react';
+import {
+  RESERVATION_SOURCES,
+  buildTemplateCsv,
+  downloadCsv,
+  validateRow,
+  type ReservationSource,
+} from '../lib/csvImport';
 
 export default function SyncGuests() {
   const { addCustomer, addOrder, addReviewRequest, activeLocationId, locations } = useReviewSail();
@@ -33,34 +42,49 @@ export default function SyncGuests() {
     phone: '',
     checkoutDate: new Date().toISOString().split('T')[0],
     checkinDate: '',
+    source: 'direct' as ReservationSource,
   });
 
   const toggleSection = (section: 'booking' | 'airbnb' | 'expedia') => {
     setOpenSection(prev => prev === section ? null : section);
   };
 
+  /**
+   * Runs the same rules as the CSV importer rather than a second, weaker copy —
+   * a guest added by hand shouldn't be able to slip past a check that the
+   * bulk path enforces.
+   */
   const validateForm = () => {
-    if (!formData.firstName.trim()) {
-      setFeedback({ type: 'error', message: 'First name is required.' });
+    const { issues } = validateRow({
+      lineNumber: 0,
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      email: formData.email.trim() || null,
+      phone: formData.phone.trim() || null,
+      checkoutDate: formData.checkoutDate || null,
+      checkinDate: formData.checkinDate || null,
+      source: formData.source,
+      raw: {},
+    });
+
+    // The importer treats a missing surname as acceptable; this form asks for
+    // both, so check them separately before falling through to shared rules.
+    if (!formData.firstName.trim() || !formData.lastName.trim()) {
+      setFeedback({ type: 'error', message: 'First and last name are both required.' });
       return false;
     }
-    if (!formData.lastName.trim()) {
-      setFeedback({ type: 'error', message: 'Last name is required.' });
+
+    const blocker = issues.find(i => i.level === 'error');
+    if (blocker) {
+      setFeedback({ type: 'error', message: blocker.message });
       return false;
     }
-    if (!formData.email.trim() && !formData.phone.trim()) {
-      setFeedback({ type: 'error', message: 'Please provide either an Email address or Phone number to contact this guest.' });
-      return false;
-    }
-    if (formData.email.trim() && !/\S+@\S+\.\S+/.test(formData.email)) {
-      setFeedback({ type: 'error', message: 'Invalid email address format.' });
-      return false;
-    }
-    if (formData.phone.trim() && formData.phone.length < 7) {
-      setFeedback({ type: 'error', message: 'Phone number must be at least 7 digits.' });
-      return false;
-    }
+
     return true;
+  };
+
+  const handleDownloadTemplate = () => {
+    downloadCsv('reviewsail-guest-template.csv', buildTemplateCsv());
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -89,12 +113,22 @@ export default function SyncGuests() {
           locationId: activeLocationId,
           checkoutDate: formData.checkoutDate,
           checkinDate: formData.checkinDate || undefined,
+          source: formData.source,
           status: 'completed',
         });
 
         if (order) {
           await addReviewRequest(order.id);
-          setFormData({ firstName: '', lastName: '', email: '', phone: '', checkoutDate: new Date().toISOString().split('T')[0], checkinDate: '' });
+          setFormData({
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            checkoutDate: new Date().toISOString().split('T')[0],
+            checkinDate: '',
+            // Keep the source: an owner adding walk-ins is adding several.
+            source: formData.source,
+          });
           setFeedback({ type: 'success', message: `Successfully queued review request for ${customer.firstName} ${customer.lastName}!` });
         } else {
           setFeedback({ type: 'error', message: 'Customer added, but failed to create guest checkout order.' });
@@ -123,13 +157,22 @@ export default function SyncGuests() {
             Add guests manually or upload a CSV file to queue review requests.
           </p>
         </div>
-        <button
-          onClick={() => setIsGuideOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
-        >
-          <BookOpen size={16} />
-          CSV Format Guide
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownloadTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-ink border border-line rounded-lg hover:bg-canvas transition-colors"
+          >
+            <Download size={16} />
+            Download Template
+          </button>
+          <button
+            onClick={() => setIsGuideOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
+          >
+            <BookOpen size={16} />
+            CSV Format Guide
+          </button>
+        </div>
       </div>
 
       {/* Location warning */}
@@ -233,6 +276,23 @@ export default function SyncGuests() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-ink mb-1 flex items-center gap-1.5">
+                <Building2 size={14} /> Reservation Source
+              </label>
+              <select
+                aria-label="Reservation Source"
+                value={formData.source}
+                onChange={e => setFormData(prev => ({ ...prev, source: e.target.value as ReservationSource }))}
+                className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors"
+                disabled={!activeLocationId}
+              >
+                {RESERVATION_SOURCES.map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+
             <button
               type="submit"
               disabled={loading || !activeLocationId}
@@ -290,6 +350,13 @@ export default function SyncGuests() {
                 match their columns automatically — but every match is only a suggestion, and you can correct any of
                 them in the import step before anything is saved.
               </p>
+              <button
+                onClick={handleDownloadTemplate}
+                className="inline-flex items-center gap-2 text-sm font-medium text-brand-600 hover:text-brand-700"
+              >
+                <Download size={15} />
+                Download a blank template with example rows
+              </button>
               <p className="text-sm text-ink-muted">
                 You'll need a <strong>name</strong> column, a <strong>check-out date</strong>, and at least one way to
                 reach the guest (<strong>email</strong> or <strong>phone</strong>). Adding a <strong>check-in date</strong> is

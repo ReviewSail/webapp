@@ -40,6 +40,8 @@ export type Order = {
   checkinDate?: string;
   midstaySent?: boolean;
   midstaySentAt?: string;
+  /** Booking origin. Null on stays recorded before the column existed. */
+  source?: string | null;
   status: 'pending' | 'completed' | 'cancelled';
 };
 
@@ -116,12 +118,19 @@ export type BulkImportRow = {
   /** Date-only ISO string, e.g. "2026-07-30". */
   checkoutDate: string;
   checkinDate?: string | null;
+  source?: string | null;
 };
 
 export type BulkImportResult = {
   success: boolean;
   imported: number;
   skippedDuplicates: number;
+  /**
+   * Rows we tried to write and couldn't. Distinct from rows rejected before
+   * the attempt (validation errors) and from rows skipped as duplicates — the
+   * owner needs to know which of the three happened.
+   */
+  failed: number;
   error?: string;
 };
 
@@ -312,6 +321,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         checkinDate: o.checkin_date || undefined,
         midstaySent: o.midstay_sent === true,
         midstaySentAt: o.midstay_sent_at || undefined,
+        source: o.source ?? null,
         status: o.status as 'pending' | 'completed' | 'cancelled',
       }));
 
@@ -508,6 +518,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       // Without this, mid-stay check-ins can never fire: process-reviews
       // Phase 3 only considers orders where checkin_date is not null.
       checkin_date: order.checkinDate || null,
+      source: order.source || null,
       status: order.status,
     }).select().single();
 
@@ -525,6 +536,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       checkinDate: data.checkin_date || undefined,
       midstaySent: data.midstay_sent === true,
       midstaySentAt: data.midstay_sent_at || undefined,
+      source: data.source ?? null,
       status: data.status as 'pending' | 'completed' | 'cancelled',
     };
   };
@@ -666,13 +678,13 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
 
   const bulkImport = async (rows: BulkImportRow[]) => {
     if (!state.activeLocationId) {
-      return { success: false, imported: 0, skippedDuplicates: 0, error: 'No active location selected' };
+      return { success: false, imported: 0, skippedDuplicates: 0, failed: rows.length, error: 'No active location selected' };
     }
 
     try {
       const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
       if (!userData) {
-        return { success: false, imported: 0, skippedDuplicates: 0, error: 'No user account linked' };
+        return { success: false, imported: 0, skippedDuplicates: 0, failed: rows.length, error: 'No user account linked' };
       }
       const accountId = userData.account_id;
       const locationId = state.activeLocationId;
@@ -757,6 +769,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
               checkin_date: source?.checkinDate
                 ? new Date(`${source.checkinDate}T12:00:00Z`).toISOString()
                 : null,
+              source: source?.source || null,
               status: 'completed' as const,
             };
           });
@@ -780,7 +793,9 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
           const { error: rrError } = await supabase.from('review_requests').insert(requestsToInsert);
           if (rrError) throw rrError;
 
-          imported += batch.length;
+          // Count what Postgres actually returned, not what we sent — a short
+          // insert would otherwise be reported to the owner as a full success.
+          imported += insertedOrders.length;
         } catch (batchError) {
           // Roll the batch back by hand — without this a failure here leaves
           // orphan customers with no stay and no review request.
@@ -790,13 +805,14 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       }
 
       await refreshData();
-      return { success: true, imported, skippedDuplicates };
+      return { success: true, imported, skippedDuplicates, failed: toImport.length - imported };
     } catch (e: any) {
       console.error(e);
       return {
         success: false,
         imported: 0,
         skippedDuplicates: 0,
+        failed: rows.length,
         error: e.message || 'Failed to import guests',
       };
     }
