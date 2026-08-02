@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useReviewSail } from '../context/ReviewSailContext';
 import CsvImportWizard from '../components/import/CsvImportWizard';
+import PropertyQrCard from '../components/import/PropertyQrCard';
 import {
   CheckCircle,
   AlertTriangle,
@@ -182,6 +183,11 @@ export default function SyncGuests() {
           <span>Please select a property location from the dropdown in the header before importing guests.</span>
         </div>
       )}
+
+      {/* Above the import on purpose: for an Airbnb or Booking.com host this is
+          the only route that actually reaches a guest, so it shouldn't be the
+          thing they find after a failed CSV. */}
+      <PropertyQrCard locationId={activeLocationId} locationName={locationName} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* CSV Upload */}

@@ -58,3 +58,15 @@ export const decodeRequestId = (code: string): string | null => {
     return null;
   }
 };
+
+/**
+ * The codec is UUID-generic, not request-specific. Property QR links encode a
+ * `locations.id` with the very same functions, which is why property links need
+ * no new column and no second encoder.
+ *
+ * The two are indistinguishable once encoded — both are 22 characters of
+ * base64url — so which kind of id a code holds comes from the route it arrived
+ * on (`/r/` vs `/p/`), never from the code itself.
+ */
+export const encodeShortId = encodeRequestId;
+export const decodeShortId = decodeRequestId;

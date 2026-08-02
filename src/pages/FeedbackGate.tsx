@@ -2,14 +2,34 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { supabase } from '../integrations/supabase/client';
 import { Star, Send, CheckCircle2, MapPin, Mail, MessageCircle } from 'lucide-react';
-import { decodeRequestId } from '../lib/shortLink';
+import { decodeShortId } from '../lib/shortLink';
 
-export default function FeedbackGate() {
+/**
+ * 'request' — the guest was sent here, so a stay already exists and everything
+ * keys off its request id.
+ *
+ * 'property' — the guest scanned a poster. There is no stay yet: the code is a
+ * location, and the stay is created when they submit. Same gate, same UI; only
+ * the identity and the RPCs behind it differ.
+ */
+type GateMode = 'request' | 'property';
+
+export default function FeedbackGate({ mode = 'request' }: { mode?: GateMode }) {
   const [searchParams] = useSearchParams();
-  // Reached either as /feedback-gate?request_id=<uuid> (email, and any link
-  // already sent) or as /r/<code> (SMS, where the long URL costs a segment).
+  // Reached as /feedback-gate?request_id=<uuid> (email, and any link already
+  // sent), /r/<code> (SMS, where the long URL costs a segment), or /p/<code>
+  // (a property QR). Codes are indistinguishable once encoded, so the route
+  // decides which kind of id this is.
   const { code } = useParams<{ code?: string }>();
-  const requestId = searchParams.get('request_id') ?? (code ? decodeRequestId(code) : null);
+  const isProperty = mode === 'property';
+
+  const propertyId = isProperty && code ? decodeShortId(code) : null;
+  const requestId = isProperty
+    ? null
+    : searchParams.get('request_id') ?? (code ? decodeShortId(code) : null);
+
+  /** Whichever id this gate is keyed on — used for load and submit guards. */
+  const gateId = isProperty ? propertyId : requestId;
   const [locationName, setLocationName] = useState('');
   const [googleUrl, setGoogleUrl] = useState('');
   const [selectedStars, setSelectedStars] = useState<number | null>(null);
@@ -33,14 +53,14 @@ export default function FeedbackGate() {
   const [recoverySubmitted, setRecoverySubmitted] = useState(false);
 
   useEffect(() => {
-    if (!requestId) {
+    if (!gateId) {
       setLoading(false);
-      setError('Missing request ID.');
+      setError(isProperty ? 'This link is not valid.' : 'Missing request ID.');
       return;
     }
 
     // Demo mode: show gate with placeholder data
-    if (requestId === 'demo') {
+    if (gateId === 'demo') {
       setIsDemo(true);
       setLocationName('The Grand Hotel');
       setGoogleUrl('');
@@ -54,12 +74,13 @@ export default function FeedbackGate() {
       try {
         // Read via RPC rather than a nested join: anon holds no grant on
         // locations/orders, and this keeps request_ids non-enumerable.
-        const { data, error } = await supabase
-          .rpc('get_feedback_gate_context', { p_request_id: requestId })
-          .maybeSingle();
+        const { data, error } = await (isProperty
+          ? supabase.rpc('get_property_gate_context', { p_location_id: propertyId })
+          : supabase.rpc('get_feedback_gate_context', { p_request_id: requestId })
+        ).maybeSingle();
 
         if (error) throw error;
-        if (!data) throw new Error('Request not found');
+        if (!data) throw new Error(isProperty ? 'Property not found' : 'Request not found');
 
         const location = data as {
           location_id: string;
@@ -73,18 +94,19 @@ export default function FeedbackGate() {
         setRecoveryEmail(location.recovery_email || '');
       } catch (err: any) {
         console.error(err);
-        setError('Unable to load request details.');
+        setError(isProperty ? 'Unable to load this property.' : 'Unable to load request details.');
       } finally {
         setLoading(false);
       }
     };
 
     fetchDetails();
-  }, [requestId]);
+  }, [gateId, isProperty, propertyId, requestId]);
 
-  // Log click event (skip for demo)
+  // Log click event (skip for demo). Property scans have no request to update
+  // yet — one is created when they submit.
   useEffect(() => {
-    if (requestId && !loading && !isDemo) {
+    if (!isProperty && requestId && !loading && !isDemo) {
       const recordEvent = async () => {
         // One RPC updates the status and logs the event; guests hold no direct
         // table grants, so request_ids can't be enumerated.
@@ -97,6 +119,33 @@ export default function FeedbackGate() {
       recordEvent();
     }
   }, [requestId, loading, isDemo]);
+
+  /**
+   * One submission, routed to whichever RPC this gate is keyed on. Both derive
+   * the location and the feedback kind server-side, so a guest can never file
+   * against another property or relabel a complaint as a rating.
+   */
+  const submitFeedback = (args: {
+    star: number | null;
+    text?: string | null;
+    name?: string | null;
+    email?: string | null;
+  }) =>
+    isProperty
+      ? supabase.rpc('submit_property_feedback', {
+          p_location_id: propertyId,
+          p_star_rating: args.star,
+          p_feedback_text: args.text ?? null,
+          p_guest_name: args.name ?? null,
+          p_guest_email: args.email ?? null,
+        })
+      : supabase.rpc('submit_guest_feedback', {
+          p_request_id: requestId,
+          p_star_rating: args.star,
+          p_feedback_text: args.text ?? null,
+          p_guest_name: args.name ?? null,
+          p_guest_email: args.email ?? null,
+        });
 
   const handleStarSelect = async (rating: number) => {
     setSelectedStars(rating);
@@ -111,20 +160,19 @@ export default function FeedbackGate() {
         // actually issues the request. Calling it (rather than awaiting) is
         // what keeps the redirect instant while still firing the write — a lost
         // statistic is cheap, a delayed redirect costs the review itself.
-        supabase
-          .rpc('submit_guest_feedback', {
-            p_request_id: requestId,
-            p_star_rating: rating,
-          })
-          .then(({ error }) => {
-            if (error) console.error('Failed to record rating:', error);
-          });
+        submitFeedback({ star: rating }).then(({ error }) => {
+          if (error) console.error('Failed to record rating:', error);
+        });
 
-        supabase
-          .rpc('record_request_event', { p_request_id: requestId, p_event: 'clicked' })
-          .then(({ error }) => {
-            if (error) console.error('Failed to mark request clicked:', error);
-          });
+        // A property scan has no request to mark clicked — submit_property_feedback
+        // creates one already in that state.
+        if (!isProperty) {
+          supabase
+            .rpc('record_request_event', { p_request_id: requestId, p_event: 'clicked' })
+            .then(({ error }) => {
+              if (error) console.error('Failed to mark request clicked:', error);
+            });
+        }
       }
 
       if (googleUrl) {
@@ -150,21 +198,23 @@ export default function FeedbackGate() {
       if (!isDemo) {
         // location_id is deliberately not sent: the RPC derives it from the
         // request, so a guest cannot file a complaint against another property.
-        const { error } = await supabase.rpc('submit_guest_feedback', {
-          p_request_id: requestId,
-          p_star_rating: selectedStars,
-          p_feedback_text: feedbackText.trim(),
-          p_guest_name: guestName.trim() || null,
-          p_guest_email: guestEmail.trim() || null,
+        const { error } = await submitFeedback({
+          star: selectedStars,
+          text: feedbackText.trim(),
+          name: guestName.trim() || null,
+          email: guestEmail.trim() || null,
         });
 
         if (error) throw error;
 
-        // Update review request status
-        await supabase.rpc('record_request_event', {
-          p_request_id: requestId,
-          p_event: 'private_feedback',
-        });
+        // Update review request status. Property scans skip this: the request
+        // is created as 'private_feedback' in the same call above.
+        if (!isProperty) {
+          await supabase.rpc('record_request_event', {
+            p_request_id: requestId,
+            p_event: 'private_feedback',
+          });
+        }
       } else {
         // Demo mode: simulate a brief delay
         await new Promise(r => setTimeout(r, 500));
@@ -188,12 +238,11 @@ export default function FeedbackGate() {
     try {
       if (!isDemo) {
         // No star rating: the RPC files this as a 'recovery' message.
-        const { error } = await supabase.rpc('submit_guest_feedback', {
-          p_request_id: requestId,
-          p_star_rating: null,
-          p_feedback_text: recoveryMessage.trim(),
-          p_guest_name: recoveryName.trim() || null,
-          p_guest_email: recoveryGuestEmail.trim() || null,
+        const { error } = await submitFeedback({
+          star: null,
+          text: recoveryMessage.trim(),
+          name: recoveryName.trim() || null,
+          email: recoveryGuestEmail.trim() || null,
         });
 
         if (error) throw error;

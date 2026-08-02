@@ -70,6 +70,12 @@ function AppRoutes() {
       {/* Short form used in SMS, where the long URL costs most of a segment.
           The legacy /feedback-gate?request_id= route stays for links already sent. */}
       <Route path="/r/:code" element={<FeedbackGate />} />
+      {/* Property QR. Same 22-character code shape as /r/, but holding a
+          location id rather than a request id — the two are indistinguishable
+          once encoded, so the prefix is what tells them apart. Used where no
+          guest list exists: Airbnb and Booking.com never release a usable
+          guest email, so a poster is the only thing that reaches those guests. */}
+      <Route path="/p/:code" element={<FeedbackGate mode="property" />} />
       <Route path="/already-reviewed" element={<AlreadyReviewed />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/login" element={<Login />} />
