@@ -188,6 +188,11 @@ export default function CsvImportWizard() {
   // --- Step 2: mapping ----------------------------------------------------
 
   const setFieldMapping = (field: ImportFieldKey, header: string) => {
+    // Fields that are about to lose this column to the one being set.
+    const stolenFrom = header
+      ? (Object.keys(mapping) as ImportFieldKey[]).filter(k => k !== field && mapping[k] === header)
+      : [];
+
     setMapping(prev => {
       const next = { ...prev };
       // A CSV column can only feed one field; clear any prior claim on it.
@@ -198,9 +203,16 @@ export default function CsvImportWizard() {
       else delete next[field];
       return next;
     });
-    // Once the owner has made the call, our confidence in our own guess is
-    // no longer worth showing.
-    setConfidence(prev => ({ ...prev, [field]: undefined }));
+
+    setConfidence(prev => {
+      // Once the owner has made the call, our confidence in our own guess is
+      // no longer worth showing.
+      const next = { ...prev, [field]: undefined };
+      // And a field that just lost its column is no longer "Matched" — leaving
+      // that badge up next to an empty dropdown is a straight contradiction.
+      for (const key of stolenFrom) next[key] = undefined;
+      return next;
+    });
     // A different date column deserves a fresh reading, not the convention
     // they picked for the previous one.
     if (field === 'checkoutDate') setDateFormatOverride(null);
@@ -484,7 +496,7 @@ export default function CsvImportWizard() {
                   <label className="text-sm text-ink">
                     {field.label}
                     {field.required && <span className="text-critical ml-0.5">*</span>}
-                    <ConfidenceBadge confidence={confidence[field.key]} />
+                    <ConfidenceBadge confidence={confidence[field.key]} mapped={!!mapping[field.key]} />
                     {field.hint && <span className="block text-xs text-ink-faint">{field.hint}</span>}
                   </label>
                   <select
@@ -507,11 +519,13 @@ export default function CsvImportWizard() {
           {!mapping.source && (
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-3">
               <label className="text-sm text-ink">
-                Reservation source
-                <span className="block text-xs text-ink-faint">Applied to every row in this file</span>
+                Source for this file
+                <span className="block text-xs text-ink-faint">
+                  Applied to every row, since no source column was mapped
+                </span>
               </label>
               <select
-                aria-label="Reservation source"
+                aria-label="Source for this file"
                 value={fallbackSource}
                 onChange={e => setFallbackSource(e.target.value as ReservationSource)}
                 className="w-full px-3 py-2 border border-line rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
@@ -825,8 +839,15 @@ const Empty = () => <span className="text-ink-faint">—</span>;
  * How much to trust a suggested column. Absent once the owner picks a column
  * themselves — at that point it's their answer, not our guess.
  */
-const ConfidenceBadge = ({ confidence }: { confidence?: MatchConfidence }) => {
+const ConfidenceBadge = ({
+  confidence,
+  mapped,
+}: { confidence?: MatchConfidence; mapped: boolean }) => {
   if (!confidence) return null;
+  // The badge describes the column in the dropdown beside it, so the two can
+  // never be allowed to disagree: no "Matched" over an empty select, and no
+  // "Not found" over a real column.
+  if (mapped !== (confidence !== 'none')) return null;
 
   const styles: Record<MatchConfidence, { label: string; className: string }> = {
     matched: { label: 'Matched', className: 'bg-positive-soft text-positive' },

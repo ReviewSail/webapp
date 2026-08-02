@@ -33,7 +33,7 @@ export const IMPORT_FIELDS: Array<{
   { key: 'phone', label: 'Phone', required: false, hint: 'Email or phone required' },
   { key: 'checkoutDate', label: 'Check-out date', required: true },
   { key: 'checkinDate', label: 'Check-in date', required: false, hint: 'Enables mid-stay check-ins' },
-  { key: 'source', label: 'Reservation source', required: false, hint: 'Falls back to the choice below' },
+  { key: 'source', label: 'Reservation source', required: false, hint: 'Only if your file has a source column' },
 ];
 
 // --- Reservation source ---------------------------------------------------
@@ -134,7 +134,17 @@ const fuzzyScore = (header: string, candidates: string[]): number => {
   let best = 0;
 
   for (const candidate of candidates) {
-    if (clean.includes(candidate) || candidate.includes(clean)) {
+    // A header that *contains* a whole alias is strong evidence:
+    // "guestemailaddress" really is an email column.
+    //
+    // The reverse — a header that is merely a fragment of an alias — is much
+    // weaker, and on short headers it is nonsense: "Ref" is a substring of
+    // "referrer" but a reference number is not a booking source. Require some
+    // length before trusting that direction.
+    const containsAlias = clean.includes(candidate);
+    const isAliasFragment = clean.length >= 4 && candidate.includes(clean);
+
+    if (containsAlias || isAliasFragment) {
       // Longer shared text is stronger evidence: "email" inside "guestemail"
       // beats "name" inside "lastname" mapping to firstName.
       const ratio = Math.min(clean.length, candidate.length) / Math.max(clean.length, candidate.length);
