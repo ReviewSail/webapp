@@ -47,6 +47,11 @@ const upload = async (container: HTMLElement, csv: string, fileName = 'test.csv'
 const selectFor = (label: string): HTMLSelectElement =>
   screen.getByRole('combobox', { name: label }) as HTMLSelectElement;
 
+/** The mapping row for a field — scopes badge queries away from the preview
+    table, whose headers repeat the same labels. */
+const rowFor = (label: string): HTMLElement =>
+  selectFor(label).closest('div') as HTMLElement;
+
 beforeEach(() => {
   vi.clearAllMocks();
   fetchExistingImportKeys.mockResolvedValue(new Set<string>());
@@ -100,13 +105,50 @@ describe('a CSV with mismatched headers', () => {
     expect(screen.getByText(/an email or phone column/i)).toBeInTheDocument();
   });
 
+  it('clears the badge on a field whose column was taken by another field', async () => {
+    // Exactly the sequence that produced "First name [Matched]" sitting above
+    // an empty dropdown: point check-out at the first-name column, which
+    // steals it, then set check-out back to nothing.
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, MISMATCHED_CSV);
+
+    expect(selectFor('First name').value).toBe('Given Name');
+
+    fireEvent.change(selectFor('Check-out date'), { target: { value: 'Given Name' } });
+    expect(selectFor('First name').value).toBe('');
+
+    // The badge must not still be claiming a match.
+    expect(within(rowFor('First name')).queryByText('Matched')).not.toBeInTheDocument();
+    expect(within(rowFor('First name')).queryByText('Needs review')).not.toBeInTheDocument();
+  });
+
+  it('never shows a badge that contradicts its own dropdown', async () => {
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, MISMATCHED_CSV);
+
+    // Unmapping by hand must not leave a "Matched" behind either.
+    fireEvent.change(selectFor('Email'), { target: { value: '' } });
+    expect(within(rowFor('Email')).queryByText('Matched')).not.toBeInTheDocument();
+  });
+
+  it('does not label two different controls "Reservation source"', async () => {
+    // One is the CSV column mapping, the other the per-file fallback. Two
+    // comboboxes with the same accessible name is a bug, not a style nit.
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, MISMATCHED_CSV);
+
+    expect(screen.getByRole('combobox', { name: 'Reservation source' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Source for this file' })).toBeInTheDocument();
+  });
+
   it('drops the confidence badge once the owner picks a column themselves', async () => {
     const { container } = render(<CsvImportWizard />);
     await upload(container, MISMATCHED_CSV);
 
-    const before = screen.getAllByText('Needs review').length;
+    const before = screen.queryAllByText('Needs review').length;
+    expect(before).toBeGreaterThan(0);
     fireEvent.change(selectFor('Email'), { target: { value: 'Ref' } });
-    expect(screen.getAllByText('Needs review').length).toBe(before - 1);
+    expect(screen.queryAllByText('Needs review').length).toBe(before - 1);
   });
 });
 
