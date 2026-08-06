@@ -388,10 +388,15 @@ instead of visibly broken. The fix is server-side rollups (an RPC or a
 materialised view) — see §11.
 
 **Context.** As of 2026-08-06 this project's entire `public` schema is under
-1 MB, so none of the above is currently saving meaningful bytes; it is
-prevention that scales with the guest list. The org's egress overrun at the
-time traced to the sibling `folup` project, whose activity pollers were
-shipping a 4 KB enrichment payload per row on a 3-second timer.
+1 MB — the largest table held 18 rows — so none of the above is currently
+saving meaningful bytes. It is prevention: every one of these reads scales
+with the guest list, and the shape that was replaced (whole tables, re-read
+after every write) gets expensive at the first real customer, not gradually.
+
+If you are chasing an egress bill, measure before you optimise. `calls` from
+`pg_stat_statements` tells you which query is actually hot, and
+`pg_column_size()` tells you what its rows weigh. Neither is inferable from
+reading the code.
 
 ---
 
