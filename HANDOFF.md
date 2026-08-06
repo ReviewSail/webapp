@@ -352,6 +352,37 @@ supabase/functions/
   `pnpm-lock.yaml`; a new dependency is only picked up if the lockfile is
   committed alongside `package.json`.
 
+- **Only ever deploy from the repo root, on the branch you mean to ship.**
+  `.vercel/repo.json` at the root puts the CLI in repo-link mode: run
+  `vercel deploy` from *any* subdirectory and it walks up, finds the root, and
+  uploads the root's working tree — not your current directory. Git worktrees
+  under `.claude/worktrees/` are inside that tree and are excluded by
+  `.vercelignore`'s `/.claude`, so deploying from one silently ships whatever
+  the root happens to have checked out.
+
+  This bit on 2026-08-06: a `--prod` deploy run from a worktree shipped the
+  root's stale `feat/team-billing-ui` checkout and rolled production back six
+  commits, dropping the property-QR route. Merge first, then:
+
+  ```bash
+  cd "<repo root>" && git checkout main && git pull && corepack pnpm install
+  vercel deploy --prod --yes
+  ```
+
+- **"Ready" does not mean "correct".** A Vercel deploy reports Ready when the
+  build succeeds, which says nothing about *which* source it built. Verify by
+  content — pick a string literal from the change (component and function names
+  are minified away, string literals survive) and grep the served bundle:
+
+  ```bash
+  B=$(curl -s https://webapp-nine-teal.vercel.app | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+  curl -s "https://webapp-nine-teal.vercel.app$B" | grep -c '<a literal from your change>'
+  ```
+
+- `vercel rollback` with no argument only *reports* rollback status; it does not
+  roll anything back. Pass the target deployment URL, or fix forward by
+  deploying the known-good branch from the repo root.
+
 ---
 
 ## 10a. Data Layer & Egress
