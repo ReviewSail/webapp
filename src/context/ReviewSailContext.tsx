@@ -1,7 +1,9 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useMemo, useCallback, ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { readFunctionError } from '../lib/functionError';
+import { fetchAllPages } from '../lib/pagedFetch';
 import type { DigestSetting } from '../types/reviewSail';
 
 export type { DigestSetting } from '../types/reviewSail';
@@ -194,25 +196,6 @@ type ReviewSailContextType = ReviewSailState & {
   updateDigestSetting: (frequency: 'weekly' | 'monthly', enabled: boolean) => Promise<void>;
 };
 
-const initialState: ReviewSailState = {
-  locations: [],
-  customers: [],
-  orders: [],
-  reviewRequests: [],
-  optOuts: [],
-  messageEvents: [],
-  feedbacks: [],
-  activeLocationId: null,
-  subscriptionStatus: 'inactive',
-  stripeCustomerId: null,
-  planName: null,
-  currentPeriodEnd: null,
-  cancelAtPeriodEnd: false,
-  loading: true,
-  unreadPrivateFeedbackCount: 0,
-  digestSetting: null,
-};
-
 /**
  * Kept in step with the seeds in supabase/migrations/0021_sms_templates.sql and
  * the fallbacks in supabase/functions/process-reviews. The SMS copy is GSM-7
@@ -227,15 +210,76 @@ export const DEFAULT_TEMPLATES = {
 
 const ReviewSailContext = createContext<ReviewSailContextType | undefined>(undefined);
 
+/**
+ * Every column this app actually reads, named explicitly.
+ *
+ * These reads used to be `select('*')`, which shipped whole rows — including
+ * columns no screen renders — on every load and after every write. Anything
+ * added here should be something a component genuinely consumes; if a mapper
+ * below stops reading a field, drop it from the list too.
+ */
+const COLUMNS = {
+  accounts: 'subscription_status, stripe_customer_id, plan_name, current_period_end, cancel_at_period_end',
+  locations:
+    'id, name, google_place_url, timezone, enable_email, enable_sms, midstay_enabled, midstay_day, onboarding_complete, preferred_send_hour, recovery_email',
+  messageTemplates: 'location_id, type, template_text',
+  customers: 'id, first_name, last_name, email, phone',
+  orders: 'id, customer_id, location_id, checkout_date, checkin_date, midstay_sent, midstay_sent_at, source, status',
+  reviewRequests: 'id, order_id, status, sent_at',
+  optOuts: 'id, email, phone, opt_out_date',
+  messageEvents: 'id, request_id, event_type, created_at',
+  digestSettings: 'id, user_id, account_id, frequency, enabled',
+  guestFeedback:
+    'id, request_id, location_id, kind, star_rating, feedback_text, guest_name, guest_email, manager_response, is_read, created_at',
+} as const;
+
+/**
+ * Query keys, one per table.
+ *
+ * The point of the split is that a write touching one row invalidates one
+ * table. This all used to be a single `refreshData()` that re-read eight
+ * tables in full, and every mutation called it — marking a single piece of
+ * feedback as read re-downloaded the entire account.
+ */
+const keys = {
+  all: ['reviewsail'] as const,
+  account: (userId?: string) => ['reviewsail', 'account', userId] as const,
+  locations: (userId?: string) => ['reviewsail', 'locations', userId] as const,
+  customers: (userId?: string) => ['reviewsail', 'customers', userId] as const,
+  orders: (userId?: string) => ['reviewsail', 'orders', userId] as const,
+  reviewRequests: (userId?: string) => ['reviewsail', 'review_requests', userId] as const,
+  optOuts: (userId?: string) => ['reviewsail', 'opt_outs', userId] as const,
+  messageEvents: (userId?: string) => ['reviewsail', 'message_events', userId] as const,
+  feedbacks: (userId?: string) => ['reviewsail', 'guest_feedback', userId] as const,
+  digestSetting: (userId?: string) => ['reviewsail', 'digest_settings', userId] as const,
+};
+
+type AccountSummary = {
+  accountId: string | null;
+  subscriptionStatus: SubscriptionStatus;
+  stripeCustomerId: string | null;
+  planName: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+};
+
 export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
   const { session } = useAuth();
-  const [state, setState] = useState<ReviewSailState>(initialState);
+  const queryClient = useQueryClient();
+  const userId = session?.user?.id;
+  const enabled = !!userId;
 
-  const refreshData = async () => {
-    if (!session?.user) return;
-    setState(prev => ({ ...prev, loading: true }));
+  // Local UI state. Not remote data, so it has no business in a query cache.
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
-    try {
+  // Every read below is RLS-scoped to the caller's account, paged through
+  // `.range()`, and cached for the durations set in src/lib/queryClient.ts.
+
+  // EGRESS-COST: low — two single-row reads, once per session.
+  const accountQuery = useQuery({
+    queryKey: keys.account(userId),
+    enabled,
+    queryFn: async (): Promise<AccountSummary> => {
       // Local-only shortcut for working without Stripe keys. Vite strips this
       // from production builds — shipped, it let any admin activate a paid plan
       // by visiting /dashboard?mock_checkout_success=true&account_id=<their id>.
@@ -253,67 +297,107 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
-      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-      let subscriptionStatus: SubscriptionStatus = 'inactive';
-      let stripeCustomerId = null;
-      let planName: string | null = null;
-      let currentPeriodEnd: string | null = null;
-      let cancelAtPeriodEnd = false;
+      const { data: userData } = await supabase
+        .from('users')
+        .select('account_id')
+        .eq('id', userId)
+        .single();
 
-      if (userData?.account_id) {
-        const { data: accData } = await supabase
-          .from('accounts')
-          .select('subscription_status, stripe_customer_id, plan_name, current_period_end, cancel_at_period_end')
-          .eq('id', userData.account_id)
-          .single();
-        if (accData) {
-          subscriptionStatus = (accData.subscription_status as any) || 'inactive';
-          stripeCustomerId = accData.stripe_customer_id || null;
-          planName = accData.plan_name || null;
-          currentPeriodEnd = accData.current_period_end || null;
-          cancelAtPeriodEnd = accData.cancel_at_period_end === true;
-        }
-      }
+      const empty: AccountSummary = {
+        accountId: userData?.account_id ?? null,
+        subscriptionStatus: 'inactive',
+        stripeCustomerId: null,
+        planName: null,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+      };
+      if (!userData?.account_id) return empty;
 
-      const { data: locData } = await supabase.from('locations').select('*');
-      const parsedLocations: Location[] = (locData || []).map(l => ({
-        id: l.id,
-        name: l.name,
-        googlePlaceUrl: l.google_place_url || '',
-        timezone: l.timezone || 'UTC',
-        enableEmail: l.enable_email !== false,
-        enableSms: l.enable_sms !== false,
-        midstayEnabled: l.midstay_enabled !== false,
-        midstayDay: l.midstay_day != null ? l.midstay_day : 2,
-        onboardingComplete: l.onboarding_complete === true,
-        preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
-        recoveryEmail: l.recovery_email || '',
-      }));
+      const { data: accData } = await supabase
+        .from('accounts')
+        .select(COLUMNS.accounts)
+        .eq('id', userData.account_id)
+        .single();
+      if (!accData) return empty;
 
-      const { data: templatesData } = await supabase.from('message_templates').select('*');
-      const locations = parsedLocations.map(loc => {
-        const emailTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'email');
-        const smsTemplate = templatesData?.find(t => t.location_id === loc.id && t.type === 'sms');
-        const smsReminder = templatesData?.find(t => t.location_id === loc.id && t.type === 'sms_reminder');
+      return {
+        accountId: userData.account_id,
+        subscriptionStatus: (accData.subscription_status as SubscriptionStatus) || 'inactive',
+        stripeCustomerId: accData.stripe_customer_id || null,
+        planName: accData.plan_name || null,
+        currentPeriodEnd: accData.current_period_end || null,
+        cancelAtPeriodEnd: accData.cancel_at_period_end === true,
+      };
+    },
+  });
+
+  // EGRESS-COST: low — one page in practice; an account has a handful of
+  // properties and three templates apiece.
+  const locationsQuery = useQuery({
+    queryKey: keys.locations(userId),
+    enabled,
+    queryFn: async (): Promise<Location[]> => {
+      const [locData, templatesData] = await Promise.all([
+        fetchAllPages<any>('locations', () =>
+          supabase.from('locations').select(COLUMNS.locations).order('id'),
+        ),
+        fetchAllPages<any>('message_templates', () =>
+          supabase.from('message_templates').select(COLUMNS.messageTemplates).order('location_id'),
+        ),
+      ]);
+
+      return locData.map(l => {
+        const templateFor = (type: string) =>
+          templatesData.find(t => t.location_id === l.id && t.type === type)?.template_text;
         return {
-          ...loc,
-          templateText: emailTemplate?.template_text || DEFAULT_TEMPLATES.email,
-          smsTemplateText: smsTemplate?.template_text || DEFAULT_TEMPLATES.sms,
-          smsReminderText: smsReminder?.template_text || DEFAULT_TEMPLATES.sms_reminder,
+          id: l.id,
+          name: l.name,
+          googlePlaceUrl: l.google_place_url || '',
+          timezone: l.timezone || 'UTC',
+          enableEmail: l.enable_email !== false,
+          enableSms: l.enable_sms !== false,
+          midstayEnabled: l.midstay_enabled !== false,
+          midstayDay: l.midstay_day != null ? l.midstay_day : 2,
+          onboardingComplete: l.onboarding_complete === true,
+          preferredSendHour: l.preferred_send_hour != null ? l.preferred_send_hour : 10,
+          recoveryEmail: l.recovery_email || '',
+          templateText: templateFor('email') || DEFAULT_TEMPLATES.email,
+          smsTemplateText: templateFor('sms') || DEFAULT_TEMPLATES.sms,
+          smsReminderText: templateFor('sms_reminder') || DEFAULT_TEMPLATES.sms_reminder,
         };
       });
+    },
+  });
 
-      const { data: custData } = await supabase.from('customers').select('*');
-      const customers: Customer[] = (custData || []).map(c => ({
+  // EGRESS-COST: high — grows with the guest list. Guests searches this array
+  // client-side, so it cannot stop at the first page.
+  const customersQuery = useQuery({
+    queryKey: keys.customers(userId),
+    enabled,
+    queryFn: async (): Promise<Customer[]> => {
+      const rows = await fetchAllPages<any>('customers', () =>
+        supabase.from('customers').select(COLUMNS.customers).order('id'),
+      );
+      return rows.map(c => ({
         id: c.id,
         firstName: c.first_name,
         lastName: c.last_name,
         email: c.email,
         phone: c.phone,
       }));
+    },
+  });
 
-      const { data: orderData } = await supabase.from('orders').select('*');
-      const orders: Order[] = (orderData || []).map(o => ({
+  // EGRESS-COST: high — one row per stay, joined to customers in the browser
+  // by Analytics.
+  const ordersQuery = useQuery({
+    queryKey: keys.orders(userId),
+    enabled,
+    queryFn: async (): Promise<Order[]> => {
+      const rows = await fetchAllPages<any>('orders', () =>
+        supabase.from('orders').select(COLUMNS.orders).order('id'),
+      );
+      return rows.map(o => ({
         id: o.id,
         customerId: o.customer_id,
         locationId: o.location_id,
@@ -324,118 +408,174 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         source: o.source ?? null,
         status: o.status as 'pending' | 'completed' | 'cancelled',
       }));
+    },
+  });
 
+  // EGRESS-COST: high — one row per stay.
+  const reviewRequestsQuery = useQuery({
+    queryKey: keys.reviewRequests(userId),
+    enabled,
+    queryFn: async (): Promise<ReviewRequest[]> => {
       // Newest first, so the dashboard's "Recent Requests" (which just takes the
       // first 20) actually shows the most recent ones. Unordered, Postgres
-      // returned an arbitrary 20 rows under a "Recent" heading.
-      const { data: rrData } = await supabase
-        .from('review_requests')
-        .select('*')
-        .order('created_at', { ascending: false });
-      const reviewRequests: ReviewRequest[] = (rrData || []).map(r => ({
+      // returned an arbitrary 20 rows under a "Recent" heading. `id` breaks ties
+      // so the `.range()` windows below cannot overlap or skip a row.
+      const rows = await fetchAllPages<any>('review_requests', () =>
+        supabase
+          .from('review_requests')
+          .select(COLUMNS.reviewRequests)
+          .order('created_at', { ascending: false })
+          .order('id'),
+      );
+      return rows.map(r => ({
         id: r.id,
         orderId: r.order_id,
         status: r.status as ReviewRequest['status'],
         sentAt: r.sent_at,
       }));
+    },
+  });
 
-      const { data: optData } = await supabase.from('opt_outs').select('*');
-      const optOuts: OptOut[] = (optData || []).map(o => ({
+  // EGRESS-COST: medium — one row per guest who ever opted out.
+  const optOutsQuery = useQuery({
+    queryKey: keys.optOuts(userId),
+    enabled,
+    queryFn: async (): Promise<OptOut[]> => {
+      const rows = await fetchAllPages<any>('opt_outs', () =>
+        supabase.from('opt_outs').select(COLUMNS.optOuts).order('id'),
+      );
+      return rows.map(o => ({
         id: o.id,
         email: o.email,
         phone: o.phone,
         optOutDate: o.opt_out_date,
       }));
+    },
+  });
 
-      const { data: eventData } = await supabase.from('message_events').select('*');
-      const messageEvents: MessageEvent[] = (eventData || []).map(e => ({
+  // EGRESS-COST: high — several rows per request (sent, delivered, clicked).
+  // The fastest-growing table in the schema.
+  const messageEventsQuery = useQuery({
+    queryKey: keys.messageEvents(userId),
+    enabled,
+    queryFn: async (): Promise<MessageEvent[]> => {
+      const rows = await fetchAllPages<any>('message_events', () =>
+        supabase.from('message_events').select(COLUMNS.messageEvents).order('id'),
+      );
+      return rows.map(e => ({
         id: e.id,
         requestId: e.request_id,
         eventType: e.event_type,
         createdAt: e.created_at,
       }));
+    },
+  });
 
-      let digestSetting: DigestSetting | null = null;
-      try {
-        const { data: dsData } = await supabase
-          .from('digest_settings')
-          .select('*')
-          .eq('user_id', session?.user.id)
-          .maybeSingle();
-        if (dsData) {
-          digestSetting = {
-            id: dsData.id,
-            userId: dsData.user_id,
-            accountId: dsData.account_id,
-            frequency: dsData.frequency as 'weekly' | 'monthly',
-            enabled: dsData.enabled,
-          };
-        }
-      } catch (_) {}
-
-      let feedbacks: GuestFeedback[] = [];
-      try {
-        const { data: fbData } = await supabase.from('guest_feedback').select('*');
-        if (fbData) {
-          feedbacks = fbData.map((f: any) => ({
-            id: f.id,
-            requestId: f.request_id,
-            locationId: f.location_id,
-            kind: f.kind,
-            starRating: f.star_rating,
-            feedbackText: f.feedback_text,
-            guestName: f.guest_name,
-            guestEmail: f.guest_email,
-            managerResponse: f.manager_response,
-            isRead: f.is_read,
-            createdAt: f.created_at,
-          }));
-        }
-      } catch (_) {}
-
-      // Happy ratings are never "unread" — nothing about them needs action, and
-      // counting them left a badge the manager could not clear.
-      const unreadCount = feedbacks.filter(f => !f.isRead && isActionableFeedback(f)).length;
-
-      setState(prev => ({
-        ...prev,
-        locations,
-        customers,
-        orders,
-        reviewRequests,
-        optOuts,
-        messageEvents,
-        feedbacks,
-        subscriptionStatus,
-        stripeCustomerId,
-        planName,
-        currentPeriodEnd,
-        cancelAtPeriodEnd,
-        digestSetting,
-        activeLocationId: prev.activeLocationId || (locations.length > 0 ? locations[0].id : null),
-        unreadPrivateFeedbackCount: unreadCount,
-        loading: false,
+  // EGRESS-COST: medium — carries free text, so rows are wide.
+  const feedbacksQuery = useQuery({
+    queryKey: keys.feedbacks(userId),
+    enabled,
+    queryFn: async (): Promise<GuestFeedback[]> => {
+      const rows = await fetchAllPages<any>('guest_feedback', () =>
+        supabase.from('guest_feedback').select(COLUMNS.guestFeedback).order('id'),
+      );
+      return rows.map((f: any) => ({
+        id: f.id,
+        requestId: f.request_id,
+        locationId: f.location_id,
+        kind: f.kind,
+        starRating: f.star_rating,
+        feedbackText: f.feedback_text,
+        guestName: f.guest_name,
+        guestEmail: f.guest_email,
+        managerResponse: f.manager_response,
+        isRead: f.is_read,
+        createdAt: f.created_at,
       }));
-    } catch (e) {
-      console.error('Failed to fetch from supabase:', e);
-      setState(prev => ({ ...prev, loading: false }));
-    }
-  };
+    },
+  });
 
-  useEffect(() => {
-    refreshData();
-  }, [session?.user]);
+  // EGRESS-COST: low — at most one row.
+  const digestSettingQuery = useQuery({
+    queryKey: keys.digestSetting(userId),
+    enabled,
+    queryFn: async (): Promise<DigestSetting | null> => {
+      const { data } = await supabase
+        .from('digest_settings')
+        .select(COLUMNS.digestSettings)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!data) return null;
+      return {
+        id: data.id,
+        userId: data.user_id,
+        accountId: data.account_id,
+        frequency: data.frequency as 'weekly' | 'monthly',
+        enabled: data.enabled,
+      };
+    },
+  });
 
-  const setActiveLocationId = (id: string) => {
-    setState(prev => ({ ...prev, activeLocationId: id }));
-  };
+  const locations = locationsQuery.data ?? [];
+  const customers = customersQuery.data ?? [];
+  const orders = ordersQuery.data ?? [];
+  const reviewRequests = reviewRequestsQuery.data ?? [];
+  const optOuts = optOutsQuery.data ?? [];
+  const messageEvents = messageEventsQuery.data ?? [];
+  const feedbacks = feedbacksQuery.data ?? [];
+
+  // Happy ratings are never "unread" — nothing about them needs action, and
+  // counting them left a badge the manager could not clear.
+  const unreadPrivateFeedbackCount = useMemo(
+    () => feedbacks.filter(f => !f.isRead && isActionableFeedback(f)).length,
+    [feedbacks],
+  );
+
+  // Falls back to the first location until the user picks one, matching the
+  // behaviour of the old reducer.
+  const activeLocationId = selectedLocationId ?? (locations.length > 0 ? locations[0].id : null);
+
+  const loading =
+    enabled &&
+    (accountQuery.isPending ||
+      locationsQuery.isPending ||
+      customersQuery.isPending ||
+      ordersQuery.isPending ||
+      reviewRequestsQuery.isPending);
+
+  /** Invalidate one or more tables. Anything not named keeps its cached copy. */
+  const invalidate = useCallback(
+    async (...tables: Array<keyof typeof keys>) => {
+      await Promise.all(
+        tables.map(table => {
+          const build = keys[table];
+          if (typeof build !== 'function') return Promise.resolve();
+          return queryClient.invalidateQueries({ queryKey: build(userId) });
+        }),
+      );
+    },
+    [queryClient, userId],
+  );
+
+  /**
+   * Re-read everything. Still exported because a few callers legitimately want
+   * a full resync, but prefer `invalidate('orders')` and friends: this drops
+   * every cached table on the floor.
+   */
+  const refreshData = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: keys.all });
+  }, [queryClient]);
+
+  const setActiveLocationId = (id: string) => setSelectedLocationId(id);
 
   const addLocation = async (name: string, googleUrl?: string) => {
-    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-    if (!userData) return null;
+    // EGRESS-COST: low — the account id is already cached; no second read.
+    const accountId = accountQuery.data?.accountId;
+    if (!accountId) return null;
 
+    // EGRESS-COST: low — single row, and only the three columns read below.
     const { data, error } = await supabase.from('locations').insert({
-      account_id: userData.account_id,
+      account_id: accountId,
       name,
       google_place_url: googleUrl || '',
       timezone: 'UTC',
@@ -446,7 +586,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       onboarding_complete: false,
       preferred_send_hour: 10,
       recovery_email: '',
-    }).select().single();
+    }).select('id, name, google_place_url').single();
 
     if (error) {
       console.error(error);
@@ -459,7 +599,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       { location_id: data.id, type: 'sms_reminder', template_text: DEFAULT_TEMPLATES.sms_reminder },
     ]);
 
-    await refreshData();
+    await invalidate('locations');
     return {
       id: data.id,
       name: data.name,
@@ -478,35 +618,31 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
   const deleteLocation = async (id: string) => {
     const { error } = await supabase.from('locations').delete().eq('id', id);
     if (error) throw error;
-    setState(prev => {
-      const filtered = prev.locations.filter(l => l.id !== id);
-      return {
-        ...prev,
-        locations: filtered,
-        activeLocationId: prev.activeLocationId === id ? (filtered.length > 0 ? filtered[0].id : null) : prev.activeLocationId,
-      };
-    });
-    await refreshData();
+    // Drop the selection if it pointed at the location that just went away;
+    // activeLocationId then falls back to the first remaining one.
+    setSelectedLocationId(prev => (prev === id ? null : prev));
+    await invalidate('locations');
   };
 
   const addCustomer = async (customer: Omit<Customer, 'id'>) => {
-    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-    if (!userData) return null;
+    const accountId = accountQuery.data?.accountId;
+    if (!accountId) return null;
 
+    // EGRESS-COST: low — single row back, named columns only.
     const { data, error } = await supabase.from('customers').insert({
-      account_id: userData.account_id,
+      account_id: accountId,
       first_name: customer.firstName,
       last_name: customer.lastName,
       email: customer.email,
       phone: customer.phone,
-    }).select().single();
+    }).select(COLUMNS.customers).single();
 
     if (error) {
       console.error(error);
       return null;
     }
 
-    await refreshData();
+    await invalidate('customers');
     return { id: data.id, firstName: data.first_name, lastName: data.last_name, email: data.email, phone: data.phone };
   };
 
@@ -520,14 +656,14 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       checkin_date: order.checkinDate || null,
       source: order.source || null,
       status: order.status,
-    }).select().single();
+    }).select(COLUMNS.orders).single();
 
     if (error) {
       console.error(error);
       return null;
     }
 
-    await refreshData();
+    await invalidate('orders');
     return {
       id: data.id,
       customerId: data.customer_id,
@@ -543,24 +679,24 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
 
   const addOptOut = async (email: string) => {
     await supabase.from('opt_outs').insert({ email });
-    await refreshData();
+    await invalidate('optOuts');
   };
 
   const addReviewRequest = async (orderId: string) => {
-    const order = state.orders.find(o => o.id === orderId);
-    const customer = order ? state.customers.find(c => c.id === order.customerId) : null;
+    const order = orders.find(o => o.id === orderId);
+    const customer = order ? customers.find(c => c.id === order.customerId) : null;
     let status = 'pending';
-    if (customer && state.optOuts.some(o => o.email === customer.email)) {
+    if (customer && optOuts.some(o => o.email === customer.email)) {
       status = 'opted_out';
     }
     await supabase.from('review_requests').insert({ order_id: orderId, status });
-    await refreshData();
+    await invalidate('reviewRequests');
   };
 
   const completeOnboarding = async (locationId: string) => {
     const { error } = await supabase.from('locations').update({ onboarding_complete: true }).eq('id', locationId);
     if (error) throw error;
-    await refreshData();
+    await invalidate('locations');
   };
 
   const triggerSingleResend = async (requestId: string) => {
@@ -571,7 +707,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       // opted out" was surfacing as a bare "Edge Function returned a non-2xx
       // status code".
       if (error) throw new Error(await readFunctionError(error, 'Resend process failed'));
-      await refreshData();
+      await invalidate('reviewRequests', 'messageEvents');
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Resend process failed' };
@@ -584,18 +720,23 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
    * dedupeKey() in src/lib/csvImport.ts.
    */
   const fetchExistingImportKeys = async (): Promise<Set<string>> => {
-    const keys = new Set<string>();
-    // RLS scopes orders to the caller's account.
-    const { data, error } = await supabase
-      .from('orders')
-      .select('checkout_date, customers ( email, phone )');
+    const dedupeKeys = new Set<string>();
 
-    if (error) {
+    // EGRESS-COST: medium — three narrow columns per existing stay, read in
+    // pages. Deliberately not cached: the whole point is to catch a duplicate
+    // created seconds ago, possibly in another tab.
+    let rows: any[];
+    try {
+      // RLS scopes orders to the caller's account.
+      rows = await fetchAllPages<any>('orders (import dedupe)', () =>
+        supabase.from('orders').select('checkout_date, customers ( email, phone )').order('id'),
+      );
+    } catch (error) {
       console.error('Failed to load existing guests for duplicate check:', error);
-      return keys;
+      return dedupeKeys;
     }
 
-    for (const order of data || []) {
+    for (const order of rows) {
       if (!order.checkout_date) continue;
       const customer = order.customers as any;
       const contact =
@@ -603,10 +744,10 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         customer?.phone?.replace(/\D/g, '') ||
         '';
       if (!contact) continue;
-      keys.add(`${contact}|${String(order.checkout_date).slice(0, 10)}`);
+      dedupeKeys.add(`${contact}|${String(order.checkout_date).slice(0, 10)}`);
     }
 
-    return keys;
+    return dedupeKeys;
   };
 
   /**
@@ -619,23 +760,24 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
    */
   const sendTestReviewRequest = async (): Promise<{ success: boolean; error?: string }> => {
     if (!session?.user?.email) return { success: false, error: 'No signed-in email address' };
-    if (!state.activeLocationId) return { success: false, error: 'No active location selected' };
+    if (!activeLocationId) return { success: false, error: 'No active location selected' };
 
     let customerId: string | null = null;
     try {
-      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
-      if (!userData?.account_id) return { success: false, error: 'No user account linked' };
+      const accountId = accountQuery.data?.accountId;
+      if (!accountId) return { success: false, error: 'No user account linked' };
 
+      // EGRESS-COST: low — three inserts, each returning only the id we chain on.
       const { data: customer, error: custError } = await supabase
         .from('customers')
         .insert({
-          account_id: userData.account_id,
+          account_id: accountId,
           first_name: 'Test',
           last_name: 'Send',
           email: session.user.email,
           phone: null,
         })
-        .select()
+        .select('id')
         .single();
       if (custError || !customer) throw custError || new Error('Could not create the test guest');
       customerId = customer.id;
@@ -643,19 +785,19 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
-          location_id: state.activeLocationId,
+          location_id: activeLocationId,
           customer_id: customer.id,
           checkout_date: new Date().toISOString(),
           status: 'completed',
         })
-        .select()
+        .select('id')
         .single();
       if (orderError || !order) throw orderError || new Error('Could not create the test stay');
 
       const { data: request, error: rrError } = await supabase
         .from('review_requests')
         .insert({ order_id: order.id, status: 'pending' })
-        .select()
+        .select('id')
         .single();
       if (rrError || !request) throw rrError || new Error('Could not create the test request');
 
@@ -670,24 +812,24 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       return { success: false, error: e.message || 'Test send failed' };
     } finally {
       if (customerId) {
+        // The delete cascades to the order and the review request.
         await supabase.from('customers').delete().eq('id', customerId);
-        await refreshData();
+        await invalidate('customers', 'orders', 'reviewRequests');
       }
     }
   };
 
   const bulkImport = async (rows: BulkImportRow[]) => {
-    if (!state.activeLocationId) {
+    if (!activeLocationId) {
       return { success: false, imported: 0, skippedDuplicates: 0, failed: rows.length, error: 'No active location selected' };
     }
 
     try {
-      const { data: userData } = await supabase.from('users').select('account_id').eq('id', session?.user.id).single();
-      if (!userData) {
+      const accountId = accountQuery.data?.accountId;
+      if (!accountId) {
         return { success: false, imported: 0, skippedDuplicates: 0, failed: rows.length, error: 'No user account linked' };
       }
-      const accountId = userData.account_id;
-      const locationId = state.activeLocationId;
+      const locationId = activeLocationId;
 
       // Re-check duplicates here as well as in the wizard: the two are seconds
       // apart, and a second tab could have imported in between.
@@ -707,15 +849,22 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         toImport.push(row);
       }
 
-      const { data: optOuts } = await supabase.from('opt_outs').select('email');
-      const optedOutEmails = new Set((optOuts || []).map(o => o.email?.toLowerCase()).filter(Boolean));
+      // EGRESS-COST: medium — one column per opted-out guest, read in pages.
+      const optOutRows = await fetchAllPages<any>('opt_outs (import)', () =>
+        supabase.from('opt_outs').select('email').order('id'),
+      );
+      const optedOutEmails = new Set(optOutRows.map(o => o.email?.toLowerCase()).filter(Boolean));
 
       // Natural key for pairing inserted customer rows back to their source
       // row. Correlating by array index would assume INSERT ... RETURNING
       // preserves input order, which Postgres does not guarantee and which
       // breaks outright once the insert is chunked.
+      // JSON rather than a delimited string: the separator has to be one no
+      // name or address can contain. This used to join on a literal NUL, which
+      // worked but made the whole file register as binary — `grep` skips it, so
+      // every text-based audit of this file silently found nothing.
       const naturalKey = (r: { firstName: string; lastName: string; email: string | null; phone?: string | null }) =>
-        `${r.firstName} ${r.lastName} ${r.email ?? ''} ${r.phone ?? ''}`;
+        JSON.stringify([r.firstName, r.lastName, r.email ?? '', r.phone ?? '']);
 
       const BATCH_SIZE = 200;
       let imported = 0;
@@ -732,7 +881,8 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
             email: r.email,
             phone: r.phone || null,
           })))
-          .select();
+          // Named columns: the natural-key pairing below needs exactly these.
+          .select(COLUMNS.customers);
 
         if (custError || !insertedCustomers) {
           throw custError || new Error('Failed to insert guests');
@@ -777,7 +927,8 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
           const { data: insertedOrders, error: orderError } = await supabase
             .from('orders')
             .insert(ordersToInsert)
-            .select();
+            // Only the id and the customer it belongs to are read below.
+            .select('id, customer_id');
 
           if (orderError || !insertedOrders) {
             throw orderError || new Error('Failed to create guest stays');
@@ -804,7 +955,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
-      await refreshData();
+      await invalidate('customers', 'orders', 'reviewRequests');
       return { success: true, imported, skippedDuplicates, failed: toImport.length - imported };
     } catch (e: any) {
       console.error(e);
@@ -862,7 +1013,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    await refreshData();
+    await invalidate('locations');
   };
 
   // Both of these used to target whichever of the two tables the name implied,
@@ -870,16 +1021,30 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
   // even though the ids came from `private_feedback` (so they matched nothing),
   // and the read-flag write hit a table `authenticated` held no UPDATE grant on
   // (so it failed 42501 and the badge never cleared). One table, one target.
+  /**
+   * Patch one cached feedback row in place.
+   *
+   * Both writes below change a single column on a single row we already hold,
+   * so there is nothing to re-read. These used to call `refreshData()`, which
+   * meant ticking one message as read re-downloaded every guest, stay, request
+   * and event in the account.
+   */
+  const patchCachedFeedback = (id: string, changes: Partial<GuestFeedback>) => {
+    queryClient.setQueryData<GuestFeedback[]>(keys.feedbacks(userId), prev =>
+      (prev ?? []).map(f => (f.id === id ? { ...f, ...changes } : f)),
+    );
+  };
+
   const respondToFeedback = async (id: string, text: string) => {
     const { error } = await supabase.from('guest_feedback').update({ manager_response: text }).eq('id', id);
     if (error) throw error;
-    await refreshData();
+    patchCachedFeedback(id, { managerResponse: text });
   };
 
   const markPrivateFeedbackRead = async (id: string) => {
     const { error } = await supabase.from('guest_feedback').update({ is_read: true }).eq('id', id);
     if (error) throw error;
-    await refreshData();
+    patchCachedFeedback(id, { isRead: true });
   };
 
   const subscribe = async () => {
@@ -913,8 +1078,8 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
 
   const updateDigestSetting = async (frequency: 'weekly' | 'monthly', enabled: boolean) => {
     if (!session?.user) return;
-    const { data: userData } = await supabase.from('users').select('account_id').eq('id', session.user.id).single();
-    if (!userData?.account_id) return;
+    const accountId = accountQuery.data?.accountId;
+    if (!accountId) return;
 
     // One row per user (digest_settings has UNIQUE(user_id)), so this is an
     // upsert rather than a branch on whether we happen to have seen the row.
@@ -929,34 +1094,48 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       .upsert(
         {
           user_id: session.user.id,
-          account_id: userData.account_id,
+          account_id: accountId,
           frequency,
           enabled,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' },
       )
-      .select()
+      .select(COLUMNS.digestSettings)
       .single();
 
     if (error) throw error;
 
-    setState(prev => ({
-      ...prev,
-      digestSetting: {
-        id: data.id,
-        userId: data.user_id,
-        accountId: data.account_id,
-        frequency: data.frequency as 'weekly' | 'monthly',
-        enabled: data.enabled,
-      },
-    }));
+    // The upsert already returned the saved row, so seed the cache with it
+    // rather than reading it straight back.
+    queryClient.setQueryData<DigestSetting>(keys.digestSetting(userId), {
+      id: data.id,
+      userId: data.user_id,
+      accountId: data.account_id,
+      frequency: data.frequency as 'weekly' | 'monthly',
+      enabled: data.enabled,
+    });
   };
 
   return (
     <ReviewSailContext.Provider
       value={{
-        ...state,
+        locations,
+        customers,
+        orders,
+        reviewRequests,
+        optOuts,
+        messageEvents,
+        feedbacks,
+        activeLocationId,
+        subscriptionStatus: accountQuery.data?.subscriptionStatus ?? 'inactive',
+        stripeCustomerId: accountQuery.data?.stripeCustomerId ?? null,
+        planName: accountQuery.data?.planName ?? null,
+        currentPeriodEnd: accountQuery.data?.currentPeriodEnd ?? null,
+        cancelAtPeriodEnd: accountQuery.data?.cancelAtPeriodEnd ?? false,
+        loading,
+        unreadPrivateFeedbackCount,
+        digestSetting: digestSettingQuery.data ?? null,
         setActiveLocationId,
         addLocation,
         deleteLocation,

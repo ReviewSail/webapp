@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Users, UserPlus, Mail, Trash2, RefreshCw, Send, X } from 'lucide-react';
 import { supabase } from '../../integrations/supabase/client';
 import { useAuth } from '../../context/AuthContext';
 import { readFunctionError } from '../../lib/functionError';
+import { fetchAllPages } from '../../lib/pagedFetch';
 import { Card, CardHeader } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { useToast } from '../ui/Toast';
@@ -37,44 +39,53 @@ export function TeamSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const [members, setMembers] = useState<Member[]>([]);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [loading, setLoading] = useState(true);
-
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'staff'>('staff');
   const [sending, setSending] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<Member | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
+  // EGRESS-COST: low — a team is a handful of rows, named columns only, and
+  // the result is cached for the durations in src/lib/queryClient.ts. This used
+  // to re-read on every mount of the Settings page.
+  const teamQuery = useQuery({
+    queryKey: ['team', user?.id],
+    enabled: !!user,
+    queryFn: async (): Promise<{ members: Member[]; invitations: Invitation[] }> => {
       // Both reads are already scoped to the caller's account by RLS.
-      const [membersRes, invitesRes] = await Promise.all([
-        supabase.from('users').select('id, email, full_name, role, created_at').order('created_at'),
-        supabase
-          .from('invitations')
-          .select('id, email, role, expires_at, created_at')
-          .eq('status', 'pending')
-          .gt('expires_at', new Date().toISOString())
-          .order('created_at', { ascending: false }),
+      const [members, invitations] = await Promise.all([
+        fetchAllPages<Member>('users (team)', () =>
+          supabase.from('users').select('id, email, full_name, role, created_at').order('created_at').order('id'),
+        ),
+        fetchAllPages<Invitation>('invitations', () =>
+          supabase
+            .from('invitations')
+            .select('id, email, role, expires_at, created_at')
+            .eq('status', 'pending')
+            .gt('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false })
+            .order('id'),
+        ),
       ]);
+      return { members, invitations };
+    },
+  });
 
-      if (membersRes.error) throw membersRes.error;
-      setMembers((membersRes.data || []) as Member[]);
-      setInvitations((invitesRes.data || []) as Invitation[]);
-    } catch (err: any) {
-      console.error('[TeamSettings] load failed', err);
-      toast.error("Couldn't load your team. Refresh to try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [toast]);
-
+  // Surfacing the failure, not fetching — the read itself is the query above.
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!teamQuery.error) return;
+    console.error('[TeamSettings] load failed', teamQuery.error);
+    toast.error("Couldn't load your team. Refresh to try again.");
+  }, [teamQuery.error, toast]);
+
+  const members = teamQuery.data?.members ?? [];
+  const invitations = teamQuery.data?.invitations ?? [];
+  const loading = teamQuery.isPending;
+
+  /** Re-read the team after a write that changed it. */
+  const load = async () => {
+    await teamQuery.refetch();
+  };
 
   const adminCount = members.filter((m) => m.role === 'admin').length;
 

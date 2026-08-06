@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../integrations/supabase/client';
 
@@ -25,7 +25,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  /** The user whose role we already hold, so a token refresh doesn't re-read it. */
+  const roleLoadedFor = useRef<string | null>(null);
+
   const fetchUserRole = async (userId: string) => {
+    // EGRESS-COST: low — one narrow row, and only when the signed-in user
+    // actually changes. onAuthStateChange fires on every token refresh and on
+    // every tab refocus; this read used to go out each time.
+    if (roleLoadedFor.current === userId) return;
+    roleLoadedFor.current = userId;
+
     try {
       const { data, error } = await supabase
         .from('users')
@@ -42,10 +51,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // UI should not offer them in the first place.
         console.warn('[AuthContext] Could not read user role; defaulting to staff:', error);
         setRole('staff');
+        // Let the next auth event try again rather than sticking on the guess.
+        roleLoadedFor.current = null;
       }
     } catch (err) {
       console.error('[AuthContext] fetchUserRole failed:', err);
       setRole('staff');
+      roleLoadedFor.current = null;
     }
   };
 
@@ -62,6 +74,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         await fetchUserRole(session.user.id);
       } else {
         setRole(null);
+        roleLoadedFor.current = null;
       }
     } catch (err) {
       console.error('[AuthContext] initializeAuth failed:', err);
@@ -84,6 +97,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           await fetchUserRole(session.user.id);
         } else {
           setRole(null);
+          roleLoadedFor.current = null;
         }
       } catch (err) {
         console.error('[AuthContext] authStateChange failed:', err);

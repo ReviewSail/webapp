@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../integrations/supabase/client';
 import { useAuth } from '../../context/AuthContext';
 import { MessageSquare, Quote, Clock } from 'lucide-react';
@@ -16,54 +16,49 @@ interface RecognitionRecord {
 
 export function TeamRecognitionCard() {
   const { user } = useAuth();
-  const [records, setRecords] = useState<RecognitionRecord[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user) return;
-    const fetchRecords = async () => {
-      try {
-        // Get account_id
-        const { data: userData } = await supabase
-          .from('users')
-          .select('account_id')
-          .eq('id', user.id)
-          .single();
-        if (!userData?.account_id) return;
+  // EGRESS-COST: low — the newest five rows, named columns, cached. The card
+  // shows a fixed-length highlight reel, so `.range()` is the whole read.
+  const recordsQuery = useQuery({
+    queryKey: ['recognition-records', user?.id],
+    enabled: !!user,
+    queryFn: async (): Promise<RecognitionRecord[]> => {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('account_id')
+        .eq('id', user!.id)
+        .single();
+      if (!userData?.account_id) return [];
 
-        // Fetch recent 5 recognition records with team member names (if linked)
-        const { data, error } = await supabase
-          .from('recognition_records')
-          .select(`
-            id, matched_role, matched_sentence, guest_name, source, created_at,
-            team_members ( name )
-          `)
-          .eq('account_id', userData.account_id)
-          .order('created_at', { ascending: false })
-          .limit(5);
+      const { data, error } = await supabase
+        .from('recognition_records')
+        .select(`
+          id, matched_role, matched_sentence, guest_name, source, created_at,
+          team_members ( name )
+        `)
+        .eq('account_id', userData.account_id)
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(0, 4);
 
-        if (error) throw error;
+      if (error) throw error;
 
-        const mapped = (data || []).map((r: any) => ({
-          id: r.id,
-          team_member_name: r.team_members?.name ?? null,
-          matched_role: r.matched_role,
-          matched_sentence: r.matched_sentence,
-          guest_name: r.guest_name,
-          source: r.source,
-          created_at: r.created_at,
-        }));
+      return (data || []).map((r: any) => ({
+        id: r.id,
+        team_member_name: r.team_members?.name ?? null,
+        matched_role: r.matched_role,
+        matched_sentence: r.matched_sentence,
+        guest_name: r.guest_name,
+        source: r.source,
+        created_at: r.created_at,
+      }));
+    },
+  });
 
-        setRecords(mapped);
-      } catch (err) {
-        console.error('Failed to fetch recognition records:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  if (recordsQuery.error) console.error('Failed to fetch recognition records:', recordsQuery.error);
 
-    fetchRecords();
-  }, [user]);
+  const records = recordsQuery.data ?? [];
+  const loading = !!user && recordsQuery.isPending;
 
   const timeAgo = (dateStr: string): string => {
     const now = new Date();
