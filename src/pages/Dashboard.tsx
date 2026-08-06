@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useReviewSail, isActionableFeedback } from '../context/ReviewSailContext';
+import { useReviewSail, isActionableFeedback, isOutboundRequest } from '../context/ReviewSailContext';
 import { useSearchParams, useNavigate, Navigate } from 'react-router-dom';
 import { useToast } from '../components/ui/Toast';
 import { Notice } from '../components/ui/Notice';
@@ -66,10 +66,17 @@ export default function Dashboard() {
   const actionableFeedback = activeLocFeedback.filter(isActionableFeedback);
 
   // Stats
-  const totalSent = activeLocRequests.filter(r => ['sent', 'clicked'].includes(r.status)).length;
-  const totalPending = activeLocRequests.filter(r => r.status === 'pending').length;
-  const totalClicked = activeLocRequests.filter(r => r.status === 'clicked').length;
-  const totalOptedOut = activeLocRequests.filter(r => r.status === 'opted_out').length;
+  //
+  // The funnel counts outbound invites only. A QR submission creates a request
+  // row with status 'clicked' and nothing was ever sent, so including them
+  // reported invites that never went out and pushed the click rate toward 100%
+  // for any property that leans on posters. Feedback totals are unaffected —
+  // they come from guest_feedback, which is where a scan legitimately lands.
+  const outboundRequests = activeLocRequests.filter(isOutboundRequest);
+  const totalSent = outboundRequests.filter(r => ['sent', 'clicked'].includes(r.status)).length;
+  const totalPending = outboundRequests.filter(r => r.status === 'pending').length;
+  const totalClicked = outboundRequests.filter(r => r.status === 'clicked').length;
+  const totalOptedOut = outboundRequests.filter(r => r.status === 'opted_out').length;
 
   // Reads 0, not 100, when nothing has gone out. The old form returned 100 for
   // an account with ten pending invites and none sent, which is the exact

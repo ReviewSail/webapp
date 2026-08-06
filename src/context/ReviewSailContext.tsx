@@ -52,7 +52,25 @@ export type ReviewRequest = {
   orderId: string;
   status: 'pending' | 'sent' | 'clicked' | 'opted_out' | 'expired' | 'already_reviewed' | 'private_feedback';
   sentAt?: string;
+  /**
+   * How the guest reached the gate. 'qr' rows were never sent anything — the
+   * guest scanned a poster and the stay was created on submit. Null on rows
+   * predating the column.
+   */
+  origin?: 'email' | 'sms' | 'qr' | null;
 };
+
+/**
+ * Was an invite actually delivered to this guest?
+ *
+ * QR submissions land as 'clicked' or 'private_feedback' with no send behind
+ * them, so counting them in the funnel reported invites that were never sent
+ * and drove the click rate toward 100% for any property that leans on posters.
+ * The funnel measures outbound messaging; QR belongs in the feedback totals,
+ * which key off guest_feedback rather than review_requests.
+ */
+export const isOutboundRequest = (request: Pick<ReviewRequest, 'origin'>): boolean =>
+  request.origin !== 'qr';
 
 /**
  * Can this request be sent again?
@@ -225,7 +243,7 @@ const COLUMNS = {
   messageTemplates: 'location_id, type, template_text',
   customers: 'id, first_name, last_name, email, phone',
   orders: 'id, customer_id, location_id, checkout_date, checkin_date, midstay_sent, midstay_sent_at, source, status',
-  reviewRequests: 'id, order_id, status, sent_at',
+  reviewRequests: 'id, order_id, status, sent_at, origin',
   optOuts: 'id, email, phone, opt_out_date',
   messageEvents: 'id, request_id, event_type, created_at',
   digestSettings: 'id, user_id, account_id, frequency, enabled',
@@ -432,6 +450,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         orderId: r.order_id,
         status: r.status as ReviewRequest['status'],
         sentAt: r.sent_at,
+        origin: r.origin as ReviewRequest['origin'],
       }));
     },
   });

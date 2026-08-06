@@ -191,16 +191,27 @@ serve(async (req) => {
 
       const orderIds = (periodOrders || []).map((o: any) => o.id);
 
-      // Fetch review requests for these orders
+      // Fetch review requests for these orders.
+      //
+      // `origin` matters for the invite count below: a QR submission creates an
+      // order and a request on submit, but nothing was ever sent to that guest,
+      // so counting it as an invite overstated outbound volume — badly, for a
+      // property that works mainly from posters.
       let requestIds: string[] = [];
+      const qrOrderIds = new Set<string>();
       if (orderIds.length > 0) {
         const { data: requests, error: reqErr } = await supabase
           .from('review_requests')
-          .select('id, status')
+          .select('id, status, order_id, origin')
           .in('order_id', orderIds);
 
         if (!reqErr && requests) {
+          // Feedback still counts every request, QR included — a scan is real
+          // feedback. Only the *invite* total excludes it.
           requestIds = requests.map((r: any) => r.id);
+          for (const r of requests as any[]) {
+            if (r.origin === 'qr') qrOrderIds.add(r.order_id);
+          }
         }
       }
 
@@ -221,7 +232,7 @@ serve(async (req) => {
       }
 
       // Calculate metrics
-      const totalInvitesSent = orderIds.length;
+      const totalInvitesSent = orderIds.filter(id => !qrOrderIds.has(id)).length;
       const reviewsReceived = feedbackEntries.length;
       const avgRating = reviewsReceived > 0
         ? (feedbackEntries.reduce((sum, f) => sum + f.rating, 0) / reviewsReceived)
@@ -270,7 +281,8 @@ serve(async (req) => {
 
         locationMetrics.push({
           name: loc.name,
-          invites: locOrderIds.length,
+          // Outbound invites only, matching totalInvitesSent above.
+          invites: locOrderIds.filter((id: string) => !qrOrderIds.has(id)).length,
           reviews: locFeedbacks.length,
           avgRating: locFeedbacks.length > 0
             ? locFeedbacks.reduce((sum, f) => sum + f.rating, 0) / locFeedbacks.length

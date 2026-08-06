@@ -37,6 +37,15 @@ export default defineConfig({
     // most worth testing and it has to render.
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // Only this checkout's own tests.
+    //
+    // `.claude/worktrees/` holds git worktrees with their own node_modules, so
+    // the default glob collected a second copy of every test file and ran it
+    // against a second copy of React — 80 failures, all of them "Cannot read
+    // properties of null (reading 'useState')", none of them real. Whether the
+    // suite passed depended on whether anyone happened to have a worktree open.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['**/node_modules/**', '**/dist/**', '.claude/**'],
   },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
