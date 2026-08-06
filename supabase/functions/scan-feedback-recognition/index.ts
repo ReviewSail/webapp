@@ -134,10 +134,12 @@ serve(async (req) => {
       })
     }
 
-    // Fetch team members for account
+    // Fetch team members for account.
+    // EGRESS-COST: low — one small roster, and only the three columns the
+    // name/role matching below reads.
     const { data: teamMembers, error: tmError } = await supabase
       .from('team_members')
-      .select('*')
+      .select('id, name, role')
       .eq('account_id', accountId)
 
     if (tmError) {

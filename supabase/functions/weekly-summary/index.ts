@@ -100,9 +100,11 @@ serve(async (req) => {
     console.log(`[weekly-summary] Loaded ${accounts.length} accounts.`);
 
     // 2. Fetch all digest settings
+    // EGRESS-COST: low — three columns per user, and only the three the map
+    // below is keyed and filtered on.
     const { data: digestSettings, error: dsError } = await supabase
       .from('digest_settings')
-      .select('*');
+      .select('user_id, frequency, enabled');
 
     if (dsError) {
       console.error("[weekly-summary] Failed to fetch digest settings:", dsError);
@@ -116,9 +118,11 @@ serve(async (req) => {
     }
 
     // 3. Fetch all users (to find admins and their emails)
+    // EGRESS-COST: medium — every user in every account. Named columns only:
+    // the grouping below reads exactly these five.
     const { data: allUsers, error: usersError } = await supabase
       .from('users')
-      .select('*');
+      .select('id, account_id, email, role, full_name');
 
     if (usersError) {
       console.error("[weekly-summary] Failed to query users:", usersError);

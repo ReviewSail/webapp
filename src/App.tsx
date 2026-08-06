@@ -1,4 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
+import { QueryClientProvider } from "@tanstack/react-query"
+import { queryClient } from "./lib/queryClient"
 import { ReviewSailProvider } from "./context/ReviewSailContext"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { Layout } from "./components/Layout"
@@ -108,17 +110,19 @@ function AppRoutes() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <AuthProvider>
-          <ReviewSailProvider>
-            <Router>
-              <AppRoutes />
-            </Router>
-          </ReviewSailProvider>
-        </AuthProvider>
-      </ToastProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <ReviewSailProvider>
+              <Router>
+                <AppRoutes />
+              </Router>
+            </ReviewSailProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   )
 }
 

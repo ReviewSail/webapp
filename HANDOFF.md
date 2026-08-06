@@ -17,6 +17,8 @@
 | Icons | Lucide React |
 | CSS Utility | clsx + tailwind-merge (`cn()`) |
 | Routing | React Router v6 (all routes in `src/App.tsx`) |
+| Remote data | TanStack Query v5 (every Supabase read; defaults in `src/lib/queryClient.ts`) |
+| Package manager | pnpm via Corepack (`corepack pnpm …` — `npm install` breaks the layout) |
 | Charts | Recharts |
 | Date/Time | date-fns |
 | CSV | papaparse |
@@ -38,12 +40,16 @@ src/
 ├── index.css                  # Tailwind + CSS variables
 ├── lib/
 │   ├── utils.ts               # cn() helper
-│   └── roles.ts               # UserRole type and helpers
+│   ├── roles.ts               # UserRole type and helpers
+│   ├── queryClient.ts         # TanStack Query defaults (staleTime/gcTime)
+│   └── pagedFetch.ts          # fetchAllPages() — .range() paging for list reads
+├── test/
+│   └── queryWrapper.tsx       # QueryClientProvider wrapper for component tests
 ├── integrations/supabase/
 │   └── client.ts              # Supabase client singleton
 ├── context/
 │   ├── AuthContext.tsx         # Auth state (session, user, role)
-│   └── ReviewSailContext.tsx   # Main app state + all CRUD operations
+│   └── ReviewSailContext.tsx   # Per-table useQuery reads + all CRUD operations
 ├── types/
 │   └── reviewSail.ts          # DigestSetting type
 ├── pages/
@@ -327,10 +333,101 @@ supabase/functions/
 
 ## 10. Deployment Notes
 
-- **Build:** `npm run build` (TypeScript + Vite)
-- **Preview:** `npm run preview`
-- **Dev:** `npm run dev` (Vite dev server)
-- Edge functions are deployed automatically when pushed to the Supabase project linked to this repo. No manual deploy needed.
+- **Install:** `corepack pnpm install` — required after any pull that changes
+  `package.json`. `npm install` crashes on the pnpm-shaped `node_modules`.
+- **Build:** `corepack pnpm build` (TypeScript + Vite)
+- **Preview:** `corepack pnpm preview`
+- **Dev:** `corepack pnpm dev` (Vite dev server)
+- **Edge functions do NOT deploy automatically.** This section used to say they
+  did; they don't, and a repo whose `supabase/functions/` differs from what is
+  live is the normal state here. Deploy explicitly and verify against prod:
+
+  ```bash
+  supabase functions deploy <name> --project-ref vqjzscdlfhgzzqhmkchw
+  ```
+
+- Pushes do not trigger Vercel builds either — the Vercel GitHub App is not
+  installed on the org, so deploys go through `vercel deploy` from the CLI.
+  `.vercelignore` excludes `node_modules`, so Vercel installs from
+  `pnpm-lock.yaml`; a new dependency is only picked up if the lockfile is
+  committed alongside `package.json`.
+
+- **Only ever deploy from the repo root, on the branch you mean to ship.**
+  `.vercel/repo.json` at the root puts the CLI in repo-link mode: run
+  `vercel deploy` from *any* subdirectory and it walks up, finds the root, and
+  uploads the root's working tree — not your current directory. Git worktrees
+  under `.claude/worktrees/` are inside that tree and are excluded by
+  `.vercelignore`'s `/.claude`, so deploying from one silently ships whatever
+  the root happens to have checked out.
+
+  This bit on 2026-08-06: a `--prod` deploy run from a worktree shipped the
+  root's stale `feat/team-billing-ui` checkout and rolled production back six
+  commits, dropping the property-QR route. Merge first, then:
+
+  ```bash
+  cd "<repo root>" && git checkout main && git pull && corepack pnpm install
+  vercel deploy --prod --yes
+  ```
+
+- **"Ready" does not mean "correct".** A Vercel deploy reports Ready when the
+  build succeeds, which says nothing about *which* source it built. Verify by
+  content — pick a string literal from the change (component and function names
+  are minified away, string literals survive) and grep the served bundle:
+
+  ```bash
+  B=$(curl -s https://webapp-nine-teal.vercel.app | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+  curl -s "https://webapp-nine-teal.vercel.app$B" | grep -c '<a literal from your change>'
+  ```
+
+- `vercel rollback` with no argument only *reports* rollback status; it does not
+  roll anything back. Pass the target deployment URL, or fix forward by
+  deploying the known-good branch from the repo root.
+
+---
+
+## 10a. Data Layer & Egress
+
+Every Supabase read goes through TanStack Query. The rules are in
+`AI_RULES.md`; this is what the code looks like and why.
+
+**Reads.** `ReviewSailContext` runs one `useQuery` per table, each keyed
+`['reviewsail', <table>, userId]`, each selecting a named column list from the
+`COLUMNS` map, each paged through `fetchAllPages()`. They are combined into the
+same context shape the app has always consumed, so pages did not change.
+
+**Writes.** A mutation invalidates only the tables it touched
+(`invalidate('orders')`). Where the write already returns the new row —
+`updateDigestSetting`, both feedback writes — the cache is patched directly and
+no read is issued. This replaced a single `refreshData()` that re-read eight
+tables in full and was called by all thirteen mutations.
+
+**What this changes for you in development:**
+
+| | Behaviour |
+|---|---|
+| Freshness | Data is cached 5 minutes. Change a row in the SQL editor and the UI catches up on the next page visit past that window, or immediately on reload. |
+| Window focus | No longer refetches. Alt-tabbing back will not refresh the dashboard; reload if you need it now. |
+| Role changes | `AuthContext` reads your role once per signed-in user, not on every token refresh. Change your own role in the DB and you must reload. |
+| Large seeds | Past 2,000 rows in one table, `fetchAllPages` stops and logs a `[egress]` warning. Loud, not silent — but Analytics will be short. |
+| Tests | Existing suites mock `useReviewSail` and are unaffected. A test that renders the real tree needs `src/test/queryWrapper.tsx`, or it throws "No QueryClient set". |
+
+**The known limit.** Analytics joins orders to customers in the browser and
+offers an all-time range, and Guests searches the full customer list
+client-side. That is why the paged reads have a ceiling rather than a real
+pager: a literal first-page-only read would make the numbers quietly wrong
+instead of visibly broken. The fix is server-side rollups (an RPC or a
+materialised view) — see §11.
+
+**Context.** As of 2026-08-06 this project's entire `public` schema is under
+1 MB — the largest table held 18 rows — so none of the above is currently
+saving meaningful bytes. It is prevention: every one of these reads scales
+with the guest list, and the shape that was replaced (whole tables, re-read
+after every write) gets expensive at the first real customer, not gradually.
+
+If you are chasing an egress bill, measure before you optimise. `calls` from
+`pg_stat_statements` tells you which query is actually hot, and
+`pg_column_size()` tells you what its rows weigh. Neither is inferable from
+reading the code.
 
 ---
 
@@ -352,3 +449,9 @@ supabase/functions/
 8. **Migrate from pg_cron** to Supabase's native scheduled functions if available.
 9. **Add rate limiting** on public endpoints (feedback, opt-out) to prevent abuse.
 10. **Consolidate `feedback` and `private_feedback`** into a single table with proper RLS.
+11. **Move the dashboard rollups into Postgres.** Analytics, Guests and the
+    Dashboard all aggregate over full tables in the browser, which is what
+    forces `fetchAllPages` to carry a 2,000-row ceiling instead of a real
+    pager. An RPC returning per-period counts (and a server-side guest search)
+    would let every list read stop at page one and would lift the ceiling. This
+    is the remaining structural item from the egress work — see §10a.
