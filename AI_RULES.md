@@ -113,6 +113,27 @@ response to an explicit user action — never in a render, `map()`, or loop. Any
 `.on()` subscription must be filtered to the current user and must unsubscribe
 on unmount. Neither is used today; these apply if you introduce them.
 
+### 7. Measuring, when you need to
+
+Don't infer egress from reading code — this project has been wrong about it in
+both directions.
+
+- `pg_stat_statements` ordered by `calls` for which query is hot.
+- `pg_column_size()` for row weight, `octet_length(to_jsonb(row)::text)` for
+  what JSON encoding really costs, and `curl -D -` to check
+  `content-encoding` — responses are gzipped, so raw byte counts overstate
+  egress by roughly 10x.
+- The `query_logs` MCP tool for actual request volume per route. **`get_logs`
+  no longer exists**: it was removed with the `analytics/endpoints/logs.all`
+  endpoint (Supabase cutoff 2026-09-23). `query_logs` runs read-only ClickHouse
+  SQL over the unified log stream; `source = 'edge_logs'` carries
+  `response.headers.content_length` for `/rest/v1` and `/auth/v1` traffic. Its
+  window is 24h, and it should not be polled in a loop.
+
+For scale: over 24h this project logs ~120 gateway events. The sibling project
+logs ~7,000. If an egress bill looks alarming, check which project it belongs
+to before optimising anything here.
+
 > **Watch out:** `grep` silently skips files containing NUL bytes, so a
 > text-based audit of these rules can report a clean sweep on a file it never
 > read. `file src/**/*.ts` will tell you if anything reads as `data` rather
