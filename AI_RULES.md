@@ -77,6 +77,20 @@ const rows = await fetchAllPages('customers', () =>
 A read with a genuinely fixed size (the five newest recognition records, say)
 can use `.range(0, 4)` directly instead.
 
+### 2a. Polling is priced on three axes, not one
+
+A repeatedly-fetched endpoint costs **bytes-per-row × rows-per-response ×
+fetches-per-day**. Cutting one while the other two stay saturated is not a fix.
+The sibling project learned this the expensive way: it stripped a 4 kB column
+off two pollers, left the row limit and the interval untouched, and went on
+re-sending an identical payload on every tick.
+
+Nothing here polls on a timer today, and it should stay that way — the cache
+defaults below exist so screens re-read on navigation, not on a clock. If you
+ever do add a timer, make it answer "nothing changed" cheaply rather than
+resending the list, and measure the **compressed** size: responses are gzipped,
+so raw `octet_length` overstates egress by roughly 10x.
+
 ### 3. All remote data goes through TanStack Query
 No `fetch` inside a bare `useEffect`. The defaults in `src/lib/queryClient.ts`
 give every query `staleTime: 300_000` and `gcTime: 600_000`; do not lower them
