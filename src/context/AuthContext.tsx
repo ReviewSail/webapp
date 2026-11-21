@@ -1,120 +1,119 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { Session, User } from '@supabase/supabase-js';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
+import { STALE_TIME_MS } from '../lib/queryClient';
+import { clearPrivateQueries } from '../lib/privateQueries';
 
-type AuthContextType = {
+type AuthState = {
   session: Session | null;
-  user: User | null;
   role: 'admin' | 'staff' | null;
+  accountId: string | null;
+  scopeVersion: number;
   loading: boolean;
   error: Error | null;
 };
-
-const AuthContext = createContext<AuthContextType>({
-  session: null,
-  user: null,
-  role: null,
-  loading: true,
-  error: null,
-});
+const initial: AuthState = { session: null, role: null, accountId: null, scopeVersion: 0, loading: true, error: null };
+const AuthContext = createContext({ ...initial, user: null as Session['user'] | null, refreshIdentity: async () => {} });
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<'admin' | 'staff' | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  /** The user whose role we already hold, so a token refresh doesn't re-read it. */
-  const roleLoadedFor = useRef<string | null>(null);
-
-  const fetchUserRole = async (userId: string) => {
-    // EGRESS-COST: low — one narrow row, and only when the signed-in user
-    // actually changes. onAuthStateChange fires on every token refresh and on
-    // every tab refocus; this read used to go out each time.
-    if (roleLoadedFor.current === userId) return;
-    roleLoadedFor.current = userId;
-
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', userId)
-        .single();
-
-      if (!error && data) {
-        setRole(data.role as 'admin' | 'staff');
-      } else {
-        // Fail closed. This used to default to 'admin', so any hiccup reading
-        // the users row handed a staff member the Settings tab, billing, and
-        // the delete-account button. RLS would still refuse the writes, but the
-        // UI should not offer them in the first place.
-        console.warn('[AuthContext] Could not read user role; defaulting to staff:', error);
-        setRole('staff');
-        // Let the next auth event try again rather than sticking on the guess.
-        roleLoadedFor.current = null;
-      }
-    } catch (err) {
-      console.error('[AuthContext] fetchUserRole failed:', err);
-      setRole('staff');
-      roleLoadedFor.current = null;
-    }
-  };
-
-  const initializeAuth = async () => {
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw sessionError;
-
-      setSession(session);
-      setUser(session?.user ?? null);
-      setError(null);
-
-      if (session?.user) {
-        await fetchUserRole(session.user.id);
-      } else {
-        setRole(null);
-        roleLoadedFor.current = null;
-      }
-    } catch (err) {
-      console.error('[AuthContext] initializeAuth failed:', err);
-      setError(err instanceof Error ? err : new Error('Failed to initialize authentication'));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const client = useQueryClient();
+  const [state, setState] = useState<AuthState>(initial);
+  const refresh = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
-    initializeAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      try {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setError(null);
-
-        if (session?.user) {
-          await fetchUserRole(session.user.id);
-        } else {
-          setRole(null);
-          roleLoadedFor.current = null;
-        }
-      } catch (err) {
-        console.error('[AuthContext] authStateChange failed:', err);
-        setError(err instanceof Error ? err : new Error('Authentication state change error'));
-      } finally {
-        setLoading(false);
+    let disposed = false;
+    let current: AuthState = initial;
+    let generation = 0;
+    let events = 0;
+    let pending: Promise<void> | null = null;
+    let verifiedAt = 0;
+    const publish = (next: Partial<AuthState>) => {
+      current = { ...current, ...next };
+      if (!disposed) setState(current);
+    };
+    const readIdentity = (force = false): Promise<void> => {
+      if (disposed || !current.session) return Promise.resolve();
+      if (!force && pending) return pending;
+      if (!force && current.role && Date.now() - verifiedAt < STALE_TIME_MS) return Promise.resolve();
+      const userId = current.session.user.id;
+      const request = ++generation;
+      const previous = { accountId: current.accountId, role: current.role };
+      if (force) {
+        clearPrivateQueries(client);
+        publish({ scopeVersion: current.scopeVersion + 1 });
       }
+      publish({ role: null, loading: true, error: null });
+      const work = (async () => {
+        try {
+          const identity = await client.fetchQuery({
+            queryKey: ['auth-identity', userId],
+            staleTime: STALE_TIME_MS,
+            retry: false,
+            queryFn: async ({ signal }) => {
+              // EGRESS-COST: low — one narrow row, cached for five minutes;
+              // explicit membership changes force a check, never full-table polling.
+              const { data, error } = await supabase.from('users').select('role, account_id')
+                .eq('id', userId).abortSignal(signal).single();
+              if (error || !data?.account_id || !['admin', 'staff'].includes(data.role)) {
+                throw new Error('Could not verify account access. Please retry.');
+              }
+              return { role: data.role as 'admin' | 'staff', accountId: data.account_id as string };
+            },
+          });
+          if (disposed || request !== generation) return;
+          if (previous.accountId && (previous.accountId !== identity.accountId || previous.role !== identity.role)) {
+            clearPrivateQueries(client, false);
+            publish({ scopeVersion: current.scopeVersion + 1 });
+          }
+          verifiedAt = Date.now();
+          publish({ ...identity, loading: false, error: null });
+        } catch {
+          if (disposed || request !== generation) return;
+          verifiedAt = 0;
+          clearPrivateQueries(client);
+          publish({ role: null, accountId: null, loading: false, error: new Error('Could not verify account access. Please retry.'), scopeVersion: current.scopeVersion + 1 });
+          throw current.error;
+        } finally {
+          if (request === generation) pending = null;
+        }
+      })();
+      pending = work;
+      return work;
+    };
+    const acceptSession = (session: Session | null, force = false) => {
+      if (disposed) return;
+      if (current.session?.user.id !== session?.user.id || !session) {
+        ++generation;
+        pending = null;
+        verifiedAt = 0;
+        clearPrivateQueries(client);
+        publish({ session, role: null, accountId: null, loading: !!session, error: null, scopeVersion: current.scopeVersion + 1 });
+      } else publish({ session });
+      // Never await an auth-backed read inside the SDK notification callback.
+      if (session) void Promise.resolve().then(() => readIdentity(force)).catch(() => {});
+    };
+    refresh.current = () => readIdentity(true);
+    // Subscribe first. A late getSession result must not resurrect a signed-out user.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      ++events;
+      acceptSession(session, event === 'USER_UPDATED');
     });
+    const initialEvents = events;
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (disposed || events !== initialEvents) return;
+      if (error) throw error;
+      acceptSession(data.session);
+    }).catch(() => {
+      if (disposed || events !== initialEvents) return;
+      acceptSession(null);
+      publish({ error: new Error('Could not restore your session. Please sign in again.') });
+    });
+    return () => { disposed = true; ++generation; subscription.unsubscribe(); refresh.current = async () => {}; };
+  }, [client]);
 
-    return () => subscription.unsubscribe();
-  }, []);
-
-  return (
-    <AuthContext.Provider value={{ session, user, role, loading, error }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const refreshIdentity = useCallback(() => refresh.current(), []);
+  return <AuthContext.Provider value={{ ...state, user: state.session?.user ?? null, refreshIdentity }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => useContext(AuthContext);

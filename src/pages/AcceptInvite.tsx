@@ -5,7 +5,6 @@ import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../context/AuthContext';
-import { useReviewSail } from '../context/ReviewSailContext';
 
 /**
  * Messages are keyed off the exceptions raised by public.accept_invitation().
@@ -28,22 +27,34 @@ const messageFor = (raw: string) => {
 
 export default function AcceptInvite() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { session, loading: authLoading } = useAuth();
-  const { refreshData } = useReviewSail();
-
+  const { user } = useAuth();
   const token = searchParams.get('token') || '';
+  return <InviteForUser key={`${user?.id ?? 'signed-out'}:${token}`} token={token} />;
+}
+
+function redeemInvitation(token: string) {
+  // EGRESS-COST: low — explicit invitation redemption, one bounded RPC response.
+  return Promise.resolve(supabase.rpc('accept_invitation', { p_token: token }));
+}
+
+function InviteForUser({ token }: { token: string }) {
+  const navigate = useNavigate();
+  const { session, loading: authLoading, refreshIdentity } = useAuth();
+  const userId = session?.user.id;
   const [status, setStatus] = useState<'idle' | 'redeeming' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const redeemed = useRef(false);
+  const attempt = useRef<ReturnType<typeof redeemInvitation> | null>(null);
 
   useEffect(() => {
-    if (!token || !session || redeemed.current) return;
-    redeemed.current = true;
-
-    (async () => {
+    if (!token || !userId) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // StrictMode replay reuses the in-flight redemption, not the single-use token.
+    attempt.current ??= redeemInvitation(token);
+    void (async () => {
       setStatus('redeeming');
-      const { error: rpcError } = await supabase.rpc('accept_invitation', { p_token: token });
+      const { error: rpcError } = await attempt.current!;
+      if (!active) return;
 
       if (rpcError) {
         setError(messageFor(rpcError.message || ''));
@@ -51,12 +62,23 @@ export default function AcceptInvite() {
         return;
       }
 
-      // The user's account_id just changed, so every cached row is stale.
-      await refreshData();
+      // Re-check role AND account before using any previous account's cache.
+      try {
+        await refreshIdentity();
+      } catch {
+        if (!active) return;
+        setError('Your invitation was accepted, but account access could not be refreshed. Return to sign in before continuing.');
+        setStatus('error');
+        return;
+      }
+      if (!active) return;
       setStatus('done');
-      setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
-    })();
-  }, [token, session, refreshData, navigate]);
+      timer = setTimeout(() => navigate('/dashboard', { replace: true }), 1200);
+    })().catch(() => {
+      if (active) { setError('Could not confirm invitation acceptance. Return to sign in and check your account before trying again.'); setStatus('error'); }
+    });
+    return () => { active = false; clearTimeout(timer); };
+  }, [token, userId, refreshIdentity, navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas py-12 px-4 sm:px-6 lg:px-8">

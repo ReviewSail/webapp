@@ -93,10 +93,6 @@ export default function SettingsPage() {
   const [digestEnabled, setDigestEnabled] = useState(digestSetting?.enabled ?? true);
   const [digestFrequency, setDigestFrequency] = useState<'weekly' | 'monthly'>(digestSetting?.frequency ?? 'weekly');
 
-  // Delete account states
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [deletingAccount, setDeletingAccount] = useState(false);
   const [testSending, setTestSending] = useState(false);
 
   useEffect(() => {
@@ -180,7 +176,7 @@ export default function SettingsPage() {
     setTestSending(false);
     if (result.success) {
       toast.success(
-        `Test request sent to ${session?.user?.email}. If it doesn't arrive, check that RESEND_API_KEY is set and the sender domain is verified.`,
+        `${result.message} Test recipient: ${session?.user?.email}. The test guest stays in your list so its feedback link keeps working.`,
         { duration: 8000 }
       );
     } else {
@@ -204,21 +200,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    if (deleteConfirmText !== 'DELETE') return;
-    setDeletingAccount(true);
-    try {
-      const { error } = await supabase.functions.invoke('delete-account');
-      if (error) throw error;
-      await supabase.auth.signOut();
-      navigate('/login', { replace: true });
-    } catch (err: any) {
-      toast.error(err.message || "Couldn't delete the account. Try again.");
-    } finally {
-      setDeletingAccount(false);
-      setShowDeleteModal(false);
-    }
-  };
 
   const tabs = [
     { key: 'locations', label: 'Locations', icon: MapPin },
@@ -414,13 +395,14 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-ink mb-1">Property Timezone</label>
+              <label htmlFor="property-timezone" className="block text-xs font-bold text-ink mb-1">Property Timezone</label>
               <select
+                id="property-timezone"
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
                 className="w-full rounded-xl border-line shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm py-2.5 px-3 border bg-card"
               >
-                {TIMEZONES.map(tz => (
+                {[...new Set([timezone, ...TIMEZONES])].map(tz => (
                   <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
                 ))}
               </select>
@@ -562,8 +544,8 @@ export default function SettingsPage() {
               </button>
             </div>
             <p className="text-[10px] text-ink-faint -mt-2">
-              Sends one real review request to {session?.user?.email} using this location's template, then
-              removes the test guest. Nothing appears in your guest list or stats.
+              Sends one real request to {session?.user?.email}. The Test Send guest remains in your list
+              so its links keep working. Test stays receive no automatic retries or reminders.
             </p>
             </div>
           )}
@@ -750,81 +732,15 @@ export default function SettingsPage() {
                   <AlertTriangle className="h-5 w-5 text-critical" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-critical">Danger Zone</h2>
-                  <p className="text-xs text-ink-muted">Permanently delete your account and all data.</p>
+                  <h2 className="text-lg font-bold text-critical">Account deletion temporarily paused</h2>
+                  <p className="text-sm text-ink-muted">Contact support to review billing and team access before account removal. Self-service deletion is unavailable while we improve its recovery safeguards. Your data and subscription have not been changed.</p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="bg-critical text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-critical transition-colors flex items-center space-x-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span>Delete Account</span>
-              </button>
             </div>
           )}
         </div>
       )}
 
-      {/* Delete Account Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-card rounded-2xl max-w-md w-full shadow-2xl border border-line flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-line flex items-center space-x-3 bg-critical-soft">
-              <div className="p-2 bg-critical-soft rounded-xl">
-                <AlertTriangle className="h-5 w-5 text-critical" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-ink">Delete Account</h3>
-                <p className="text-xs text-critical">This action is permanent and cannot be undone.</p>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-ink-muted">
-                All your locations, guests, review requests, and feedback data will be permanently deleted.
-              </p>
-
-              <div>
-                <label className="block text-xs font-bold text-ink mb-1">
-                  Type <span className="text-critical font-extrabold">DELETE</span> to confirm
-                </label>
-                <input
-                  type="text"
-                  value={deleteConfirmText}
-                  onChange={(e) => setDeleteConfirmText(e.target.value)}
-                  placeholder="DELETE"
-                  className="w-full rounded-xl border-line shadow-sm focus:border-critical focus:ring-critical text-sm py-2.5 px-3 border bg-card"
-                />
-              </div>
-
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setDeleteConfirmText('');
-                  }}
-                  className="flex-1 bg-muted text-ink font-semibold py-2.5 px-4 rounded-xl hover:bg-line transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteAccount}
-                  disabled={deleteConfirmText !== 'DELETE' || deletingAccount}
-                  className="flex-1 bg-critical text-white font-semibold py-2.5 px-4 rounded-xl hover:bg-critical transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {deletingAccount ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  <span>{deletingAccount ? 'Deleting...' : 'Delete Account'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,28 +1,30 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
+import { Fragment, lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom"
+import { inboxLoginPath } from './lib/inboxSignIn';
 import { QueryClientProvider } from "@tanstack/react-query"
 import { queryClient } from "./lib/queryClient"
 import { ReviewSailProvider } from "./context/ReviewSailContext"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { Layout } from "./components/Layout"
-import Dashboard from "./pages/Dashboard"
-import Analytics from "./pages/Analytics"
-import SyncGuests from "./pages/SyncGuests"
-import Guests from "./pages/Guests"
-import Settings from "./pages/Settings"
-import Unsubscribe from "./pages/Unsubscribe"
-import Login from "./pages/Login"
-import Feedback from "./pages/Feedback"
-import AlreadyReviewed from "./pages/AlreadyReviewed"
-import ResetPassword from "./pages/ResetPassword"
-import FeedbackGate from "./pages/FeedbackGate"
-import ReviewReply from "./pages/ReviewReply"
-import AcceptInvite from "./pages/AcceptInvite"
-import Inbox from "./pages/Inbox"
-import NotFound from "./pages/NotFound"
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const SyncGuests = lazy(() => import("./pages/SyncGuests"));
+const Guests = lazy(() => import("./pages/Guests"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Unsubscribe = lazy(() => import("./pages/Unsubscribe"));
+const Login = lazy(() => import("./pages/Login"));
+const Feedback = lazy(() => import("./pages/Feedback"));
+const AlreadyReviewed = lazy(() => import("./pages/AlreadyReviewed"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const FeedbackGate = lazy(() => import("./pages/FeedbackGate"));
+const ReviewReply = lazy(() => import("./pages/ReviewReply"));
+const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
+const Inbox = lazy(() => import("./pages/Inbox"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 import { ToastProvider } from "./components/ui/Toast"
 import { ThemeProvider } from "./context/ThemeContext"
 import { SailMark } from "./components/brand/SailMark"
-import { isStaff } from "./lib/roles"
+import { isAdmin } from "./lib/roles"
 
 /** The first thing a returning user sees. Branded, and quiet about it. */
 const RouteLoader = () => (
@@ -34,28 +36,36 @@ const RouteLoader = () => (
   </div>
 );
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { session, loading } = useAuth();
+export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { session, loading, error, refreshIdentity, accountId, scopeVersion } = useAuth();
+  const { pathname } = useLocation();
 
   if (loading) {
     return <RouteLoader />;
   }
 
   if (!session) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={inboxLoginPath(pathname)} replace />;
   }
 
-  return <>{children}</>;
+  if (error) return <div role="alert" className="p-8 text-ink">
+    <p>Account access could not be verified. Your private data is hidden.</p>
+    <button type="button" className="text-brand-600 underline" onClick={() => { void refreshIdentity().catch(() => {}); }}>Retry account access</button>
+  </div>;
+
+  // Reset private component drafts/cursors even if a fast account switch batches
+  // away the intermediate loading render. Public recovery/invite routes stay mounted.
+  return <Fragment key={`${session.user.id}:${accountId}:${scopeVersion}`}>{children}</Fragment>;
 };
 
-const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+export const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { role, loading } = useAuth();
 
   if (loading) {
     return <RouteLoader />;
   }
 
-  if (isStaff(role)) {
+  if (!isAdmin(role)) {
     return <Navigate to="/dashboard?access_denied=true" replace />;
   }
 
@@ -64,6 +74,7 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
 
 function AppRoutes() {
   return (
+    <Suspense fallback={<RouteLoader />}>
     <Routes>
       <Route path="/opt-out" element={<Unsubscribe />} />
       <Route path="/unsubscribe" element={<Unsubscribe />} />
@@ -105,6 +116,7 @@ function AppRoutes() {
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   );
 }
 

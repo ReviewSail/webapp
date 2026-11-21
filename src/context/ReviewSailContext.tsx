@@ -1,8 +1,13 @@
-import { createContext, useContext, useState, useMemo, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useMemo, useCallback, useRef, ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { readFunctionError } from '../lib/functionError';
+import { runGuestImport, emptyImportResult, type BulkImportRow, type BulkImportResult } from '../lib/guestImport';
+export type { BulkImportRow, BulkImportResult } from '../lib/guestImport';
+import { checkoutOutcome } from '../lib/checkoutOutcome';
+import { saveInternalFeedbackNote } from '../lib/feedbackNote';
+import { readSendOutcome, type SendOutcome } from '../lib/sendOutcome';
 import { fetchAllPages } from '../lib/pagedFetch';
 import type { DigestSetting } from '../types/reviewSail';
 
@@ -90,13 +95,6 @@ export const RESENDABLE_STATUSES: ReadonlyArray<ReviewRequest['status']> = ['pen
 export const canResendRequest = (status: ReviewRequest['status']): boolean =>
   RESENDABLE_STATUSES.includes(status);
 
-export type OptOut = {
-  id: string;
-  email: string | null;
-  phone?: string | null;
-  optOutDate: string;
-};
-
 export type MessageEvent = {
   id: string;
   requestId: string;
@@ -125,33 +123,10 @@ export type GuestFeedback = {
   feedbackText: string | null;
   guestName: string | null;
   guestEmail: string | null;
+  /** Legacy column name; an internal note, never evidence of guest delivery. */
   managerResponse: string | null;
   isRead: boolean;
   createdAt: string;
-};
-
-export type BulkImportRow = {
-  firstName: string;
-  lastName: string;
-  email: string | null;
-  phone?: string | null;
-  /** Date-only ISO string, e.g. "2026-07-30". */
-  checkoutDate: string;
-  checkinDate?: string | null;
-  source?: string | null;
-};
-
-export type BulkImportResult = {
-  success: boolean;
-  imported: number;
-  skippedDuplicates: number;
-  /**
-   * Rows we tried to write and couldn't. Distinct from rows rejected before
-   * the attempt (validation errors) and from rows skipped as duplicates — the
-   * owner needs to know which of the three happened.
-   */
-  failed: number;
-  error?: string;
 };
 
 /**
@@ -175,7 +150,6 @@ type ReviewSailState = {
   customers: Customer[];
   orders: Order[];
   reviewRequests: ReviewRequest[];
-  optOuts: OptOut[];
   messageEvents: MessageEvent[];
   feedbacks: GuestFeedback[];
   activeLocationId: string | null;
@@ -187,6 +161,8 @@ type ReviewSailState = {
   /** Cancelled, but still paid up until currentPeriodEnd. */
   cancelAtPeriodEnd: boolean;
   loading: boolean;
+  dashboardLoading: boolean;
+  dashboardError: boolean;
   unreadPrivateFeedbackCount: number;
   digestSetting: DigestSetting | null;
 };
@@ -197,25 +173,23 @@ type ReviewSailContextType = ReviewSailState & {
   deleteLocation: (id: string) => Promise<void>;
   addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
   addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
-  addOptOut: (email: string) => Promise<void>;
   addReviewRequest: (orderId: string) => Promise<void>;
   updateLocationSettings: (id: string, settings: Partial<Location>) => Promise<void>;
-  respondToFeedback: (id: string, text: string) => Promise<void>;
+  saveFeedbackNote: (id: string, text: string) => Promise<void>;
   markPrivateFeedbackRead: (id: string) => Promise<void>;
   refreshData: () => Promise<void>;
   bulkImport: (rows: BulkImportRow[]) => Promise<BulkImportResult>;
-  fetchExistingImportKeys: () => Promise<Set<string>>;
-  sendTestReviewRequest: () => Promise<{ success: boolean; error?: string }>;
+  sendTestReviewRequest: () => Promise<SendOutcome>;
   subscribe: () => Promise<{ success: boolean; url?: string; error?: string }>;
   /** Opens Stripe's hosted portal, which owns cancel, resume, payment method and invoices. */
   openBillingPortal: () => Promise<{ success: boolean; url?: string; error?: string }>;
   completeOnboarding: (locationId: string) => Promise<void>;
-  triggerSingleResend: (requestId: string) => Promise<{ success: boolean; error?: string }>;
+  triggerSingleResend: (requestId: string) => Promise<SendOutcome>;
   updateDigestSetting: (frequency: 'weekly' | 'monthly', enabled: boolean) => Promise<void>;
 };
 
 /**
- * Kept in step with the seeds in supabase/migrations/0021_sms_templates.sql and
+ * Kept in step with the seeds in supabase/legacy-migrations/0021_sms_templates.sql and
  * the fallbacks in supabase/functions/process-reviews. The SMS copy is GSM-7
  * clean and single-segment on purpose: one emoji or curly apostrophe forces
  * UCS-2 and cuts each segment from 160 characters to 70.
@@ -244,7 +218,6 @@ const COLUMNS = {
   customers: 'id, first_name, last_name, email, phone',
   orders: 'id, customer_id, location_id, checkout_date, checkin_date, midstay_sent, midstay_sent_at, source, status',
   reviewRequests: 'id, order_id, status, sent_at, origin',
-  optOuts: 'id, email, phone, opt_out_date',
   messageEvents: 'id, request_id, event_type, created_at',
   digestSettings: 'id, user_id, account_id, frequency, enabled',
   guestFeedback:
@@ -266,7 +239,6 @@ const keys = {
   customers: (userId?: string) => ['reviewsail', 'customers', userId] as const,
   orders: (userId?: string) => ['reviewsail', 'orders', userId] as const,
   reviewRequests: (userId?: string) => ['reviewsail', 'review_requests', userId] as const,
-  optOuts: (userId?: string) => ['reviewsail', 'opt_outs', userId] as const,
   messageEvents: (userId?: string) => ['reviewsail', 'message_events', userId] as const,
   feedbacks: (userId?: string) => ['reviewsail', 'guest_feedback', userId] as const,
   digestSetting: (userId?: string) => ['reviewsail', 'digest_settings', userId] as const,
@@ -282,13 +254,19 @@ type AccountSummary = {
 };
 
 export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
-  const { session } = useAuth();
+  const { session, loading: authLoading, error: authError, accountId: authAccountId, scopeVersion } = useAuth();
   const queryClient = useQueryClient();
-  const userId = session?.user?.id;
+  const userId = !authLoading && !authError ? session?.user?.id : undefined;
   const enabled = !!userId;
 
   // Local UI state. Not remote data, so it has no business in a query cache.
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const scope = `${userId ?? ''}:${authAccountId ?? ''}:${scopeVersion ?? 0}`;
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const [selection, setSelection] = useState<{ scope: string; id: string | null }>({ scope, id: null });
+  // Reset before children render, including A -> signed out -> A.
+  if (selection.scope !== scope) setSelection({ scope, id: null });
+  const selectedLocationId = selection.scope === scope ? selection.id : null;
 
   // Every read below is RLS-scoped to the caller's account, paged through
   // `.range()`, and cached for the durations set in src/lib/queryClient.ts.
@@ -298,23 +276,6 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     queryKey: keys.account(userId),
     enabled,
     queryFn: async (): Promise<AccountSummary> => {
-      // Local-only shortcut for working without Stripe keys. Vite strips this
-      // from production builds — shipped, it let any admin activate a paid plan
-      // by visiting /dashboard?mock_checkout_success=true&account_id=<their id>.
-      if (import.meta.env.DEV) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const isMockSuccess = urlParams.get('mock_checkout_success') === 'true';
-        const mockAccountId = urlParams.get('account_id');
-
-        if (isMockSuccess && mockAccountId) {
-          await supabase
-            .from('accounts')
-            .update({ subscription_status: 'active', plan_name: 'Premium Pro' })
-            .eq('id', mockAccountId);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      }
-
       const { data: userData } = await supabase
         .from('users')
         .select('account_id')
@@ -455,23 +416,6 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     },
   });
 
-  // EGRESS-COST: medium — one row per guest who ever opted out.
-  const optOutsQuery = useQuery({
-    queryKey: keys.optOuts(userId),
-    enabled,
-    queryFn: async (): Promise<OptOut[]> => {
-      const rows = await fetchAllPages<any>('opt_outs', () =>
-        supabase.from('opt_outs').select(COLUMNS.optOuts).order('id'),
-      );
-      return rows.map(o => ({
-        id: o.id,
-        email: o.email,
-        phone: o.phone,
-        optOutDate: o.opt_out_date,
-      }));
-    },
-  });
-
   // EGRESS-COST: high — several rows per request (sent, delivered, clicked).
   // The fastest-growing table in the schema.
   const messageEventsQuery = useQuery({
@@ -539,7 +483,6 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
   const customers = customersQuery.data ?? [];
   const orders = ordersQuery.data ?? [];
   const reviewRequests = reviewRequestsQuery.data ?? [];
-  const optOuts = optOutsQuery.data ?? [];
   const messageEvents = messageEventsQuery.data ?? [];
   const feedbacks = feedbacksQuery.data ?? [];
 
@@ -552,7 +495,9 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
 
   // Falls back to the first location until the user picks one, matching the
   // behaviour of the old reducer.
-  const activeLocationId = selectedLocationId ?? (locations.length > 0 ? locations[0].id : null);
+  const activeLocationId = enabled
+    ? (locations.some(location => location.id === selectedLocationId) ? selectedLocationId : locations[0]?.id ?? null)
+    : null;
 
   const loading =
     enabled &&
@@ -585,7 +530,9 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     await queryClient.invalidateQueries({ queryKey: keys.all });
   }, [queryClient]);
 
-  const setActiveLocationId = (id: string) => setSelectedLocationId(id);
+  const setActiveLocationId = (id: string) => {
+    if (currentScope.current === scope && locations.some(location => location.id === id)) setSelection({ scope, id });
+  };
 
   const addLocation = async (name: string, googleUrl?: string) => {
     // EGRESS-COST: low — the account id is already cached; no second read.
@@ -639,7 +586,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     if (error) throw error;
     // Drop the selection if it pointed at the location that just went away;
     // activeLocationId then falls back to the first remaining one.
-    setSelectedLocationId(prev => (prev === id ? null : prev));
+    if (currentScope.current === scope) setSelection(prev => prev.id === id ? { scope, id: null } : prev);
     await invalidate('locations');
   };
 
@@ -696,19 +643,11 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     };
   };
 
-  const addOptOut = async (email: string) => {
-    await supabase.from('opt_outs').insert({ email });
-    await invalidate('optOuts');
-  };
-
   const addReviewRequest = async (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    const customer = order ? customers.find(c => c.id === order.customerId) : null;
-    let status = 'pending';
-    if (customer && optOuts.some(o => o.email === customer.email)) {
-      status = 'opted_out';
-    }
-    await supabase.from('review_requests').insert({ order_id: orderId, status });
+    // EGRESS-COST: low — write only. The database applies suppression privately;
+    // no global contact list is downloaded to decide the initial status.
+    const { error } = await supabase.from('review_requests').insert({ order_id: orderId, status: 'pending' });
+    if (error) throw error;
     await invalidate('reviewRequests');
   };
 
@@ -720,68 +659,37 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
 
   const triggerSingleResend = async (requestId: string) => {
     try {
-      const { error } = await supabase.functions.invoke('process-reviews', { body: { review_request_id: requestId } });
+      // EGRESS-COST: low — one request, with per-channel acceptance results.
+      const { data, error } = await supabase.functions.invoke('process-reviews', { body: { review_request_id: requestId } });
       // A non-2xx response arrives as a FunctionsHttpError whose real message
       // is in the response body, not err.message — which is how "this guest has
       // opted out" was surfacing as a bare "Edge Function returned a non-2xx
       // status code".
       if (error) throw new Error(await readFunctionError(error, 'Resend process failed'));
-      await invalidate('reviewRequests', 'messageEvents');
-      return { success: true };
+      return readSendOutcome(data, requestId);
     } catch (err: any) {
       return { success: false, error: err.message || 'Resend process failed' };
+    } finally {
+      // An expired/opted-out response can change state even when no send occurs.
+      await invalidate('reviewRequests', 'messageEvents');
     }
   };
 
   /**
-   * Identity keys for stays already in this account, so the import wizard can
-   * flag re-imported guests before creating a second review request. Mirrors
-   * dedupeKey() in src/lib/csvImport.ts.
-   */
-  const fetchExistingImportKeys = async (): Promise<Set<string>> => {
-    const dedupeKeys = new Set<string>();
-
-    // EGRESS-COST: medium — three narrow columns per existing stay, read in
-    // pages. Deliberately not cached: the whole point is to catch a duplicate
-    // created seconds ago, possibly in another tab.
-    let rows: any[];
-    try {
-      // RLS scopes orders to the caller's account.
-      rows = await fetchAllPages<any>('orders (import dedupe)', () =>
-        supabase.from('orders').select('checkout_date, customers ( email, phone )').order('id'),
-      );
-    } catch (error) {
-      console.error('Failed to load existing guests for duplicate check:', error);
-      return dedupeKeys;
-    }
-
-    for (const order of rows) {
-      if (!order.checkout_date) continue;
-      const customer = order.customers as any;
-      const contact =
-        customer?.email?.trim().toLowerCase() ||
-        customer?.phone?.replace(/\D/g, '') ||
-        '';
-      if (!contact) continue;
-      dedupeKeys.add(`${contact}|${String(order.checkout_date).slice(0, 10)}`);
-    }
-
-    return dedupeKeys;
-  };
-
-  /**
-   * Runs one real review request end to end against the admin's own address,
-   * then removes the rows. Deleting the customer cascades to the order and
-   * review request, so the test leaves no trace in the guest list or stats.
+   * Runs one real request against the signed-in user's own address. Retain the
+   * test stay once invocation starts: deleting it destroys links in accepted
+   * messages, including when a network error hides the provider response.
+   * The reserved source marks this stay as manual-only in the sender.
    *
    * This is the only way to find out whether sending actually works without
    * waiting for the hourly cron and burning a real guest.
    */
-  const sendTestReviewRequest = async (): Promise<{ success: boolean; error?: string }> => {
+  const sendTestReviewRequest = async (): Promise<SendOutcome> => {
     if (!session?.user?.email) return { success: false, error: 'No signed-in email address' };
     if (!activeLocationId) return { success: false, error: 'No active location selected' };
 
     let customerId: string | null = null;
+    let invocationStarted = false;
     try {
       const accountId = accountQuery.data?.accountId;
       if (!accountId) return { success: false, error: 'No user account linked' };
@@ -807,6 +715,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
           location_id: activeLocationId,
           customer_id: customer.id,
           checkout_date: new Date().toISOString(),
+          source: 'reviewsail_test',
           status: 'completed',
         })
         .select('id')
@@ -821,171 +730,43 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       if (rrError || !request) throw rrError || new Error('Could not create the test request');
 
       // The single-request path bypasses the send-hour window, so this fires now.
-      const { error: fnError } = await supabase.functions.invoke('process-reviews', {
+      invocationStarted = true;
+      // EGRESS-COST: low — a single test request; never a full worker sweep.
+      const { data: sendData, error: fnError } = await supabase.functions.invoke('process-reviews', {
         body: { review_request_id: request.id },
       });
-      if (fnError) throw fnError;
+      if (fnError) throw new Error(await readFunctionError(fnError, 'Test send could not be confirmed'));
 
-      return { success: true };
+      return readSendOutcome(sendData, request.id);
     } catch (e: any) {
       return { success: false, error: e.message || 'Test send failed' };
     } finally {
-      if (customerId) {
-        // The delete cascades to the order and the review request.
-        await supabase.from('customers').delete().eq('id', customerId);
-        await invalidate('customers', 'orders', 'reviewRequests');
+      if (customerId && !invocationStarted) {
+        // EGRESS-COST: low — only incomplete setup, before any possible send.
+        const { error } = await supabase.from('customers').delete().eq('id', customerId);
+        if (error) console.error('Could not remove incomplete test setup:', error);
       }
+      await invalidate('customers', 'orders', 'reviewRequests', 'messageEvents');
     }
   };
 
-  const bulkImport = async (rows: BulkImportRow[]) => {
-    if (!activeLocationId) {
-      return { success: false, imported: 0, skippedDuplicates: 0, failed: rows.length, error: 'No active location selected' };
+  const bulkImport = async (rows: BulkImportRow[]): Promise<BulkImportResult> => {
+    // Capture once: a location change during a long import cannot retarget later batches.
+    const locationId = activeLocationId;
+    if (!locationId || !accountQuery.data?.accountId) {
+      return { ...emptyImportResult(), notAttempted: rows.length,
+        error: !locationId ? 'No active location selected' : 'No user account linked' };
     }
-
+    // EGRESS-COST: low — <=200 row outcomes per call; duplicate lookup stays in SQL.
+    const result = await runGuestImport(rows, batch =>
+      supabase.rpc('import_guest_batch', { p_location_id: locationId, p_rows: batch }));
     try {
-      const accountId = accountQuery.data?.accountId;
-      if (!accountId) {
-        return { success: false, imported: 0, skippedDuplicates: 0, failed: rows.length, error: 'No user account linked' };
-      }
-      const locationId = activeLocationId;
-
-      // Re-check duplicates here as well as in the wizard: the two are seconds
-      // apart, and a second tab could have imported in between.
-      const existingKeys = await fetchExistingImportKeys();
-      const seenInThisFile = new Set<string>();
-      const toImport: BulkImportRow[] = [];
-      let skippedDuplicates = 0;
-
-      for (const row of rows) {
-        const contact = row.email?.trim().toLowerCase() || row.phone?.replace(/\D/g, '') || '';
-        const key = contact && row.checkoutDate ? `${contact}|${row.checkoutDate}` : null;
-        if (key && (existingKeys.has(key) || seenInThisFile.has(key))) {
-          skippedDuplicates++;
-          continue;
-        }
-        if (key) seenInThisFile.add(key);
-        toImport.push(row);
-      }
-
-      // EGRESS-COST: medium — one column per opted-out guest, read in pages.
-      const optOutRows = await fetchAllPages<any>('opt_outs (import)', () =>
-        supabase.from('opt_outs').select('email').order('id'),
-      );
-      const optedOutEmails = new Set(optOutRows.map(o => o.email?.toLowerCase()).filter(Boolean));
-
-      // Natural key for pairing inserted customer rows back to their source
-      // row. Correlating by array index would assume INSERT ... RETURNING
-      // preserves input order, which Postgres does not guarantee and which
-      // breaks outright once the insert is chunked.
-      // JSON rather than a delimited string: the separator has to be one no
-      // name or address can contain. This used to join on a literal NUL, which
-      // worked but made the whole file register as binary — `grep` skips it, so
-      // every text-based audit of this file silently found nothing.
-      const naturalKey = (r: { firstName: string; lastName: string; email: string | null; phone?: string | null }) =>
-        JSON.stringify([r.firstName, r.lastName, r.email ?? '', r.phone ?? '']);
-
-      const BATCH_SIZE = 200;
-      let imported = 0;
-
-      for (let offset = 0; offset < toImport.length; offset += BATCH_SIZE) {
-        const batch = toImport.slice(offset, offset + BATCH_SIZE);
-
-        const { data: insertedCustomers, error: custError } = await supabase
-          .from('customers')
-          .insert(batch.map(r => ({
-            account_id: accountId,
-            first_name: r.firstName,
-            last_name: r.lastName,
-            email: r.email,
-            phone: r.phone || null,
-          })))
-          // Named columns: the natural-key pairing below needs exactly these.
-          .select(COLUMNS.customers);
-
-        if (custError || !insertedCustomers) {
-          throw custError || new Error('Failed to insert guests');
-        }
-
-        // Queue source rows per natural key; identical rows are interchangeable.
-        const rowsByKey = new Map<string, BulkImportRow[]>();
-        for (const r of batch) {
-          const key = naturalKey(r);
-          const queue = rowsByKey.get(key) || [];
-          queue.push(r);
-          rowsByKey.set(key, queue);
-        }
-
-        const customerIds = insertedCustomers.map(c => c.id);
-
-        try {
-          const ordersToInsert = insertedCustomers.map(cust => {
-            const source = rowsByKey.get(naturalKey({
-              firstName: cust.first_name,
-              lastName: cust.last_name,
-              email: cust.email,
-              phone: cust.phone,
-            }))?.shift();
-
-            return {
-              location_id: locationId,
-              customer_id: cust.id,
-              checkout_date: source?.checkoutDate
-                ? new Date(`${source.checkoutDate}T12:00:00Z`).toISOString()
-                : new Date().toISOString(),
-              // Previously dropped entirely, which is why mid-stay check-ins
-              // could never fire.
-              checkin_date: source?.checkinDate
-                ? new Date(`${source.checkinDate}T12:00:00Z`).toISOString()
-                : null,
-              source: source?.source || null,
-              status: 'completed' as const,
-            };
-          });
-
-          const { data: insertedOrders, error: orderError } = await supabase
-            .from('orders')
-            .insert(ordersToInsert)
-            // Only the id and the customer it belongs to are read below.
-            .select('id, customer_id');
-
-          if (orderError || !insertedOrders) {
-            throw orderError || new Error('Failed to create guest stays');
-          }
-
-          const customerById = new Map(insertedCustomers.map(c => [c.id, c]));
-          const requestsToInsert = insertedOrders.map(order => {
-            const customer = customerById.get(order.customer_id);
-            const isOptedOut = !!customer?.email && optedOutEmails.has(customer.email.toLowerCase());
-            return { order_id: order.id, status: isOptedOut ? 'opted_out' : 'pending' };
-          });
-
-          const { error: rrError } = await supabase.from('review_requests').insert(requestsToInsert);
-          if (rrError) throw rrError;
-
-          // Count what Postgres actually returned, not what we sent — a short
-          // insert would otherwise be reported to the owner as a full success.
-          imported += insertedOrders.length;
-        } catch (batchError) {
-          // Roll the batch back by hand — without this a failure here leaves
-          // orphan customers with no stay and no review request.
-          await supabase.from('customers').delete().in('id', customerIds);
-          throw batchError;
-        }
-      }
-
+      // Partial commits and unknown acknowledgements also require fresh lists.
       await invalidate('customers', 'orders', 'reviewRequests');
-      return { success: true, imported, skippedDuplicates, failed: toImport.length - imported };
-    } catch (e: any) {
-      console.error(e);
-      return {
-        success: false,
-        imported: 0,
-        skippedDuplicates: 0,
-        failed: rows.length,
-        error: e.message || 'Failed to import guests',
-      };
+    } catch {
+      result.error = [result.error, 'Saved counts are unchanged, but the guest list could not refresh. Reload the page.'].filter(Boolean).join(' ');
     }
+    return result;
   };
 
   const updateLocationSettings = async (id: string, settings: Partial<Location>) => {
@@ -1049,15 +830,16 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
    * and event in the account.
    */
   const patchCachedFeedback = (id: string, changes: Partial<GuestFeedback>) => {
+    if (currentScope.current !== scope) return;
     queryClient.setQueryData<GuestFeedback[]>(keys.feedbacks(userId), prev =>
-      (prev ?? []).map(f => (f.id === id ? { ...f, ...changes } : f)),
+      prev?.map(f => (f.id === id ? { ...f, ...changes } : f)),
     );
   };
 
-  const respondToFeedback = async (id: string, text: string) => {
-    const { error } = await supabase.from('guest_feedback').update({ manager_response: text }).eq('id', id);
-    if (error) throw error;
-    patchCachedFeedback(id, { managerResponse: text });
+  const saveFeedbackNote = async (id: string, text: string) => {
+    if (!userId) throw new Error('Sign in to save an internal note.');
+    const note = await saveInternalFeedbackNote(id, text);
+    patchCachedFeedback(id, { managerResponse: note });
   };
 
   const markPrivateFeedbackRead = async (id: string) => {
@@ -1068,14 +850,11 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
 
   const subscribe = async () => {
     try {
+      // EGRESS-COST: low — one server-managed checkout attempt on explicit click.
       const { data, error } = await supabase.functions.invoke('create-checkout-session');
-      if (error) throw error;
-      if (data && data.url) {
-        return { success: true, url: data.url };
-      }
-      return { success: false, error: 'No checkout session URL returned' };
+      return checkoutOutcome(data, error);
     } catch (err: any) {
-      return { success: false, error: err.message || 'Failed to initiate subscription' };
+      return checkoutOutcome(null, err);
     }
   };
 
@@ -1127,6 +906,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
 
     // The upsert already returned the saved row, so seed the cache with it
     // rather than reading it straight back.
+    if (currentScope.current !== scope) return;
     queryClient.setQueryData<DigestSetting>(keys.digestSetting(userId), {
       id: data.id,
       userId: data.user_id,
@@ -1143,7 +923,6 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         customers,
         orders,
         reviewRequests,
-        optOuts,
         messageEvents,
         feedbacks,
         activeLocationId,
@@ -1153,6 +932,8 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         currentPeriodEnd: accountQuery.data?.currentPeriodEnd ?? null,
         cancelAtPeriodEnd: accountQuery.data?.cancelAtPeriodEnd ?? false,
         loading,
+        dashboardLoading: enabled && (messageEventsQuery.isPending || feedbacksQuery.isPending),
+        dashboardError: [accountQuery, locationsQuery, customersQuery, ordersQuery, reviewRequestsQuery, messageEventsQuery, feedbacksQuery].some(query => query.isError),
         unreadPrivateFeedbackCount,
         digestSetting: digestSettingQuery.data ?? null,
         setActiveLocationId,
@@ -1160,14 +941,12 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         deleteLocation,
         addCustomer,
         addOrder,
-        addOptOut,
         addReviewRequest,
         updateLocationSettings,
-        respondToFeedback,
+        saveFeedbackNote,
         markPrivateFeedbackRead,
         refreshData,
         bulkImport,
-        fetchExistingImportKeys,
         sendTestReviewRequest,
         subscribe,
         openBillingPortal,

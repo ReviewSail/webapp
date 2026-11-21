@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { bookingStatusIssue } from './bookingStatus';
 import { parse as parseDateFns, isValid, format as formatDate } from 'date-fns';
 
 /**
@@ -14,7 +15,9 @@ export type ImportFieldKey =
   | 'phone'
   | 'checkoutDate'
   | 'checkinDate'
-  | 'source';
+  | 'source'
+  | 'externalReference'
+  | 'reservationStatus';
 
 export type ColumnMapping = Partial<Record<ImportFieldKey, string>>;
 
@@ -34,6 +37,8 @@ export const IMPORT_FIELDS: Array<{
   { key: 'checkoutDate', label: 'Check-out date', required: true },
   { key: 'checkinDate', label: 'Check-in date', required: false, hint: 'Enables mid-stay check-ins' },
   { key: 'source', label: 'Reservation source', required: false, hint: 'Only if your file has a source column' },
+  { key: 'externalReference', label: 'Booking reference', required: false, hint: 'Recommended: identifies the same booking across exports' },
+  { key: 'reservationStatus', label: 'Booking status', required: false, hint: 'Blocks canceled, no-show and unrecognized statuses' },
 ];
 
 // --- Reservation source ---------------------------------------------------
@@ -79,6 +84,8 @@ export const cleanKey = (key: string) => key.toLowerCase().trim().replace(/[_\-\
  * Hospitable that sit in front of Airbnb and Booking.com.
  */
 const HEADER_CANDIDATES: Record<ImportFieldKey, string[]> = {
+  reservationStatus: ['status', 'bookingstatus', 'reservationstatus'],
+  externalReference: ['booknumber', 'bookingnumber', 'bookingreference', 'reservationid', 'reservationnumber', 'confirmationcode', 'ref'],
   firstName: ['firstname', 'first', 'guestfirstname', 'givenname', 'forename'],
   lastName: ['lastname', 'last', 'guestlastname', 'surname', 'familyname'],
   // A bare "Name" or "Guest name" is far more often one combined column than a
@@ -208,6 +215,8 @@ export const detectMapping = (headers: string[]): MappingDetection => {
   const candidates: Array<{ key: ImportFieldKey; header: string; score: number }> = [];
   for (const { key } of IMPORT_FIELDS) {
     if (detection[key].header) continue;
+    // Payment/cleaning status is not reservation status. Never fuzzy-guess it.
+    if (key === 'reservationStatus') continue;
     for (const header of headers) {
       if (claimed.has(header)) continue;
       const score = fuzzyScore(header, HEADER_CANDIDATES[key]);
@@ -355,6 +364,9 @@ export type MappedRow = {
   checkinDate: string | null;
   /** Booking origin, when the file carries one. Null falls back to the wizard's choice. */
   source: ReservationSource | null;
+  externalReference?: string | null;
+  reservationStatus?: string | null;
+  invalidCheckinDate?: boolean;
   /** Raw source values, for re-exporting failed rows. */
   raw: Record<string, string>;
 };
@@ -410,7 +422,10 @@ export const mapRow = (
     phone: read('phone') || null,
     checkoutDate: readDate('checkoutDate'),
     checkinDate: readDate('checkinDate'),
+    invalidCheckinDate: !!read('checkinDate') && !readDate('checkinDate'),
     source: normalizeSource(read('source')),
+    externalReference: read('externalReference') || null,
+    reservationStatus: mapping.reservationStatus ? read('reservationStatus') : null,
     raw: record,
   };
 };
@@ -435,6 +450,8 @@ const EXPIRY_WINDOW_DAYS = 14;
 
 export const validateRow = (row: MappedRow, today: Date = new Date()): ValidatedRow => {
   const issues: RowIssue[] = [];
+  const statusIssue = bookingStatusIssue(row.reservationStatus);
+  if (statusIssue) issues.push({ level: 'error', message: statusIssue });
 
   if (!row.firstName && !row.lastName) {
     issues.push({ level: 'error', message: 'Missing guest name' });
@@ -461,6 +478,10 @@ export const validateRow = (row: MappedRow, today: Date = new Date()): Validated
     issues.push({ level: 'error', message: 'Missing or unreadable check-out date' });
   }
 
+  if (row.invalidCheckinDate) {
+    issues.push({ level: 'error', message: 'Unreadable check-in date — correct it or leave the field empty' });
+  }
+
   if (row.checkinDate && row.checkoutDate && row.checkinDate > row.checkoutDate) {
     issues.push({ level: 'error', message: 'Check-in date is after check-out date' });
   }
@@ -481,7 +502,7 @@ export const validateRow = (row: MappedRow, today: Date = new Date()): Validated
       const daysAway = Math.abs(ageDays);
       issues.push({
         level: 'info',
-        message: `Checks out in ${daysAway} ${daysAway === 1 ? 'day' : 'days'} — the invite sends then`,
+        message: `Checks out in ${daysAway} ${daysAway === 1 ? 'day' : 'days'} — invitations start the following day, subject to sending checks`,
       });
     }
   }

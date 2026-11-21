@@ -1,50 +1,47 @@
 import { useState } from 'react';
-import { useReviewSail, isActionableFeedback } from '../../context/ReviewSailContext';
-import { Star, MessageSquare, Eye, Check, Search } from 'lucide-react';
+import { Star, MessageSquare, Eye, Check, Search, RefreshCw } from 'lucide-react';
+import { useInboxFeed } from '../../hooks/useInboxFeed';
+import { useAuth } from '../../context/AuthContext';
+import type { InboxCursor, InboxRow } from '../../lib/inboxFeed';
 import { EmptyState } from '../ui/EmptyState';
 import { format } from 'date-fns';
 
 export function PrivateFeedbackInbox() {
-  const { feedbacks, reviewRequests, orders, customers, locations, markPrivateFeedbackRead, loading } = useReviewSail();
+  const { session } = useAuth();
+  // Reset page/search/expanded state on identity changes as well as the feed cache.
+  return <InboxContents key={session?.user.id ?? 'signed-out'} />;
+}
+
+function InboxContents() {
+  const [cursor, setCursor] = useState<InboxCursor | null>(null);
+  const feed = useInboxFeed(cursor);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [readError, setReadError] = useState('');
+  const [readingId, setReadingId] = useState<string | null>(null);
 
   const handleMarkRead = async (id: string) => {
-    await markPrivateFeedbackRead(id);
+    setReadError('');
+    setReadingId(id);
+    try { await feed.markRead(id); }
+    catch { setReadError('Could not mark feedback as read. Please try again.'); }
+    finally { setReadingId(null); }
   };
 
-  const handleView = (fb: any) => {
+  const handleView = (fb: InboxRow) => {
+    setExpandedId(expandedId === fb.id ? null : fb.id);
     if (!fb.isRead) {
-      handleMarkRead(fb.id);
+      void handleMarkRead(fb.id);
     }
-  };
-
-  const getLocationName = (locId: string | null) => {
-    const loc = locations.find(l => l.id === locId);
-    return loc?.name || 'Unknown Location';
-  };
-
-  const getGuestName = (fb: any) => {
-    if (fb.guestName) return fb.guestName;
-    const req = reviewRequests.find(r => r.id === fb.requestId);
-    if (req) {
-      const order = orders.find(o => o.id === req.orderId);
-      if (order) {
-        const customer = customers.find(c => c.id === order.customerId);
-        if (customer) return `${customer.firstName} ${customer.lastName}`;
-      }
-    }
-    return 'Anonymous';
   };
 
   // Filter and sort
-  const filteredFeedbacks = (feedbacks || []).filter(fb => {
-    // Happy guests are recorded for the dashboard average but need no reply.
-    if (!isActionableFeedback(fb)) return false;
+  const filteredFeedbacks = (feed.data?.rows ?? []).filter(fb => {
+    // Private messages at any rating belong here; a high score must not hide text.
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    const name = getGuestName(fb).toLowerCase();
-    const location = getLocationName(fb.locationId).toLowerCase();
+    const name = fb.guestName.toLowerCase();
+    const location = (fb.locationName ?? '').toLowerCase();
     const text = (fb.feedbackText || '').toLowerCase();
     const email = (fb.guestEmail || '').toLowerCase();
     return name.includes(q) || location.includes(q) || text.includes(q) || email.includes(q);
@@ -55,10 +52,13 @@ export function PrivateFeedbackInbox() {
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
-  if (loading) {
+  if (!feed.signedIn) return <p role="alert">Sign in to view feedback.</p>;
+
+  if (feed.isPending) {
     return (
       <div className="bg-card rounded-2xl border border-line shadow-sm p-12 text-center">
-        <div className="animate-pulse flex flex-col items-center space-y-2">
+        {feed.fetchStatus === 'paused' && <p role="alert" className="mb-4 text-sm text-caution">You appear to be offline. The inbox will load when the connection returns.</p>}
+        <div role="status" aria-label="Loading inbox" className="animate-pulse flex flex-col items-center space-y-2">
           <div className="h-8 w-8 bg-line rounded-full"></div>
           <div className="h-4 w-48 bg-muted rounded"></div>
         </div>
@@ -68,25 +68,42 @@ export function PrivateFeedbackInbox() {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="status" className="text-sm text-ink-muted">
+          {feed.isFetching ? 'Checking for feedback…' : feed.dataUpdatedAt && !feed.data?.denied
+            ? `Last checked ${format(new Date(feed.dataUpdatedAt), 'h:mm:ss a')}.` : 'Inbox not yet checked.'}
+          {' '}{cursor ? 'Viewing older feedback; choose Newest for automatic updates.' : 'Checks every 30 seconds while this page is visible.'}
+        </p>
+        <button onClick={() => void feed.refetch()} disabled={feed.isFetching} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-line px-3 text-sm">
+          <RefreshCw size={16} aria-hidden="true" /> Refresh inbox
+        </button>
+      </div>
+      {(feed.isError || feed.data?.denied) && <p role="alert" className="rounded-lg bg-critical-soft p-3 text-sm text-critical">
+        {feed.data?.denied ? 'Your account access could not be verified. Sign in again or retry.'
+          : 'Could not refresh the inbox. Any messages below are from the last successful check, not a confirmed current list. Try Refresh inbox.'}
+      </p>}
+      {feed.fetchStatus === 'paused' && <p role="alert" className="text-sm text-caution">You appear to be offline. Automatic checks will resume when the connection returns.</p>}
+      {readError && <p role="alert" className="text-sm text-critical">{readError}</p>}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint" />
         <input
           type="text"
+          aria-label="Search this page of feedback"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search feedback by guest, location, or text..."
+          placeholder="Search this page by guest, location, or text..."
           className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-line bg-card text-sm focus:border-brand-500 focus:ring-brand-500"
         />
       </div>
 
-      {sortedFeedbacks.length === 0 ? (
+      {sortedFeedbacks.length === 0 && !feed.isError && !feed.data?.denied ? (
         <EmptyState
           icon={MessageSquare}
           size="sm"
-          title="No private feedback received"
-          description="Unhappy guests who select 1–3 stars will land in this inbox."
+          title={search.trim() ? 'No matching feedback on this page' : 'No private feedback on this page'}
+          description="Private ratings and messages appear here, regardless of the guest’s rating."
         />
-      ) : (
+      ) : sortedFeedbacks.length > 0 ? (
         <div className="bg-card rounded-2xl border border-line shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-line">
@@ -102,10 +119,10 @@ export function PrivateFeedbackInbox() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {sortedFeedbacks.map((fb: any) => {
+                {sortedFeedbacks.map(fb => {
                   const isUnread = !fb.isRead;
-                  const guestName = getGuestName(fb);
-                  const locationName = getLocationName(fb.locationId);
+                  const guestName = fb.guestName;
+                  const locationName = fb.locationName || 'Unknown Location';
                   // Recovery messages carry no rating at all, hence the 0.
                   const starRating = fb.starRating ?? 0;
                   const feedbackText = fb.feedbackText ?? '';
@@ -170,6 +187,7 @@ export function PrivateFeedbackInbox() {
                         <div className="flex items-center justify-end space-x-1">
                           <button
                             onClick={() => handleView(fb)}
+                            disabled={readingId !== null}
                             className="p-1.5 hover:bg-muted rounded-lg text-ink-faint hover:text-ink-muted transition-colors"
                             title="View details"
                           >
@@ -178,6 +196,7 @@ export function PrivateFeedbackInbox() {
                           {isUnread && (
                             <button
                               onClick={() => handleMarkRead(fb.id)}
+                              disabled={readingId !== null}
                               className="p-1.5 hover:bg-positive-soft rounded-lg text-ink-faint hover:text-positive transition-colors"
                               title="Mark as read"
                             >
@@ -193,7 +212,15 @@ export function PrivateFeedbackInbox() {
             </table>
           </div>
         </div>
-      )}
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="text-ink-muted">{cursor ? 'Older messages' : 'Newest messages'}, up to 50 per page, across your properties. Search applies to this page.</span>
+        {cursor && <button className="min-h-11 rounded-lg border border-line px-3" onClick={() => { setCursor(null); setSearch(''); setExpandedId(null); }}>Newest</button>}
+        {feed.data?.hasMore && <button disabled={feed.isFetching || feed.isError} className="min-h-11 rounded-lg border border-line px-3" onClick={() => {
+          const last = feed.data?.rows.at(-1);
+          if (last) { setCursor({ createdAt: last.createdAt, id: last.id }); setSearch(''); setExpandedId(null); }
+        }}>Older feedback</button>}
+      </div>
     </div>
   );
 }

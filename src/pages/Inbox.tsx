@@ -1,5 +1,6 @@
 import { PageHeader } from '../components/ui/PageHeader';
 import { PrivateFeedbackInbox } from '../components/dashboard/PrivateFeedbackInbox';
+import { OwnerFeedbackAlerts } from '../components/dashboard/OwnerFeedbackAlerts';
 
 /**
  * Private feedback used to live behind a tab on the Dashboard while also being
@@ -11,8 +12,9 @@ export default function Inbox() {
     <div className="space-y-6">
       <PageHeader
         title="Private feedback"
-        description="What guests told you directly, before it ever reached Google."
+        description="Private ratings and messages from guests. These are not public Google reviews."
       />
+      <OwnerFeedbackAlerts />
       <PrivateFeedbackInbox />
     </div>
   );

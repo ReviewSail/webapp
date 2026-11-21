@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useReviewSail } from '../context/ReviewSailContext';
 import {
   BarChart3,
@@ -22,10 +22,9 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { format, subDays, startOfDay, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
+import { analyticsSummary, type AnalyticsRange } from '../lib/analyticsSummary';
 import { cn } from '../lib/utils';
-
-type TimeRange = '30d' | '90d' | 'all';
 
 function timeAgo(date: string | Date): string {
   const now = new Date();
@@ -44,283 +43,65 @@ function timeAgo(date: string | Date): string {
 
 export default function Analytics() {
   const {
-    reviewRequests,
-    orders,
-    customers,
-    feedbacks,
-    activeLocationId,
+    reviewRequests, orders, customers, feedbacks, activeLocationId, locations,
+    loading, dashboardLoading, dashboardError, refreshData,
   } = useReviewSail();
-
-  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
-
-  // Compute the date boundaries
-  const now = new Date();
-  const rangeStart = useMemo(() => {
-    if (timeRange === '30d') return subDays(now, 30);
-    if (timeRange === '90d') return subDays(now, 90);
-    return new Date(0); // all time
-  }, [timeRange]);
-
-  const previousPeriodEnd = rangeStart;
-  const periodDurationMs = now.getTime() - rangeStart.getTime();
-  const previousPeriodStart = new Date(previousPeriodEnd.getTime() - periodDurationMs);
-
-  // Filter data for active location
-  const activeLocOrders = useMemo(
-    () => orders.filter(o => o.locationId === activeLocationId),
-    [orders, activeLocationId]
-  );
-  const activeLocOrderIds = useMemo(
-    () => new Set(activeLocOrders.map(o => o.id)),
-    [activeLocOrders]
-  );
-
-  // Helper: get customer name initials for a request
-  const getCustomerForRequest = (requestId: string) => {
-    const req = reviewRequests.find(r => r.id === requestId);
-    if (!req) return null;
-    const order = orders.find(o => o.id === req.orderId);
-    if (!order) return null;
-    return customers.find(c => c.id === order.customerId) || null;
-  };
-
-  const getCustomerName = (requestId: string): string => {
-    const customer = getCustomerForRequest(requestId);
-    return customer ? `${customer.firstName} ${customer.lastName}` : 'Unknown Guest';
-  };
-
-  const getCustomerInitials = (requestId: string): string => {
-    const customer = getCustomerForRequest(requestId);
-    return customer
-      ? `${customer.firstName?.[0] ?? ''}${customer.lastName?.[0] ?? ''}`
-      : '?';
-  };
-
-  // Filter data by time range
-  const isInPreviousPeriod = (dateStr: string | undefined | null): boolean => {
-    if (!dateStr) return false;
-    const d = new Date(dateStr);
-    return d >= previousPeriodStart && d < previousPeriodEnd;
-  };
-
-  const isInRange = (dateStr: string | undefined | null): boolean => {
-    if (!dateStr) return true; // all time, everything counts
-    const d = new Date(dateStr);
-    return d >= rangeStart && d <= now;
-  };
-
-  // Active location review requests
-  const activeLocRequests = useMemo(
-    () => reviewRequests.filter(r => activeLocOrderIds.has(r.orderId)),
-    [reviewRequests, activeLocOrderIds]
-  );
-
-  // Filtered on location_id directly now that guest_feedback carries it.
-  const activeLocFeedbacks = useMemo(
-    () => feedbacks.filter(f => f.locationId === activeLocationId),
-    [feedbacks, activeLocationId]
-  );
-
-  // ===== KPI CALCULATIONS =====
-
-  // 1. Reviews Requested
-  const reviewsRequested = useMemo(
-    () => activeLocRequests.filter(r => isInRange(r.sentAt) || (timeRange === 'all')).length,
-    [activeLocRequests, timeRange]
-  );
-
-  const reviewsRequestedPrev = useMemo(
-    () => {
-      if (timeRange === 'all') return 0;
-      return activeLocRequests.filter(r => isInPreviousPeriod(r.sentAt)).length;
-    },
-    [activeLocRequests, timeRange]
-  );
-
-  const reviewTrend = useMemo(() => {
-    if (timeRange === 'all' || reviewsRequestedPrev === 0) return null;
-    return Math.round(((reviewsRequested - reviewsRequestedPrev) / reviewsRequestedPrev) * 100);
-  }, [reviewsRequested, reviewsRequestedPrev, timeRange]);
-
-  // 2. Reviews Completed (from feedback table)
-  const reviewsCompleted = useMemo(
-    () => activeLocFeedbacks.filter(f => isInRange(f.createdAt)).length,
-    [activeLocFeedbacks, timeRange]
-  );
-
-  const reviewsCompletedPrev = useMemo(
-    () => {
-      if (timeRange === 'all') return 0;
-      return activeLocFeedbacks.filter(f => isInPreviousPeriod(f.createdAt)).length;
-    },
-    [activeLocFeedbacks, timeRange]
-  );
-
-  const completedTrend = useMemo(() => {
-    if (timeRange === 'all' || reviewsCompletedPrev === 0) return null;
-    return Math.round(((reviewsCompleted - reviewsCompletedPrev) / reviewsCompletedPrev) * 100);
-  }, [reviewsCompleted, reviewsCompletedPrev, timeRange]);
-
-  // 3. Private Feedback Caught — now respects time range
-  const privateFeedbackCaught = useMemo(
-    () => activeLocRequests.filter(r =>
-      r.status === 'private_feedback' && (timeRange === 'all' || isInRange(r.sentAt))
-    ).length,
-    [activeLocRequests, timeRange]
-  );
-
-  // 4. Average Rating
-  //
-  // Only rows that actually carry a rating. Recovery messages have none, and
-  // the old code averaged them in as a 0 sentinel — every recovery message
-  // dragged the displayed average down toward zero.
-  const averageRating = useMemo(() => {
-    const rated = activeLocFeedbacks.filter(f => f.starRating != null);
-    if (rated.length === 0) return 0;
-    const sum = rated.reduce((acc, f) => acc + (f.starRating ?? 0), 0);
-    return sum / rated.length;
-  }, [activeLocFeedbacks]);
-
-  // ===== CHART DATA =====
-
-  const chartData = useMemo(() => {
-    const numDays = timeRange === 'all'
-      ? Math.max(differenceInDays(now, new Date(0)), 1)
-      : differenceInDays(now, rangeStart);
-
-    // For large date ranges, bucket by week instead of day
-    const bucketByWeek = numDays > 90;
-
-    if (bucketByWeek) {
-      // Group by ISO week start (Monday)
-      const weekMap = new Map<string, { label: string; date: Date; requested: number; completed: number }>();
-
-      activeLocRequests.forEach(r => {
-        if (!r.sentAt) return;
-        const d = new Date(r.sentAt);
-        if (timeRange !== 'all' && d < rangeStart) return;
-        const weekStart = startOfDay(d);
-        const day = weekStart.getDay();
-        const diff = day === 0 ? 6 : day - 1;
-        weekStart.setDate(weekStart.getDate() - diff);
-        const key = weekStart.toISOString();
-        if (!weekMap.has(key)) {
-          weekMap.set(key, {
-            label: format(weekStart, 'MMM d'),
-            date: weekStart,
-            requested: 0,
-            completed: 0,
-          });
-        }
-        weekMap.get(key)!.requested++;
-      });
-
-      activeLocFeedbacks.forEach(f => {
-        const d = new Date(f.createdAt);
-        if (timeRange !== 'all' && d < rangeStart) return;
-        const weekStart = startOfDay(d);
-        const day = weekStart.getDay();
-        const diff = day === 0 ? 6 : day - 1;
-        weekStart.setDate(weekStart.getDate() - diff);
-        const key = weekStart.toISOString();
-        if (!weekMap.has(key)) {
-          weekMap.set(key, {
-            label: format(weekStart, 'MMM d'),
-            date: weekStart,
-            requested: 0,
-            completed: 0,
-          });
-        }
-        weekMap.get(key)!.completed++;
-      });
-
-      return Array.from(weekMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
-    } else {
-      // Group by day
-      const dayMap = new Map<string, { label: string; date: Date; requested: number; completed: number }>();
-
-      // Generate all days in range
-      for (let i = 0; i <= numDays; i++) {
-        const d = subDays(now, numDays - i);
-        if (timeRange !== 'all' && d < rangeStart) continue;
-        const key = format(d, 'yyyy-MM-dd');
-        dayMap.set(key, {
-          label: format(d, 'MMM d'),
-          date: d,
-          requested: 0,
-          completed: 0,
-        });
-      }
-
-      activeLocRequests.forEach(r => {
-        if (!r.sentAt) return;
-        const d = new Date(r.sentAt);
-        if (timeRange !== 'all' && d < rangeStart) return;
-        const key = format(d, 'yyyy-MM-dd');
-        if (dayMap.has(key)) {
-          dayMap.get(key)!.requested++;
-        }
-      });
-
-      activeLocFeedbacks.forEach(f => {
-        const d = new Date(f.createdAt);
-        if (timeRange !== 'all' && d < rangeStart) return;
-        const key = format(d, 'yyyy-MM-dd');
-        if (dayMap.has(key)) {
-          dayMap.get(key)!.completed++;
-        }
-      });
-
-      return Array.from(dayMap.values());
-    }
-  }, [activeLocRequests, activeLocFeedbacks, timeRange, rangeStart, now]);
-
-  // ===== RECENT ACTIVITY =====
+  const [timeRange, setTimeRange] = useState<AnalyticsRange>('30d');
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    // Update the local reporting clock across midnight; this does not poll the database.
+    const update = () => setNow(new Date());
+    const timer = window.setInterval(update, 60_000);
+    window.addEventListener('focus', update);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', update); };
+  }, []);
+  const timezone = locations.find(location => location.id === activeLocationId)?.timezone;
+  const summary = useMemo(() => analyticsSummary({
+    locationId: activeLocationId, timezone, orders, requests: reviewRequests,
+    feedbacks, range: timeRange, now,
+  }), [activeLocationId, timezone, orders, reviewRequests, feedbacks, timeRange, now]);
+  const reviewsRequested = summary.sent.length;
+  const reviewsCompleted = summary.rated.length;
+  const privateFeedbackCaught = summary.lowRatings;
+  const averageRating = summary.averageRating;
+  const reviewTrend = summary.sentTrend;
+  const completedTrend = summary.ratedTrend;
+  const chartData = summary.chartData;
 
   const recentActivity = useMemo(() => {
-    type ActivityEvent = {
-      id: string;
-      type: 'review_completed' | 'request_sent';
-      guestName: string;
-      guestInitials: string;
-      timestamp: string;
+    const requestById = new Map(reviewRequests.map(request => [request.id, request]));
+    const orderById = new Map(orders.map(order => [order.id, order]));
+    const customerById = new Map(customers.map(customer => [customer.id, customer]));
+    const guest = (requestId: string | null, providedName?: string | null) => {
+      const request = requestId ? requestById.get(requestId) : undefined;
+      const order = request ? orderById.get(request.orderId) : undefined;
+      const customer = order ? customerById.get(order.customerId) : undefined;
+      const name = providedName?.trim() || (customer
+        ? [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim() : '') || 'Anonymous guest';
+      return { guestName: name, guestInitials: name.split(/\s+/).slice(0, 2).map(part => part[0]).join('') };
     };
+    const events = [
+      ...summary.sent.map(request => ({
+        id: 'sent-' + request.id, type: 'request_sent' as const,
+        ...guest(request.id), timestamp: request.sentAt!,
+      })),
+      ...summary.received.map(feedback => ({
+        id: 'fb-' + feedback.id,
+        type: feedback.kind === 'recovery' ? 'follow_up' as const : 'feedback_received' as const,
+        ...guest(feedback.requestId, feedback.guestName), timestamp: feedback.createdAt,
+      })),
+    ];
+    return events.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp) || a.id.localeCompare(b.id)).slice(0, 10);
+  }, [summary, reviewRequests, orders, customers]);
 
-    const events: ActivityEvent[] = [];
-
-    // 1. Request sent events
-    activeLocRequests.forEach(r => {
-      if (!r.sentAt) return;
-      events.push({
-        id: `sent-${r.id}`,
-        type: 'request_sent',
-        guestName: getCustomerName(r.id),
-        guestInitials: getCustomerInitials(r.id),
-        timestamp: r.sentAt,
-      });
-    });
-
-    // 2. Review completed events (from feedback)
-    activeLocFeedbacks.forEach(f => {
-      if (!f.createdAt || !f.requestId) return;
-      events.push({
-        id: `fb-${f.id}`,
-        type: 'review_completed',
-        guestName: getCustomerName(f.requestId),
-        guestInitials: getCustomerInitials(f.requestId),
-        timestamp: f.createdAt,
-      });
-    });
-
-    // Sort by timestamp descending, take top 10
-    return events
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 10);
-  }, [activeLocRequests, activeLocFeedbacks, reviewRequests, orders, customers]);
-
-  // ===== EMPTY STATE =====
-
-  const hasNoData = activeLocRequests.length === 0;
+  if (loading || dashboardLoading) return <p role="status">Loading analytics…</p>;
+  if (dashboardError) return (
+    <div role="alert" className="space-y-3">
+      <p>Analytics could not be loaded. Totals are unavailable.</p>
+      <button type="button" className="text-brand-600 underline" onClick={() => { void refreshData(); }}>Try again</button>
+    </div>
+  );
+  const hasNoData = !summary.hasData;
 
   if (hasNoData) {
     return (
@@ -328,14 +109,14 @@ export default function Analytics() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-ink">Analytics</h1>
-            <p className="text-sm text-ink-muted mt-1">Track your review performance over time.</p>
+            <p className="text-sm text-ink-muted mt-1">Track invitations and guest feedback over time.</p>
           </div>
         </div>
 
         <EmptyState
           icon={BarChart3}
           title="No analytics data yet"
-          description="Send your first review request to see analytics here."
+          description="Collect guest feedback or send an invitation to see analytics here."
           action={
             <Link
               to="/import"
@@ -355,7 +136,7 @@ export default function Analytics() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-ink">Analytics</h1>
-          <p className="text-sm text-ink-muted mt-1">Track your review performance over time.</p>
+          <p className="text-sm text-ink-muted mt-1">Track invitations and guest feedback over time.</p>
         </div>
 
         {/* Time Range Toggle */}
@@ -368,6 +149,7 @@ export default function Analytics() {
             <button
               key={value}
               onClick={() => setTimeRange(value)}
+              aria-pressed={timeRange === value}
               className={cn(
                 'px-4 py-2 text-sm font-semibold rounded-lg transition-all',
                 timeRange === value
@@ -381,17 +163,27 @@ export default function Analytics() {
         </div>
       </div>
 
+      <p className="text-sm text-ink-muted">
+        Dates use {summary.timezone}; day ranges include today. Invites use recorded send timestamps,
+        not confirmed delivery. Rated responses include QR feedback and are not confirmed Google reviews.
+        These are separate activity counts, not a conversion rate.
+      </p>
+      <p className="text-xs text-ink-muted">
+        Based on loaded records, capped at 2,000 per dataset. Large histories may be incomplete.
+        Marked test stays are excluded where their linked records are loaded.
+      </p>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {/* Reviews Requested */}
+        {/* Invites sent */}
         <div className="bg-card p-6 rounded-2xl border border-line/80 shadow-sm relative overflow-hidden group">
           <div className="absolute right-4 top-4 p-3 bg-brand-50 text-brand-600 rounded-xl group-hover:scale-110 transition-transform">
             <Send className="h-5 w-5" />
           </div>
-          <span className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Reviews Requested</span>
+          <span className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Invites sent</span>
           <div className="flex items-baseline space-x-2 mt-2">
             <span className="text-3xl font-bold text-ink tracking-tight">
-              {timeRange === 'all' ? activeLocRequests.length : reviewsRequested}
+              {reviewsRequested}
             </span>
           </div>
           <div className="mt-4 flex items-center space-x-1 text-xs">
@@ -416,12 +208,12 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* Reviews Completed */}
+        {/* Rated responses */}
         <div className="bg-card p-6 rounded-2xl border border-line/80 shadow-sm relative overflow-hidden group">
           <div className="absolute right-4 top-4 p-3 bg-positive-soft text-positive rounded-xl group-hover:scale-110 transition-transform">
             <CheckCircle className="h-5 w-5" />
           </div>
-          <span className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Reviews Completed</span>
+          <span className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Rated responses</span>
           <div className="flex items-baseline space-x-2 mt-2">
             <span className="text-3xl font-bold text-ink tracking-tight">{reviewsCompleted}</span>
           </div>
@@ -447,12 +239,12 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* Private Feedback Caught */}
+        {/* Low ratings (1–3) */}
         <div className="bg-card p-6 rounded-2xl border border-line/80 shadow-sm relative overflow-hidden group">
           <div className="absolute right-4 top-4 p-3 bg-brand-50 text-brand-600 rounded-xl group-hover:scale-110 transition-transform">
             <MessageSquare className="h-5 w-5" />
           </div>
-          <span className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Private Feedback Caught</span>
+          <span className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Low ratings (1–3)</span>
           <div className="flex items-baseline space-x-2 mt-2">
             <span className="text-3xl font-bold text-ink tracking-tight">{privateFeedbackCaught}</span>
           </div>
@@ -472,16 +264,16 @@ export default function Analytics() {
           <span className="text-xs font-semibold text-ink-faint uppercase tracking-wider">Average Rating</span>
           <div className="flex items-baseline space-x-2 mt-2">
             <span className="text-3xl font-bold text-ink tracking-tight">
-              {averageRating > 0 ? averageRating.toFixed(1) : '—'}
+              {averageRating !== null ? averageRating.toFixed(1) : '—'}
             </span>
-            {averageRating > 0 && (
+            {averageRating !== null && (
               <span className="text-sm text-ink-faint">/ 5</span>
             )}
           </div>
           <div className="mt-4 flex items-center space-x-1 text-xs">
             <span className="inline-flex items-center font-semibold text-ink-faint px-2 py-0.5 rounded-full bg-canvas">
               <Star className="h-3.5 w-3.5 mr-1 text-star" />
-              {activeLocFeedbacks.length} total reviews
+              {reviewsCompleted} rated responses in this period
             </span>
           </div>
         </div>
@@ -489,7 +281,7 @@ export default function Analytics() {
 
       {/* Line Chart */}
       <div className="bg-card rounded-2xl border border-line shadow-sm p-6">
-        <h2 className="text-lg font-bold text-ink mb-6">Requested vs Completed</h2>
+        <h2 className="text-lg font-bold text-ink mb-6">Invitations and rated responses</h2>
         {chartData.length > 0 ? (
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -523,7 +315,7 @@ export default function Analytics() {
                 <Line
                   type="monotone"
                   dataKey="requested"
-                  name="Requested"
+                  name="Invites sent"
                   stroke="#6366f1"
                   strokeWidth={2}
                   dot={false}
@@ -532,7 +324,7 @@ export default function Analytics() {
                 <Line
                   type="monotone"
                   dataKey="completed"
-                  name="Completed"
+                  name="Rated responses"
                   stroke="#10b981"
                   strokeWidth={2}
                   dot={false}
@@ -575,12 +367,12 @@ export default function Analytics() {
                     {event.type === 'request_sent' ? (
                       <>
                         <Send className="h-3 w-3 mr-1 text-brand-400" />
-                        Review request sent
+                        Invitation recorded as sent
                       </>
                     ) : (
                       <>
                         <CheckCircle className="h-3 w-3 mr-1 text-positive" />
-                        Review completed
+                        {event.type === 'follow_up' ? 'Follow-up message received' : 'Guest feedback received'}
                       </>
                     )}
                   </p>

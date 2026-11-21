@@ -68,219 +68,150 @@ const verifyStripeSignature = async (
   return { ok: true }
 }
 
+const objectId = (value: any): string | null => {
+  const id = typeof value === 'string' ? value : value?.id
+  return typeof id === 'string' && /^[a-z]+_[a-zA-Z0-9]+$/.test(id) ? id : null
+}
+const subscriptionIdOf = (value: any) =>
+  objectId(value?.subscription ?? value?.parent?.subscription_details?.subscription)
+const supportedTypes = new Set([
+  'checkout.session.completed', 'customer.subscription.created',
+  'customer.subscription.updated', 'customer.subscription.deleted',
+  'invoice.paid', 'invoice.payment_failed',
+])
+const mapStatus = (status: string): string => {
+  if (['active', 'trialing', 'past_due', 'canceled'].includes(status)) return status
+  if (status === 'unpaid') return 'past_due'
+  if (['incomplete', 'incomplete_expired', 'paused'].includes(status)) return 'inactive'
+  throw new Error('Unrecognized Stripe subscription status')
+}
+const periodEndOf = (subscription: any): string | null => {
+  const ends = subscription.current_period_end != null
+    ? [subscription.current_period_end]
+    : subscription.items?.data?.map((item: any) => item.current_period_end) ?? []
+  const valid = ends.filter((n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  // The app has one renewal date: use the earliest item end for mixed intervals.
+  return valid.length ? new Date(Math.min(...valid) * 1000).toISOString() : null
+}
+
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
-
+  const reply = (status: number, body: Record<string, unknown>) =>
+    new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method !== 'POST') return reply(405, { error: 'POST required.' })
+  let verifiedEventId: string | undefined
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
-
     const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')
-    if (!webhookSecret) {
-      console.error('[stripe-webhook] STRIPE_WEBHOOK_SECRET is not configured; rejecting.')
-      return new Response(JSON.stringify({ error: 'Webhook not configured.' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // Must read the body raw — parsing first would break the HMAC.
+    if (!webhookSecret) return reply(503, { error: 'Webhook not configured.' })
     const rawBody = await req.text()
-    const verification = await verifyStripeSignature(
-      rawBody,
-      req.headers.get('stripe-signature'),
-      webhookSecret,
-    )
+    const verification = await verifyStripeSignature(rawBody, req.headers.get('stripe-signature'), webhookSecret)
+    if (!verification.ok) return reply(400, { error: 'Invalid signature.' })
+    let event: any
+    try { event = JSON.parse(rawBody) } catch { return reply(400, { error: 'Invalid JSON.' }) }
+    if (!objectId(event.id) || typeof event.type !== 'string' || !event.data?.object
+      || typeof event.livemode !== 'boolean' || event.account) {
+      return reply(400, { error: 'Invalid or unsupported event envelope.' })
+    }
+    verifiedEventId = event.id
+    if (!supportedTypes.has(event.type)) return reply(200, { received: true, ignored: true })
+    const object = event.data.object
+    if (event.type === 'checkout.session.completed' && object.mode !== 'subscription') {
+      return reply(200, { received: true, ignored: true })
+    }
+    const subscriptionId = event.type.startsWith('customer.subscription.')
+      ? objectId(object) : subscriptionIdOf(object)
+    // One-off invoices do not change subscription access.
+    if (!subscriptionId && event.type.startsWith('invoice.')) return reply(200, { received: true, ignored: true })
+    const customerId = objectId(object.customer)
+    if (!subscriptionId || !customerId) return reply(400, { error: 'Missing subscription/customer identity.' })
 
-    if (!verification.ok) {
-      console.error(`[stripe-webhook] Rejected unverified event: ${verification.reason}`)
-      return new Response(JSON.stringify({ error: 'Invalid signature.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!supabaseUrl || !supabaseKey) throw new Error('Database not configured')
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    // EGRESS-COST: low — one processed event ID; retries need no Stripe call.
+    const { data: receipt, error: receiptError } = await supabase.from('stripe_webhook_events')
+      .select('event_id').eq('event_id', event.id).maybeSingle()
+    if (receiptError) throw new Error('Billing receipt lookup failed')
+    if (receipt) return reply(200, { received: true, outcome: 'duplicate' })
+
+    const stripeSecret = Deno.env.get('STRIPE_SECRET_KEY')
+    if (!stripeSecret) throw new Error('Stripe lookup not configured')
+    const getSubscription = async (id: string) => {
+      const response = await fetch(`https://api.stripe.com/v1/subscriptions/${encodeURIComponent(id)}`, {
+        headers: { Authorization: `Bearer ${stripeSecret}` }, signal: AbortSignal.timeout(10000),
       })
+      if (!response.ok) throw new Error('Stripe subscription lookup failed')
+      const current = await response.json()
+      if (current.id !== id || objectId(current.customer) !== customerId
+        || current.livemode !== event.livemode) throw new Error('Stripe subscription identity mismatch')
+      mapStatus(current.status) // Unknown/invalid states fail closed.
+      return current
     }
-
-    const payload = JSON.parse(rawBody)
-    const { type, data } = payload
-    console.log(`[stripe-webhook] Received event type: ${type}`);
-
-    // Every handler below is a plain column overwrite, so a Stripe retry of the
-    // same event is harmless and no event-id dedupe table is needed yet.
-    const patchAccount = async (
-      match: { column: 'id' | 'stripe_customer_id'; value: string },
-      patch: Record<string, unknown>,
-    ) => {
-      const { error } = await supabase.from('accounts').update(patch).eq(match.column, match.value)
-      if (error) {
-        console.error(`[stripe-webhook] Failed to update account by ${match.column}:`, error)
+    const accountColumns = 'id,stripe_customer_id,stripe_subscription_id,billing_revision'
+    // At most three short optimistic attempts. Read revision BEFORE obtaining
+    // Stripe truth; a competing commit requires a fresh account + Stripe read.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // EGRESS-COST: low — a specific customer, maximum two rows to detect ambiguity.
+      const { data: matches, error } = await supabase.from('accounts').select(accountColumns)
+        .eq('stripe_customer_id', customerId).order('id').limit(2)
+      if (error || !Array.isArray(matches) || matches.length > 1) throw new Error('Ambiguous/unavailable billing account')
+      let account = matches[0]
+      if (!account) {
+        // Checkout may precede persistence of its customer ID. Trust only the
+        // current Stripe subscription metadata, never a browser-supplied ID.
+        const identity = await getSubscription(subscriptionId)
+        const accountId = identity.metadata?.account_id
+        if (typeof accountId !== 'string' || !/^[0-9a-f-]{36}$/i.test(accountId)) {
+          throw new Error('Billing account mapping unavailable')
+        }
+        // EGRESS-COST: low — exact metadata account; no tenant enumeration.
+        const { data, error: mappingError } = await supabase.from('accounts').select(accountColumns)
+          .eq('id', accountId).maybeSingle()
+        if (mappingError || !data || (data.stripe_customer_id && data.stripe_customer_id !== customerId)) {
+          throw new Error('Billing account mapping mismatch')
+        }
+        account = data
       }
-      return !error
-    }
-
-    // Stripe's subscription statuses are a superset of the ones the app renders.
-    const mapStatus = (stripeStatus: string) => {
-      switch (stripeStatus) {
-        case 'active':
-        case 'trialing':
-        case 'past_due':
-        case 'canceled':
-          return stripeStatus
-        case 'incomplete':
-        case 'incomplete_expired':
-          return 'inactive'
-        case 'unpaid':
-          return 'past_due'
-        default:
-          return 'inactive'
+      const current = await getSubscription(subscriptionId)
+      if (current.metadata?.account_id && current.metadata.account_id !== account.id) {
+        throw new Error('Subscription metadata account mismatch')
       }
-    }
-
-    const toIso = (seconds: number | null | undefined) =>
-      typeof seconds === 'number' ? new Date(seconds * 1000).toISOString() : null
-
-    /**
-     * Stripe moved `current_period_end` off the Subscription object and onto
-     * its items in API version 2025-03-31. Read whichever shape this account's
-     * pinned version sends: on a recent version the top-level field is simply
-     * absent, which silently produced a null renewal date everywhere.
-     */
-    const periodEndOf = (subscription: any): string | null =>
-      toIso(subscription?.current_period_end)
-      ?? toIso(subscription?.items?.data?.[0]?.current_period_end)
-
-    /**
-     * Same story for the invoice → subscription link, which moved to
-     * `parent.subscription_details.subscription`. Either field may be an id or
-     * an expanded object.
-     */
-    const subscriptionIdOf = (value: any): string | null => {
-      const raw = value?.subscription ?? value?.parent?.subscription_details?.subscription
-      if (!raw) return null
-      return typeof raw === 'string' ? raw : (raw.id ?? null)
-    }
-
-    if (type === 'checkout.session.completed') {
-      const session = data.object
-      const stripeCustomerId = session.customer
-      const subscriptionId = subscriptionIdOf(session)
-
-      // Look for account ID from metadata
-      let accountId = session.metadata?.account_id || session.subscription_data?.metadata?.account_id
-
-      // The session carries no period end, so fetch the subscription itself.
-      // This used to happen only when account_id was missing from the session
-      // metadata, which meant a normal checkout recorded no renewal date at all
-      // — Billing showed "Active" with no date until some later event arrived.
-      let subscription: any = null
-      const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
-      if (subscriptionId && stripeSecretKey) {
-        try {
-          const subRes = await fetch(`https://api.stripe.com/v1/subscriptions/${subscriptionId}`, {
-            headers: { 'Authorization': `Bearer ${stripeSecretKey}` }
-          })
-          if (subRes.ok) {
-            subscription = await subRes.json()
-            accountId = accountId || subscription.metadata?.account_id
-          } else {
-            console.error('[stripe-webhook] Could not fetch subscription:', await subRes.text())
-          }
-        } catch (err) {
-          console.error("[stripe-webhook] Error fetching subscription:", err)
+      let allowReplacement = false
+      if (account.stripe_subscription_id && account.stripe_subscription_id !== subscriptionId
+        && event.type === 'checkout.session.completed') {
+        // An old checkout must not replace the newer subscription. Permit a
+        // genuinely new checkout only after Stripe confirms the old one ended.
+        const previous = await getSubscription(account.stripe_subscription_id)
+        allowReplacement = ['canceled', 'incomplete_expired'].includes(previous.status)
+          && !['canceled', 'incomplete_expired'].includes(current.status)
+          && Number.isFinite(current.created) && Number.isFinite(previous.created)
+          && current.created > previous.created
+        if (!allowReplacement && !['canceled', 'incomplete_expired'].includes(current.status)) {
+          throw new Error('Conflicting subscriptions require billing review')
         }
       }
-
-      console.log(`[stripe-webhook] Checkout completed. Stripe Customer ID: ${stripeCustomerId}, Account ID: ${accountId}`);
-
-      const periodEnd = subscription ? periodEndOf(subscription) : null
-
-      const patch: Record<string, unknown> = {
-        // Trust the subscription's own status when we have it: checkout can
-        // complete straight into a trial.
-        subscription_status: subscription ? mapStatus(subscription.status) : 'active',
-        plan_name: 'Premium Pro',
-        cancel_at_period_end: !!subscription?.cancel_at_period_end,
+      // EGRESS-COST: low — one atomic state update and event receipt.
+      const { data: applied, error: applyError } = await supabase.rpc('apply_stripe_subscription_event', {
+        p_event_id: event.id, p_event_type: event.type, p_account_id: account.id,
+        p_customer_id: customerId, p_subscription_id: subscriptionId,
+        p_expected_revision: account.billing_revision, p_status: mapStatus(current.status),
+        p_period_end: periodEndOf(current), p_cancel_at_period_end: !!current.cancel_at_period_end,
+        p_allow_replacement: allowReplacement,
+      })
+      if (applyError) throw new Error('Billing transaction failed')
+      if (applied?.outcome === 'conflict') continue
+      if (!['applied', 'duplicate', 'ignored_unrelated'].includes(applied?.outcome)) {
+        throw new Error('Invalid billing transaction response')
       }
-      if (subscriptionId) patch.stripe_subscription_id = subscriptionId
-      if (periodEnd) patch.current_period_end = periodEnd
-
-      if (accountId) {
-        await patchAccount({ column: 'id', value: accountId }, { ...patch, stripe_customer_id: stripeCustomerId })
-        console.log(`[stripe-webhook] Account ${accountId} marked as active subscription.`)
-      } else if (stripeCustomerId) {
-        // Fallback: match by stripe_customer_id
-        await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, patch)
-      }
-    } else if (type === 'customer.subscription.updated') {
-      // Plan changes, trial transitions, scheduled cancellations and recoveries
-      // all arrive here. Before this the app never learned about any of them.
-      const subscription = data.object
-      const stripeCustomerId = subscription.customer
-
-      if (stripeCustomerId) {
-        await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, {
-          subscription_status: mapStatus(subscription.status),
-          stripe_subscription_id: subscription.id,
-          current_period_end: periodEndOf(subscription),
-          cancel_at_period_end: !!subscription.cancel_at_period_end,
-        })
-        console.log(
-          `[stripe-webhook] Subscription updated for ${stripeCustomerId}: ` +
-          `${subscription.status}, cancel_at_period_end=${!!subscription.cancel_at_period_end}`
-        )
-      }
-    } else if (type === 'customer.subscription.deleted') {
-      const subscription = data.object
-      const stripeCustomerId = subscription.customer
-      console.log(`[stripe-webhook] Subscription deleted for customer: ${stripeCustomerId}`);
-
-      if (stripeCustomerId) {
-        // current_period_end is kept as the date the plan actually ended.
-        await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, {
-          subscription_status: 'canceled',
-          cancel_at_period_end: false,
-          current_period_end: periodEndOf(subscription),
-        })
-        console.log(`[stripe-webhook] Account matching Stripe Customer ID ${stripeCustomerId} marked as canceled.`)
-      }
-    } else if (type === 'invoice.payment_failed') {
-      const stripeCustomerId = data.object.customer
-      if (stripeCustomerId) {
-        await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, {
-          subscription_status: 'past_due',
-        })
-        console.log(`[stripe-webhook] Payment failed for ${stripeCustomerId}; marked past_due.`)
-      }
-    } else if (type === 'invoice.paid') {
-      const invoice = data.object
-      const stripeCustomerId = invoice.customer
-      // Only a subscription invoice should reactivate a plan. Read the link
-      // through subscriptionIdOf: `invoice.subscription` moved to
-      // `invoice.parent.subscription_details.subscription` in API version
-      // 2025-03-31, and on a recent version this condition was never true — so
-      // a recovered payment never cleared past_due.
-      if (stripeCustomerId && subscriptionIdOf(invoice)) {
-        const periodEnd = toIso(invoice.lines?.data?.[0]?.period?.end)
-        await patchAccount({ column: 'stripe_customer_id', value: stripeCustomerId }, {
-          subscription_status: 'active',
-          // Don't clear a known renewal date just because this invoice lacks one.
-          ...(periodEnd ? { current_period_end: periodEnd } : {}),
-        })
-        console.log(`[stripe-webhook] Invoice paid for ${stripeCustomerId}; marked active.`)
-      }
+      return reply(200, { received: true, outcome: applied.outcome })
     }
-
-    return new Response(JSON.stringify({ received: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    })
-  } catch (error: any) {
-    console.error("[stripe-webhook] Webhook error:", error)
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    })
+    throw new Error('Concurrent billing changes; retry required')
+  } catch (error) {
+    // Stripe retries non-2xx responses. Never acknowledge an unpersisted event.
+    // Do not echo provider bodies, secrets or customer data to the requester.
+    console.error('[stripe-webhook] Retry required:', verifiedEventId ?? 'unverified',
+      error instanceof Error ? error.message : 'processing failure')
+    return reply(503, { error: 'Billing update could not be saved. Retry required.' })
   }
 })

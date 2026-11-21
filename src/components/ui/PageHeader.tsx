@@ -17,7 +17,7 @@ export function PageHeader({ title, description, action, className }: PageHeader
   return (
     <div className={cn('flex flex-wrap items-start justify-between gap-3', className)}>
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-[-0.02em] text-ink">{title}</h1>
+        <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.03em] text-ink">{title}</h1>
         {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
       </div>
       {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}

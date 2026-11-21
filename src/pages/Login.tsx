@@ -4,7 +4,9 @@ import { supabase } from '../integrations/supabase/client';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { SailMark } from '../components/brand/SailMark';
-import { Navigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, Navigate, useLocation } from 'react-router-dom';
+import { inboxSignInDestination } from '../lib/inboxSignIn';
 
 /**
  * Sign-in is the first thing anyone sees, and it was the one screen still
@@ -45,8 +47,10 @@ const authAppearance = (dark: boolean) => ({
 
 export default function Login() {
   const { session, loading } = useAuth();
+  const { search } = useLocation();
   const { resolved } = useTheme();
   const dark = resolved === 'dark';
+  const [view, setView] = useState<'sign_in' | 'sign_up'>('sign_in');
 
   if (loading) {
     return (
@@ -60,7 +64,7 @@ export default function Login() {
   }
 
   if (session) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={inboxSignInDestination(search)} replace />;
   }
 
   return (
@@ -76,13 +80,21 @@ export default function Login() {
         <Auth
           supabaseClient={supabase}
           providers={[]}
-          redirectTo={window.location.origin + '/reset-password'}
+          redirectTo={window.location.origin + '/login' + (search === '?next=inbox' ? search : '')}
+          view={view}
+          showLinks={false}
           // key forces a remount when the theme flips; ThemeSupa reads its
           // variables once on mount and would otherwise keep the old palette.
-          key={resolved}
+          key={resolved + view}
           appearance={authAppearance(dark)}
           theme={dark ? 'dark' : 'light'}
         />
+        <div className="space-y-3 text-center text-sm">
+          <Link to="/reset-password" className="block text-brand-600 underline">Forgot your password?</Link>
+          <button type="button" className="text-brand-600 underline" onClick={() => setView(view === 'sign_in' ? 'sign_up' : 'sign_in')}>
+            {view === 'sign_in' ? 'Create an account' : 'Already have an account? Sign in'}
+          </button>
+        </div>
       </div>
     </div>
   );

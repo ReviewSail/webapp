@@ -16,6 +16,19 @@ export const browserTimezone = (): string => {
   }
 };
 
+/** Friendly display name while preserving the IANA value for scheduling. */
+export const friendlyTimezone = (timezone: string): string => {
+  try {
+    const name = new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'longGeneric' }).formatToParts(new Date()).find(part => part.type === 'timeZoneName')?.value;
+    const city = timezone.split('/').pop()?.replace(/_/g, ' ');
+    return name && city && name !== city ? `${name} · ${city}` : name || timezone;
+  } catch {
+    return timezone.replace(/_/g, ' ');
+  }
+};
+
+export const friendlySendHour = (hour: number): string => `${hour % 12 || 12}${hour < 12 ? ' am' : ' pm'}`;
+
 /**
  * Every zone the runtime knows about. `supportedValuesOf` is widely available
  * but still worth guarding, since a missing list would break the whole page.
@@ -23,7 +36,7 @@ export const browserTimezone = (): string => {
 export const TIMEZONES: string[] = (() => {
   try {
     const supported = (Intl as any).supportedValuesOf?.('timeZone') as string[] | undefined;
-    if (supported?.length) return supported;
+    if (supported?.length) return ['UTC', ...supported.filter(zone => zone !== 'UTC')];
   } catch {
     // fall through
   }
@@ -68,4 +81,17 @@ export const describeSendTime = (timeZone: string, hour: number): string => {
   } catch {
     return formatHourInZone(hour);
   }
+};
+
+/** Keep malformed legacy timezone values from crashing overview date rendering. */
+export const safeTimezone = (timezone?: string): string => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone || 'UTC' });
+    return timezone || 'UTC';
+  } catch { return 'UTC'; }
+};
+
+export const formatInviteTime = (value?: string, timezone?: string): string => {
+  if (!value || !Number.isFinite(Date.parse(value))) return '—';
+  return new Intl.DateTimeFormat('en-US', { timeZone: safeTimezone(timezone), month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 };

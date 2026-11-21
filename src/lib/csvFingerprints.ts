@@ -47,6 +47,8 @@ const FINGERPRINTS: Fingerprint[] = [
     signature: ['confirmationcode', 'status', 'guestname', 'contact', 'startdate', 'enddate', 'listing'],
     distinctive: ['confirmationcode'],
     columns: {
+      externalReference: ['confirmationcode'],
+      reservationStatus: ['status', 'reservationstatus', 'bookingstatus'],
       firstName: ['firstname'],
       lastName: ['lastname'],
       fullName: ['guestname'],
@@ -65,6 +67,8 @@ const FINGERPRINTS: Fingerprint[] = [
     signature: ['booknumber', 'bookedby', 'guestname', 'checkin', 'checkout', 'status', 'roomnights'],
     distinctive: ['booknumber'],
     columns: {
+      externalReference: ['booknumber', 'bookingnumber', 'reservationid'],
+      reservationStatus: ['status', 'reservationstatus', 'bookingstatus'],
       firstName: ['firstname', 'guestfirstname'],
       lastName: ['lastname', 'guestlastname'],
       fullName: ['guestname', 'bookedby'],
@@ -86,6 +90,7 @@ const FINGERPRINTS: Fingerprint[] = [
     ],
     distinctive: ['guestfirstname', 'listingname'],
     columns: {
+      reservationStatus: ['status', 'reservationstatus', 'bookingstatus'],
       firstName: ['guestfirstname'],
       lastName: ['guestlastname'],
       email: ['guestemail'],
@@ -102,6 +107,7 @@ const FINGERPRINTS: Fingerprint[] = [
     signature: ['reservationid', 'guestname', 'arrivaldate', 'departuredate', 'propertyname'],
     distinctive: ['reservationid'],
     columns: {
+      reservationStatus: ['status', 'reservationstatus', 'bookingstatus'],
       firstName: ['firstname'],
       lastName: ['lastname'],
       fullName: ['guestname'],
