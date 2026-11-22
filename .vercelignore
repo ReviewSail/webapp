@@ -7,9 +7,10 @@
 # lockfile, so ours is never needed.
 /node_modules
 
-# Not part of the frontend build.
+# The build guard runs during `pnpm build`; keep that script in Vercel's source.
+# The icon generator is only used manually during development.
 /supabase
-/scripts
+/scripts/generate-icons.mjs
 /dist
 /design
 /.claude
