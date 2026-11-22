@@ -18,6 +18,8 @@ import {
   Info,
 } from 'lucide-react';
 import { useReviewSail } from '../../context/ReviewSailContext';
+import { emptyImportResult, type BulkImportResult } from '../../lib/guestImport';
+import { blockedBookingReferences, importStatusIssue } from '../../lib/bookingStatus';
 import {
   IMPORT_FIELDS,
   RESERVATION_SOURCES,
@@ -61,7 +63,7 @@ const DATE_FORMAT_OPTIONS: Array<{ value: DateFormat; label: string }> = [
 ];
 
 export default function CsvImportWizard() {
-  const { activeLocationId, bulkImport, fetchExistingImportKeys } = useReviewSail();
+  const { activeLocationId, bulkImport } = useReviewSail();
 
   const [step, setStep] = useState<Step>('upload');
   const [dragActive, setDragActive] = useState(false);
@@ -83,9 +85,9 @@ export default function CsvImportWizard() {
   const [validated, setValidated] = useState<ValidatedRow[]>([]);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
-  const [result, setResult] = useState<
-    { imported: number; skippedDuplicates: number; failed: number } | null
-  >(null);
+  const [result, setResult] = useState<BulkImportResult | null>(null);
+  const [reviewLocationId, setReviewLocationId] = useState<string | null>(null);
+  const importing = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,6 +104,7 @@ export default function CsvImportWizard() {
     setExcluded(new Set());
     setOpenGroups(new Set());
     setResult(null);
+    setReviewLocationId(null);
     setError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -253,16 +256,23 @@ export default function CsvImportWizard() {
     setError('');
 
     try {
-      const existingKeys = await fetchExistingImportKeys();
       const seen = new Set<string>();
-
-      const rows = parsed.records.map((record, i) => {
-        // +2: the header occupies line 1, and records are 0-indexed.
-        const row = validateRow(mapRow(record, mapping, dateFormat, i + 2));
+      const mapped = parsed.records.map((record, i) => {
+        const row = mapRow(record, mapping, dateFormat, i + 2);
+        return { ...row, source: row.source || fallbackSource };
+      });
+      const blocked = blockedBookingReferences(mapped);
+      const rows = mapped.map(mappedRow => {
+        const row = validateRow(mappedRow);
         if (row.status === 'error') return row;
+        const reason = importStatusIssue(row, blocked);
+        if (reason) return { ...row, status: 'error' as const, issues: [...row.issues, { level: 'error' as const, message: reason }] };
 
-        const key = dedupeKey(row);
-        if (key && (existingKeys.has(key) || seen.has(key))) {
+        // Only identical file rows are excluded here. The database checks all
+        // existing stays in the selected property, with no history-size cap.
+        const key = JSON.stringify([dedupeKey(row), row.checkinDate, row.source || fallbackSource,
+          row.externalReference, row.firstName, row.lastName, row.email, row.phone]);
+        if (seen.has(key)) {
           return { ...row, status: 'duplicate' as const };
         }
         if (key) seen.add(key);
@@ -270,6 +280,7 @@ export default function CsvImportWizard() {
       });
 
       setValidated(rows);
+      setReviewLocationId(activeLocationId);
       // Rows that can't be imported start excluded, so the checkboxes read as
       // "what will be imported" rather than needing to be decoded.
       setExcluded(new Set(rows.filter(r => r.status === 'error').map(r => r.lineNumber)));
@@ -313,6 +324,7 @@ export default function CsvImportWizard() {
   );
 
   const toggleExcluded = (lineNumber: number) => {
+    if (importing.current) return;
     setExcluded(prev => {
       const next = new Set(prev);
       if (next.has(lineNumber)) next.delete(lineNumber);
@@ -322,41 +334,52 @@ export default function CsvImportWizard() {
   };
 
   const excludeAll = (lineNumbers: number[]) => {
+    if (importing.current) return;
     setExcluded(prev => new Set([...prev, ...lineNumbers]));
   };
 
   const runImport = async () => {
-    setBusy(true);
-    setError('');
-
-    const response = await bulkImport(
-      importableRows.map(r => ({
-        firstName: r.firstName,
-        lastName: r.lastName,
-        email: r.email,
-        phone: r.phone,
-        checkoutDate: r.checkoutDate!,
-        checkinDate: r.checkinDate,
-        // A per-row source column wins; otherwise everything in this file gets
-        // the detected platform or the owner's choice.
-        source: r.source || fallbackSource,
-      })),
-    );
-
-    setBusy(false);
-
-    if (!response.success) {
-      setError(response.error || 'Import failed.');
+    if (importing.current) return;
+    if (!reviewLocationId || activeLocationId !== reviewLocationId) {
+      setError('The selected property changed. Go back and check the rows again before importing.');
       return;
     }
+    importing.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await bulkImport(
+        importableRows.map(r => ({
+          firstName: r.firstName,
+          lastName: r.lastName,
+          email: r.email,
+          phone: r.phone,
+          checkoutDate: r.checkoutDate!,
+          checkinDate: r.checkinDate,
+          // A per-row source column wins; otherwise everything in this file gets
+          // the detected platform or the owner's choice.
+          source: r.source || fallbackSource,
+          externalReference: r.externalReference,
+          reservationStatus: r.reservationStatus,
+        })),
+      );
 
-    setResult({
-      imported: response.imported,
-      // Duplicates caught at review plus any the context caught on re-check.
-      skippedDuplicates: counts.duplicates + response.skippedDuplicates,
-      failed: response.failed,
-    });
-    setStep('result');
+      if (!response.success && response.error && !response.imported && !response.skippedDuplicates && !response.unknown) {
+        setError(response.error);
+        return;
+      }
+      setResult({ ...response, skippedDuplicates: counts.duplicates + response.skippedDuplicates });
+      setStep('result');
+    } catch {
+      // A thrown call may have committed before losing its acknowledgement.
+      setResult({ ...emptyImportResult(), unknown: importableRows.length,
+        skippedDuplicates: counts.duplicates,
+        error: 'Import confirmation was interrupted. Retry the same import to check safely.' });
+      setStep('result');
+    } finally {
+      importing.current = false;
+      setBusy(false);
+    }
   };
 
   const downloadErrorRows = () => {
@@ -387,6 +410,7 @@ export default function CsvImportWizard() {
         {step !== 'upload' && (
           <button
             onClick={reset}
+            disabled={busy}
             className="text-xs font-medium text-ink-muted hover:text-ink inline-flex items-center gap-1"
           >
             <X size={14} /> Start over
@@ -601,6 +625,8 @@ export default function CsvImportWizard() {
                         {RESERVATION_SOURCES.find(s => s.value === (row.source || fallbackSource))?.label
                           || <Empty />}
                       </td>
+                      <td className="px-3 py-2 whitespace-nowrap">{row.externalReference || <Empty />}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{row.reservationStatus ?? 'Not provided'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -640,6 +666,14 @@ export default function CsvImportWizard() {
       {/* Step 3 — Review */}
       {step === 'review' && (
         <div className="space-y-5">
+          <p className="text-sm text-ink-muted">
+            Existing bookings are checked in this property when you save. Include booking references when available.
+            Mapped canceled, no-show, blank or unrecognized booking statuses are blocked. This is not a live Booking.com sync:
+            previously imported stays are not canceled or updated by this upload.
+          </p>
+          {!mapping.reservationStatus && <p className="text-sm text-caution">
+            No booking-status column is mapped. Check manually that every selected row is a confirmed stay, not a cancellation or no-show.
+          </p>}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Tile label="Ready" value={counts.ready} tone="green" />
             <Tile label="Duplicates" value={counts.duplicates} tone="gray" />
@@ -650,7 +684,7 @@ export default function CsvImportWizard() {
           {counts.duplicates > 0 && (
             <p className="text-sm text-ink-muted flex items-start gap-2">
               <CopyCheck size={16} className="mt-0.5 shrink-0 text-ink-faint" />
-              {counts.duplicates} guest{counts.duplicates === 1 ? ' has' : 's have'} already been imported for the same
+              {counts.duplicates} guest{counts.duplicates === 1 ? ' is' : 's are'} repeated in this file for the same
               check-out date and will be skipped, so nobody gets a second request.
             </p>
           )}
@@ -662,7 +696,7 @@ export default function CsvImportWizard() {
             <p className="text-sm text-ink-muted flex items-start gap-2">
               <CalendarClock size={16} className="mt-0.5 shrink-0 text-ink-faint" />
               {counts.upcoming} {counts.upcoming === 1 ? 'stay is' : 'stays are'} still upcoming. Those invites are
-              scheduled automatically and send the day each guest checks out.
+              eligible for automatic invitations starting the day after checkout, subject to sending checks.
             </p>
           )}
 
@@ -711,7 +745,7 @@ export default function CsvImportWizard() {
                               <input
                                 type="checkbox"
                                 checked={canImport && !excluded.has(line)}
-                                disabled={!canImport}
+                                disabled={busy || !canImport}
                                 onChange={() => toggleExcluded(line)}
                                 className="shrink-0 accent-brand-600"
                               />
@@ -762,6 +796,7 @@ export default function CsvImportWizard() {
           <div className="flex justify-between pt-1">
             <button
               onClick={() => setStep('map')}
+              disabled={busy}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-ink-muted hover:text-ink"
             >
               <ArrowLeft size={16} /> Back to columns
@@ -781,13 +816,15 @@ export default function CsvImportWizard() {
       {/* Step 4 — Result */}
       {step === 'result' && result && (
         <div className="space-y-4 text-center py-4">
-          <CheckCircle size={40} className="mx-auto text-positive" />
+          {result.failed || result.unknown || result.notAttempted
+            ? <AlertTriangle size={40} className="mx-auto text-caution" />
+            : <CheckCircle size={40} className="mx-auto text-positive" />}
           <div>
             <p className="text-lg font-semibold text-ink">
               Imported {result.imported} guest{result.imported === 1 ? '' : 's'}
             </p>
             <p className="text-sm text-ink-muted mt-1">
-              Review requests are queued and will send at your property's preferred hour.
+              Results for this attempt. Saved stays are checked for scheduling, opt-outs and sending eligibility; importing does not confirm delivery.
             </p>
           </div>
 
@@ -797,9 +834,15 @@ export default function CsvImportWizard() {
             <Tile label="Imported" value={result.imported} tone="green" />
             <Tile label="Skipped" value={result.skippedDuplicates + counts.excluded} tone="gray" />
             <Tile label="Failed" value={result.failed + counts.errors} tone="red" />
+            {!!result.unknown && <Tile label="Unconfirmed" value={result.unknown} tone="gray" />}
+            {!!result.notAttempted && <Tile label="Not attempted" value={result.notAttempted} tone="gray" />}
           </div>
 
           <div className="text-sm text-ink-muted space-y-1">
+            {result.error && <p role="alert">{result.error}</p>}
+            {result.issues?.map(issue => (
+              <p key={issue.index} className="text-critical">Line {importableRows[issue.index]?.lineNumber ?? '?'}: {issue.reason}</p>
+            ))}
             {result.skippedDuplicates > 0 && (
               <p>{result.skippedDuplicates} already-imported guest{result.skippedDuplicates === 1 ? '' : 's'} skipped.</p>
             )}
@@ -821,8 +864,15 @@ export default function CsvImportWizard() {
             )}
           </div>
 
+          {(result.failed > 0 || result.unknown > 0 || result.notAttempted > 0) && (
+            <button onClick={runImport} disabled={busy} className="btn-primary mr-3">
+              {busy ? 'Checking import…' : 'Retry same import'}
+            </button>
+          )}
+
           <button
             onClick={reset}
+            disabled={busy}
             className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
           >
             <FileUp size={16} /> Import another file

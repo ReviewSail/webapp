@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import CsvImportWizard from './CsvImportWizard';
 
@@ -11,13 +11,12 @@ import CsvImportWizard from './CsvImportWizard';
  */
 
 const bulkImport = vi.fn();
-const fetchExistingImportKeys = vi.fn();
+let activeLocationId = 'loc-1';
 
 vi.mock('../../context/ReviewSailContext', () => ({
   useReviewSail: () => ({
-    activeLocationId: 'loc-1',
+    activeLocationId,
     bulkImport,
-    fetchExistingImportKeys,
   }),
 }));
 
@@ -54,9 +53,12 @@ const rowFor = (label: string): HTMLElement =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fetchExistingImportKeys.mockResolvedValue(new Set<string>());
+  activeLocationId = 'loc-1';
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-08-01T12:00:00Z'));
   bulkImport.mockResolvedValue({ success: true, imported: 0, skippedDuplicates: 0, failed: 0 });
 });
+afterEach(() => vi.useRealTimers());
 
 describe('a CSV with mismatched headers', () => {
   it('guesses the columns and labels how confident it is', async () => {
@@ -244,7 +246,7 @@ describe('the review step', () => {
 
     // Alan Turing checked out well outside the send window, so he's a warning.
     fireEvent.click(screen.getByText(/will expire without being sent/));
-    const checkbox = screen.getByRole('checkbox', { checked: true });
+    const checkbox = screen.getByRole('checkbox', { name: /Alan Turing/, checked: true });
     fireEvent.click(checkbox);
 
     expect(await screen.findByRole('button', { name: /Import 2 guests/ })).toBeInTheDocument();
@@ -257,7 +259,7 @@ describe('the review step', () => {
     fireEvent.click(screen.getByRole('button', { name: /Check \d+ rows?/ }));
 
     fireEvent.click(await screen.findByText(/will expire without being sent/));
-    fireEvent.click(screen.getByRole('checkbox', { checked: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Alan Turing/, checked: true }));
     fireEvent.click(screen.getByRole('button', { name: /Import 2 guests/ }));
 
     await waitFor(() => expect(bulkImport).toHaveBeenCalled());
@@ -276,19 +278,121 @@ describe('the review step', () => {
     expect(screen.getByRole('checkbox', { checked: false })).toBeDisabled();
   });
 
-  it('flags guests already imported for the same stay', async () => {
-    fetchExistingImportKeys.mockResolvedValue(new Set(['ada@example.com|2026-07-30']));
-
+  it('excludes identical repeated file rows without fetching account history', async () => {
     const { container } = render(<CsvImportWizard />);
-    await upload(container, MISMATCHED_CSV);
+    await upload(container, MISMATCHED_CSV + '\n' + MISMATCHED_CSV.split('\n')[1]);
     fireEvent.click(screen.getByRole('button', { name: /Check \d+ rows?/ }));
 
-    expect(await screen.findByText(/already been imported for the same/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Import 2 guests/ })).toBeInTheDocument();
+    expect(await screen.findByText(/repeated in this file for the same/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Import 3 guests/ })).toBeInTheDocument();
   });
 });
 
 describe('the completion state', () => {
+  it('excludes canceled, no-show and unknown rows from a Booking.com-shaped file', async () => {
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, [
+      'Book number,Guest name,Email,Check-in,Check-out,Status',
+      'B1,Test Guest,one@example.invalid,2026-09-10,2026-09-13,Confirmed',
+      'B2,Test Guest,two@example.invalid,2026-09-10,2026-09-13,Cancelled',
+      'B3,Test Guest,three@example.invalid,2026-09-10,2026-09-13,No-show',
+      'B4,Test Guest,four@example.invalid,2026-09-10,2026-09-13,Pending',
+    ].join('\n'));
+    fireEvent.click(screen.getByRole('button', { name: /Check 4 rows/ }));
+    expect(await screen.findByText(/Canceled booking or no-show/)).toBeInTheDocument();
+    expect(screen.getByText(/Unrecognized or blank booking status/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Import 1 guest/ }));
+    await waitFor(() => expect(bulkImport).toHaveBeenCalledTimes(1));
+    expect(bulkImport.mock.calls[0][0]).toEqual([expect.objectContaining({ externalReference: 'B1', reservationStatus: 'Confirmed' })]);
+  });
+
+  it('holds both versions of a conflicting reference even if the canceled row lacks contact details', async () => {
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, 'Book number,Guest name,Email,Check-in,Check-out,Status\nB1,Test Guest,one@example.invalid,2026-09-10,2026-09-13,Confirmed\nB1,Test Guest,,2026-09-10,2026-09-13,Cancelled');
+    fireEvent.click(screen.getByRole('button', { name: /Check 2 rows/ }));
+    expect(await screen.findByText(/Conflicting booking statuses/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Import 0 guests/ })).toBeDisabled();
+    expect(bulkImport).not.toHaveBeenCalled();
+  });
+
+  it('warns explicitly when a file has no booking-status column', async () => {
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, MISMATCHED_CSV);
+    fireEvent.click(screen.getByRole('button', { name: /Check 4 rows/ }));
+    expect(await screen.findByText(/No booking-status column is mapped/)).toBeInTheDocument();
+  });
+
+  it('blocks a blank mapped status rather than treating it as a missing column', async () => {
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, 'Book number,Guest name,Email,Check-in,Check-out,Status\nB1,Test Guest,one@example.invalid,2026-09-10,2026-09-13,');
+    fireEvent.click(screen.getByRole('button', { name: /Check 1 row/ }));
+    expect(await screen.findByText(/Unrecognized or blank booking status/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Import 0 guests/ })).toBeDisabled();
+  });
+
+  it('shows partial confirmed counts and retries the same selected rows', async () => {
+    bulkImport.mockResolvedValueOnce({ success: false, imported: 2, skippedDuplicates: 0, failed: 0,
+      unknown: 1, notAttempted: 0, issues: [], error: 'Last batch unconfirmed' });
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, MISMATCHED_CSV);
+    fireEvent.click(screen.getByRole('button', { name: /Check \d+ rows?/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Import 3 guests/ }));
+    expect(await screen.findByText('Imported 2 guests')).toBeInTheDocument();
+    expect(screen.getByText('Unconfirmed')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Last batch unconfirmed');
+    bulkImport.mockResolvedValueOnce({ success: true, imported: 0, skippedDuplicates: 3, failed: 0, unknown: 0, notAttempted: 0, issues: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry same import' }));
+    expect(await screen.findByText(/3 already-imported guests skipped/)).toBeInTheDocument();
+    expect(bulkImport.mock.calls[1][0]).toEqual(bulkImport.mock.calls[0][0]);
+  });
+
+  it('recovers from a thrown import without claiming rollback or getting stuck busy', async () => {
+    bulkImport.mockRejectedValueOnce(new Error('Connection lost'));
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, AIRBNB_CSV);
+    fireEvent.click(screen.getByRole('button', { name: /Check \d+ rows?/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Import 2 guests/ }));
+    expect(await screen.findByText('Unconfirmed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry same import' })).toBeEnabled();
+  });
+
+  it('blocks saving to a different property after preview', async () => {
+    const { container, rerender } = render(<CsvImportWizard />);
+    await upload(container, AIRBNB_CSV);
+    fireEvent.click(screen.getByRole('button', { name: /Check \d+ rows?/ }));
+    await screen.findByRole('button', { name: /Import 2 guests/ });
+    activeLocationId = 'loc-2'; rerender(<CsvImportWizard />);
+    fireEvent.click(screen.getByRole('button', { name: /Import 2 guests/ }));
+    expect(await screen.findByText(/selected property changed/)).toBeInTheDocument();
+    expect(bulkImport).not.toHaveBeenCalled();
+  });
+
+  it('forwards detected Booking.com references and flags per-row conflicts', async () => {
+    bulkImport.mockResolvedValueOnce({ success: false, imported: 0, skippedDuplicates: 0, failed: 1,
+      unknown: 0, notAttempted: 0, issues: [{ index: 0, reason: 'Existing stay has different dates.' }] });
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, 'Book number,Guest name,Email,Check-in,Check-out\nB123,Test Guest,guest@example.invalid,2026-09-10,2026-09-13');
+    fireEvent.click(screen.getByRole('button', { name: /Check 1 row/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Import 1 guest/ }));
+    expect(await screen.findByText('Line 2: Existing stay has different dates.')).toBeInTheDocument();
+    expect(bulkImport.mock.calls[0][0][0]).toMatchObject({ externalReference: 'B123', source: 'booking_com' });
+  });
+
+  it('never excludes separate booking references as file duplicates', async () => {
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, 'Book number,Guest name,Email,Check-in,Check-out\nB123,Test Guest,guest@example.invalid,2026-09-10,2026-09-13\nB124,Test Guest,guest@example.invalid,2026-09-10,2026-09-13');
+    fireEvent.click(screen.getByRole('button', { name: /Check 2 rows/ }));
+    expect(await screen.findByRole('button', { name: /Import 2 guests/ })).toBeInTheDocument();
+  });
+
+  it('does not silently discard an unreadable optional check-in date', async () => {
+    const { container } = render(<CsvImportWizard />);
+    await upload(container, 'First Name,Email,Check-in,Check-out\nTest,guest@example.invalid,nonsense,2026-09-13');
+    fireEvent.click(screen.getByRole('button', { name: /Check 1 row/ }));
+    expect(await screen.findByText(/Unreadable check-in date/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Import 0 guests/ })).toBeDisabled();
+  });
+
   it('reports imported, skipped and failed as three explicit numbers', async () => {
     bulkImport.mockResolvedValue({ success: true, imported: 2, skippedDuplicates: 1, failed: 1 });
 

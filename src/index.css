@@ -32,7 +32,7 @@
     --line: 214 32% 91%;
     --ink: 216 65% 12%;
     --ink-muted: 216 19% 44%;
-    --ink-faint: 214 18% 61%;
+    --ink-faint: 214 18% 45%;
 
     /* Ratings. Its own token rather than borrowing --caution: the state colours
        are darkened for text contrast, and a star filled with them reads brown.
@@ -122,7 +122,7 @@
     --line: 216 28% 22%;
     --ink: 216 48% 94%;
     --ink-muted: 215 25% 68%;
-    --ink-faint: 215 18% 52%;
+    --ink-faint: 215 18% 62%;
 
     /* State: lifted for legibility on a dark ground, softs become deep tints */
     --positive: 148 62% 62%;

@@ -1,3 +1,4 @@
+import { formatInviteTime } from '../../lib/timezones';
 import { useState } from 'react';
 import { Inbox, RefreshCw, Eye, Check } from 'lucide-react';
 import { ReviewRequest, Order, Customer, useReviewSail, canResendRequest } from '../../context/ReviewSailContext';
@@ -5,6 +6,7 @@ import { GuestDetailPanel } from './GuestDetailPanel';
 import { StatusBadge } from '../ui/StatusBadge';
 import { EmptyState } from '../ui/EmptyState';
 import { format } from 'date-fns';
+import { useToast } from '../ui/Toast';
 
 interface RecentRequestsTableProps {
   recentRequests: ReviewRequest[];
@@ -12,6 +14,8 @@ interface RecentRequestsTableProps {
   customers: Customer[];
   totalLogs: number;
   loading?: boolean;
+  onViewAll?: () => void;
+  timezone?: string;
 }
 
 export function RecentRequestsTable({
@@ -19,8 +23,11 @@ export function RecentRequestsTable({
   orders,
   customers,
   totalLogs,
-  loading
+  loading,
+  onViewAll,
+  timezone,
 }: RecentRequestsTableProps) {
+  const { toast } = useToast();
   const { messageEvents, triggerSingleResend } = useReviewSail();
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -45,6 +52,9 @@ export function RecentRequestsTable({
   const handleResend = async (requestId: string): Promise<boolean> => {
     setSendingId(requestId);
     const result = await triggerSingleResend(requestId);
+    if (!result.success) toast.error(result.error || 'Sending could not be confirmed.');
+    else if (result.partial) toast.info(result.message || 'Only one channel was accepted.');
+    else toast.success(result.message || 'Accepted by the provider; delivery is not confirmed.');
     if (result.success) {
       setSuccessId(requestId);
       setTimeout(() => setSuccessId(null), 3000);
@@ -83,17 +93,27 @@ export function RecentRequestsTable({
     <>
       <div className="overflow-hidden rounded-xl border border-line bg-card">
         <div className="flex items-baseline justify-between gap-3 border-b border-line px-5 py-4">
-          <h2 className="text-[15px] font-semibold text-ink">Recent requests</h2>
-          <span className="tnum text-xs text-ink-muted">{totalLogs.toLocaleString()} total</span>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">Recent invites</h2>
+          {onViewAll ? <button type="button" onClick={onViewAll} className="text-sm font-medium text-brand-700 hover:underline">View all guests →</button> : <span className="tnum text-xs text-ink-muted">{totalLogs.toLocaleString()} total</span>}
         </div>
 
-        <div className="overflow-x-auto">
+        <ul className="divide-y divide-line sm:hidden" aria-label="Recent invites">
+          {recentRequests.map(request => {
+            const order = orders.find(order => order.id === request.orderId);
+            const customer = customers.find(customer => customer.id === order?.customerId);
+            return <li key={request.id}><button type="button" onClick={() => handleOpenDrawer(request.id)} className="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-4 text-left hover:bg-canvas">
+              <span className="min-w-0"><span className="block text-sm font-medium text-ink">{customer ? `${customer.firstName} ${customer.lastName}` : 'Unknown guest'}</span><span className="mt-1 block truncate text-xs text-ink-muted">{customer?.email || 'View guest details'}</span></span>
+              <span className="shrink-0"><StatusBadge status={request.status} /></span>
+            </button></li>;
+          })}
+        </ul>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="min-w-full">
             <thead>
               <tr className="border-b border-line">
                 <th className="px-5 py-2.5 text-left text-xs font-medium text-ink-muted">Guest</th>
                 <th className="px-5 py-2.5 text-left text-xs font-medium text-ink-muted">Status</th>
-                <th className="px-5 py-2.5 text-left text-xs font-medium text-ink-muted">Sent</th>
+                <th className="hidden px-5 py-2.5 text-left text-xs font-medium text-ink-muted sm:table-cell">Sent · Property time</th>
                 <th className="px-5 py-2.5 text-right text-xs font-medium text-ink-muted">Actions</th>
               </tr>
             </thead>
@@ -106,13 +126,13 @@ export function RecentRequestsTable({
 
                 return (
                   <tr key={req.id} className="transition-colors hover:bg-canvas">
-                    <td className="whitespace-nowrap px-5 py-3">
+                    <td className="max-w-[180px] px-4 py-3 sm:max-w-none sm:px-5">
                       <div className="flex items-center gap-3">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[11px] font-semibold text-brand-700">
                           {customer ? `${customer.firstName?.[0]}${customer.lastName?.[0]}` : '?'}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-ink">
+                          <p className="break-words text-sm font-medium text-ink">
                             {customer ? `${customer.firstName} ${customer.lastName}` : 'Unknown guest'}
                           </p>
                           {customer?.email && (
@@ -121,7 +141,7 @@ export function RecentRequestsTable({
                         </div>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3">
+                    <td className="px-2 py-3 sm:px-5">
                       <div className="flex items-center gap-2">
                         <StatusBadge status={req.status} />
                         {order?.midstaySent && (
@@ -145,8 +165,8 @@ export function RecentRequestsTable({
                         })()}
                       </div>
                     </td>
-                    <td className="tnum whitespace-nowrap px-5 py-3 text-sm text-ink-muted">
-                      {req.sentAt ? format(new Date(req.sentAt), 'MMM d, h:mm a') : '—'}
+                    <td className="tnum hidden whitespace-nowrap px-5 py-3 text-sm text-ink-muted sm:table-cell">
+                      {formatInviteTime(req.sentAt, timezone)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -154,6 +174,7 @@ export function RecentRequestsTable({
                           onClick={() => handleOpenDrawer(req.id)}
                           className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-line/50 hover:text-ink"
                           title="View details"
+                          aria-label={`View details for ${customer?.firstName || 'guest'}`}
                         >
                           <Eye className="h-4 w-4" />
                         </button>

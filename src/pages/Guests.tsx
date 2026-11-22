@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useReviewSail } from '../context/ReviewSailContext';
 import { Search, User, Mail, Phone, Eye, FileUp } from 'lucide-react';
 import { GuestDetailPanel } from '../components/dashboard/GuestDetailPanel';
@@ -7,13 +7,25 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Button } from '../components/ui/Button';
 import { format } from 'date-fns';
+import { useToast } from '../components/ui/Toast';
 
 export default function Guests() {
-  const { customers, reviewRequests, orders, messageEvents, triggerSingleResend } = useReviewSail();
+  const { toast } = useToast();
+  const { customers, reviewRequests, orders, messageEvents, triggerSingleResend, activeLocationId, locations } = useReviewSail();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const contactFilter = searchParams.get('filter') === 'contact';
+  const activeLocation = locations.find(location => location.id === activeLocationId);
+  const locationOrders = orders.filter(order => order.locationId === activeLocationId);
+  const locationCustomerIds = new Set(locationOrders.map(order => order.customerId));
+  const pendingCustomerIds = new Set(reviewRequests.filter(request => request.status === 'pending' && request.origin !== 'qr').flatMap(request => {
+    const order = locationOrders.find(order => order.id === request.orderId && order.status === 'completed');
+    return order ? [order.customerId] : [];
+  }));
   const [search, setSearch] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  useEffect(() => { setIsDrawerOpen(false); setSelectedRequestId(null); }, [activeLocationId]);
 
   const selectedRequest = reviewRequests.find(r => r.id === selectedRequestId) || null;
   const selectedOrder = selectedRequest ? (orders.find(o => o.id === selectedRequest.orderId) || null) : null;
@@ -32,13 +44,16 @@ export default function Guests() {
 
   const handleResend = async (requestId: string): Promise<boolean> => {
     const result = await triggerSingleResend(requestId);
+    if (!result.success) toast.error(result.error || 'Sending could not be confirmed.');
+    else if (result.partial) toast.info(result.message || 'Only one channel was accepted.');
+    else toast.success(result.message || 'Accepted by the provider; delivery is not confirmed.');
     return result.success;
   };
 
   // Build a map: customerId -> latest request
   const customerRequestMap = new Map<string, typeof reviewRequests[0]>();
   reviewRequests.forEach(r => {
-    const order = orders.find(o => o.id === r.orderId);
+    const order = locationOrders.find(o => o.id === r.orderId);
     if (order) {
       const existing = customerRequestMap.get(order.customerId);
       if (!existing || new Date(r.sentAt || 0) > new Date(existing.sentAt || 0)) {
@@ -48,6 +63,8 @@ export default function Guests() {
   });
 
   const filteredCustomers = customers.filter(c => {
+    if (!locationCustomerIds.has(c.id)) return false;
+    if (contactFilter && (!pendingCustomerIds.has(c.id) || (activeLocation?.enableEmail && c.email?.trim()) || (activeLocation?.enableSms && c.phone?.trim()))) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -62,14 +79,15 @@ export default function Guests() {
     <div className="space-y-6">
       <PageHeader
         title="Guests"
-        description="Everyone you've imported, and where their review invite got to."
+        description="Guests at this property and their review invites."
         action={
           <Button icon={FileUp} onClick={() => navigate('/import')}>
-            Import guests
+            Add guests
           </Button>
         }
       />
 
+      {contactFilter && <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-caution-soft px-4 py-3 text-sm text-caution"><span>Queued invites missing contact details for an enabled channel</span><button className="font-medium underline" onClick={() => setSearchParams({})}>Show all guests</button></div>}
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint" />
@@ -103,7 +121,9 @@ export default function Guests() {
                         situations. Offering "Import guests" to someone who just
                         mistyped a name is noise; withholding it from someone
                         with no guests at all is the dead end this page had. */}
-                    {search.trim() ? (
+                    {contactFilter && !search.trim() ? (
+                      <EmptyState icon={User} size="sm" bare title="No queued invites need contact details" description="Use Show all guests to return to this property’s guest list." />
+                    ) : search.trim() ? (
                       <EmptyState
                         icon={Search}
                         size="sm"
@@ -117,10 +137,10 @@ export default function Guests() {
                         size="sm"
                         bare
                         title="No guests yet"
-                        description="Import a checkout report and ReviewSail invites each guest the day they leave."
+                        description="Add a checkout report or enter a guest to queue their invite."
                         action={
                           <Button icon={FileUp} onClick={() => navigate('/import')}>
-                            Import guests
+                            Add guests
                           </Button>
                         }
                       />

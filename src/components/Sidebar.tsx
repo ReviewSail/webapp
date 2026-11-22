@@ -1,5 +1,5 @@
-import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileUp, Users, Settings, MessageSquare, MessageCircle, BarChart3, type LucideIcon } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Users, Settings, MessageSquare, MessageCircle, BarChart3, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useReviewSail } from '../context/ReviewSailContext';
@@ -47,6 +47,8 @@ type NavEntry = {
 
 /** One nav row. Shared so the pinned Settings row cannot drift from the list. */
 function NavItem({ item, onNavigate }: { item: NavEntry; onNavigate?: () => void }) {
+  const location = useLocation();
+  const groupedActive = item.href === '/guests' && location.pathname === '/import';
   return (
     <NavLink
       to={item.href}
@@ -54,7 +56,7 @@ function NavItem({ item, onNavigate }: { item: NavEntry; onNavigate?: () => void
       className={({ isActive }) =>
         cn(
           'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-          isActive
+          (isActive || groupedActive)
             ? 'bg-white/10 font-medium text-white'
             : 'hover:bg-white/5 hover:text-white'
         )
@@ -65,7 +67,7 @@ function NavItem({ item, onNavigate }: { item: NavEntry; onNavigate?: () => void
           <item.icon
             className={cn(
               'h-[18px] w-[18px] shrink-0 transition-colors',
-              isActive ? 'text-brand-300' : 'text-white/40 group-hover:text-white/70'
+              (isActive || groupedActive) ? 'text-brand-300' : 'text-white/40 group-hover:text-white/70'
             )}
             aria-hidden="true"
           />
@@ -88,7 +90,8 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps) {
   const { role } = useAuth();
-  const { unreadPrivateFeedbackCount } = useReviewSail();
+  const { feedbacks, activeLocationId } = useReviewSail();
+  const unreadPrivateFeedbackCount = feedbacks.filter(feedback => feedback.locationId === activeLocationId && feedback.kind !== 'rating' && !feedback.isRead).length;
 
   // Ordered by the guest lifecycle rather than by whatever got written first:
   // bring guests in, see who they are, read what they said privately, reply
@@ -99,18 +102,17 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   // used to point at /dashboard?tab=feedback, which NavLink can't tell apart
   // from /dashboard — both items lit up at once and needed a manual override.
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Sync Guests', href: '/import', icon: FileUp },
+    { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Guests', href: '/guests', icon: Users },
-    { name: 'Feedback', href: '/inbox', icon: MessageSquare, badge: unreadPrivateFeedbackCount },
-    { name: 'Review Replies', href: '/reply', icon: MessageCircle },
+    { name: 'Guest feedback', href: '/inbox', icon: MessageSquare, badge: unreadPrivateFeedbackCount },
+    { name: 'Review replies', href: '/reply', icon: MessageCircle },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   ];
 
   return (
     // Flat navy, not a gradient: this surface is on every screen, so a gradient
     // here would spend the one-gradient budget permanently.
-    <div className="flex h-full w-64 flex-col bg-brand-950 text-white/70">
+    <div className="flex h-full w-56 flex-col bg-brand-950 text-white/70">
       <div className="flex h-16 shrink-0 items-center px-5">
         {/* Icon-only mark. The wordmark stays live text rather than being baked
             into the artwork, so it stays crisp at any zoom and follows the
@@ -121,7 +123,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </span>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+      <nav aria-label="Main navigation" className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
         {navigation.map((item) => (
           <NavItem key={item.name} item={item} onNavigate={onNavigate} />
         ))}
@@ -147,7 +149,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </div>
       )}
 
-      <BuildStamp />
+      <details className="px-5 py-3 text-xs text-white/70"><summary className="cursor-pointer py-1">About ReviewSail</summary><BuildStamp /></details>
     </div>
   );
 }

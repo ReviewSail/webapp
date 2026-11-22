@@ -27,6 +27,17 @@ const commitTime = git('git log -1 --format=%cI', buildTime)
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/@supabase/')) return 'supabase-vendor'
+          if (id.includes('/node_modules/@tanstack/')) return 'query-vendor'
+          if (/\/node_modules\/(react|react-dom|scheduler|react-is)\//.test(id)) return 'react-vendor'
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

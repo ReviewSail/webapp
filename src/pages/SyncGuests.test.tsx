@@ -21,7 +21,6 @@ vi.mock('../context/ReviewSailContext', () => ({
     locations: [{ id: 'loc-1', name: 'Sea View Hotel' }],
     // Consumed by the embedded CSV wizard.
     bulkImport: vi.fn(),
-    fetchExistingImportKeys: vi.fn().mockResolvedValue(new Set()),
   }),
 }));
 

@@ -151,9 +151,9 @@ export default function SyncGuests() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-ink">Import Guests</h2>
+          <h1 className="text-[28px] font-semibold tracking-tight text-ink">Add guests</h1>
           <p className="text-sm text-ink-muted mt-1">
             Add guests manually or upload a CSV file to queue review requests.
           </p>

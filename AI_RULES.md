@@ -77,6 +77,20 @@ const rows = await fetchAllPages('customers', () =>
 A read with a genuinely fixed size (the five newest recognition records, say)
 can use `.range(0, 4)` directly instead.
 
+### 2a. Polling is priced on three axes, not one
+
+A repeatedly-fetched endpoint costs **bytes-per-row × rows-per-response ×
+fetches-per-day**. Cutting one while the other two stay saturated is not a fix.
+The sibling project learned this the expensive way: it stripped a 4 kB column
+off two pollers, left the row limit and the interval untouched, and went on
+re-sending an identical payload on every tick.
+
+Nothing here polls on a timer today, and it should stay that way — the cache
+defaults below exist so screens re-read on navigation, not on a clock. If you
+ever do add a timer, make it answer "nothing changed" cheaply rather than
+resending the list, and measure the **compressed** size: responses are gzipped,
+so raw `octet_length` overstates egress by roughly 10x.
+
 ### 3. All remote data goes through TanStack Query
 No `fetch` inside a bare `useEffect`. The defaults in `src/lib/queryClient.ts`
 give every query `staleTime: 300_000` and `gcTime: 600_000`; do not lower them
@@ -98,6 +112,27 @@ Serve files from the public CDN bucket URL. Only call `createSignedUrl()` in
 response to an explicit user action — never in a render, `map()`, or loop. Any
 `.on()` subscription must be filtered to the current user and must unsubscribe
 on unmount. Neither is used today; these apply if you introduce them.
+
+### 7. Measuring, when you need to
+
+Don't infer egress from reading code — this project has been wrong about it in
+both directions.
+
+- `pg_stat_statements` ordered by `calls` for which query is hot.
+- `pg_column_size()` for row weight, `octet_length(to_jsonb(row)::text)` for
+  what JSON encoding really costs, and `curl -D -` to check
+  `content-encoding` — responses are gzipped, so raw byte counts overstate
+  egress by roughly 10x.
+- The `query_logs` MCP tool for actual request volume per route. **`get_logs`
+  no longer exists**: it was removed with the `analytics/endpoints/logs.all`
+  endpoint (Supabase cutoff 2026-09-23). `query_logs` runs read-only ClickHouse
+  SQL over the unified log stream; `source = 'edge_logs'` carries
+  `response.headers.content_length` for `/rest/v1` and `/auth/v1` traffic. Its
+  window is 24h, and it should not be polled in a loop.
+
+For scale: over 24h this project logs ~120 gateway events. The sibling project
+logs ~7,000. If an egress bill looks alarming, check which project it belongs
+to before optimising anything here.
 
 > **Watch out:** `grep` silently skips files containing NUL bytes, so a
 > text-based audit of these rules can report a clean sweep on a file it never

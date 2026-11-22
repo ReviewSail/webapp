@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Star, MessageSquare, Reply, CornerDownRight, CheckCircle, Download } from 'lucide-react';
+import { Star, MessageSquare, Download } from 'lucide-react';
+import { InternalFeedbackNote } from './InternalFeedbackNote';
 import { EmptyState } from '../ui/EmptyState';
 import { Button } from '../ui/Button';
 import { format } from 'date-fns';
@@ -9,7 +9,7 @@ interface PrivateFeedbackSectionProps {
   reviewRequests: any[];
   orders: any[];
   customers: any[];
-  onRespond: (id: string, response: string) => Promise<void>;
+  onSaveNote: (id: string, note: string) => Promise<void>;
 }
 
 export function PrivateFeedbackSection({
@@ -17,33 +17,13 @@ export function PrivateFeedbackSection({
   reviewRequests,
   orders,
   customers,
-  onRespond
+  onSaveNote
 }: PrivateFeedbackSectionProps) {
-  const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
-  const [responseText, setResponseText] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [successId, setSuccessId] = useState<string | null>(null);
-
-  const handleSendResponse = async (id: string) => {
-    if (!responseText.trim()) return;
-    setSubmitting(true);
-    try {
-      await onRespond(id, responseText.trim());
-      setSuccessId(id);
-      setResponseText('');
-      setActiveReplyId(null);
-      setTimeout(() => setSuccessId(null), 3000);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleExportFeedbackCSV = () => {
     if (feedbacks.length === 0) return;
 
-    const headers = ['Guest Name', 'Star Rating', 'Private Comment', 'Submission Date', 'Manager Response'];
+    const headers = ['Guest Name', 'Star Rating', 'Private Comment', 'Submission Date', 'Internal Note (not sent to guest)'];
 
     const rows = feedbacks.map((fb: any) => {
       const request = reviewRequests.find((r: any) => r.id === fb.requestId);
@@ -82,9 +62,9 @@ export function PrivateFeedbackSection({
     <div className="overflow-hidden rounded-xl border border-line bg-card">
       <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-ink">Guests waiting on a reply</h2>
+          <h2 className="text-[15px] font-semibold text-ink">Private feedback and internal notes</h2>
           <p className="mt-0.5 text-xs text-ink-muted">
-            Private ratings sent straight to you, not to Google.
+            Notes saved here are not sent to guests and do not mark an issue as resolved.
           </p>
         </div>
 
@@ -149,71 +129,7 @@ export function PrivateFeedbackSection({
                   <p>{fb.feedbackText || 'No written message.'}</p>
                 </div>
 
-                {fb.managerResponse ? (
-                  <div className="flex items-start gap-2.5 pl-5">
-                    <CornerDownRight className="mt-0.5 h-4 w-4 shrink-0 text-ink-faint" />
-                    <div className="flex-1 rounded-lg border border-brand-100 bg-brand-50 p-3.5 text-[13px] text-ink">
-                      <span className="mb-1 block text-xs font-medium text-brand-800">You replied</span>
-                      <p className="text-ink-muted">{fb.managerResponse}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-end">
-                    {activeReplyId === fb.id ? (
-                      <div className="w-full space-y-2">
-                        <textarea
-                          rows={2}
-                          value={responseText}
-                          onChange={(e) => setResponseText(e.target.value)}
-                          placeholder="Write your private reply…"
-                          aria-label="Private reply to guest"
-                          className="w-full rounded-lg border border-line bg-card px-3 py-2 text-[13px] text-ink placeholder:text-ink-faint focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                        />
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setActiveReplyId(null);
-                              setResponseText('');
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            size="sm"
-                            icon={Reply}
-                            loading={submitting}
-                            disabled={!responseText.trim()}
-                            onClick={() => handleSendResponse(fb.id)}
-                          >
-                            Send reply
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        {successId === fb.id && (
-                          <span className="flex items-center gap-1 text-xs font-medium text-positive">
-                            <CheckCircle className="h-3.5 w-3.5" />
-                            Reply sent
-                          </span>
-                        )}
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          icon={Reply}
-                          onClick={() => {
-                            setActiveReplyId(fb.id);
-                            setResponseText('');
-                          }}
-                        >
-                          Reply to guest
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <InternalFeedbackNote id={fb.id} savedNote={fb.managerResponse ?? null} onSaveNote={onSaveNote} />
               </div>
             );
           })}

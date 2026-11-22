@@ -302,6 +302,14 @@ supabase/functions/
 
 ## 9. Configuration Requirements
 
+### Frontend Build Variables (Vercel)
+| Variable | Purpose |
+|---|---|
+| `VITE_SUPABASE_URL` | Supabase project API URL used by the browser app |
+| `VITE_SUPABASE_ANON_KEY` | Supabase publishable/legacy anon key used by the browser app |
+
+Set both for local, Preview, and Production builds. The build stops if either is missing or the URL is not HTTPS (except localhost). The browser client has no baked-in project URL or key.
+
 ### Environment Variables (Supabase Secrets)
 | Secret | Purpose |
 |---|---|

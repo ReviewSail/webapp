@@ -5,174 +5,157 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+const idOf = (value: any): string | null => typeof value === 'string' ? value : value?.id ?? null
+const ended = (status: string) => ['canceled', 'incomplete_expired'].includes(status)
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
-
+  const reply = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body),
+    { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method !== 'POST') return reply(405, { error: 'POST required.' })
   try {
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response('Unauthorized', { status: 401, headers: corsHeaders })
-    }
-
+    if (!authHeader) return reply(401, { error: 'Please sign in.' })
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } }
-    })
+    const client = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } })
+    const { data: { user }, error: authError } = await client.auth.getUser()
+    if (authError || !user) return reply(401, { error: 'Please sign in again.' })
+    // EGRESS-COST: low — one caller's membership, never client-supplied account ID.
+    const { data: member, error: memberError } = await client.from('users')
+      .select('account_id,role').eq('id', user.id).single()
+    if (memberError || !member?.account_id) return reply(403, { error: 'Account unavailable.' })
+    if (member.role !== 'admin') return reply(403, { error: 'Only admins can manage billing.' })
 
-    // Get current user and their account ID
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized user" }), { status: 401, headers: corsHeaders })
-    }
-
-    // Fetch user's account_id
-    const { data: userData, error: accountError } = await supabase
-      .from('users')
-      .select('account_id')
-      .eq('id', user.id)
-      .single()
-
-    if (accountError || !userData) {
-      return new Response(JSON.stringify({ error: "Account not found" }), { status: 404, headers: corsHeaders })
-    }
-
-    const accountId = userData.account_id;
-
-    // Fetch existing subscription/customer status
-    const { data: account, error: fetchAccountError } = await supabase
-      .from('accounts')
-      .select('name, stripe_customer_id, subscription_status')
-      .eq('id', accountId)
-      .single()
-
-    if (fetchAccountError || !account) {
-      return new Response(JSON.stringify({ error: "Failed to fetch account info" }), { status: 500, headers: corsHeaders })
-    }
-
-    // Check if Stripe key exists, if not, offer a Mock success flow
-    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
-    const origin = req.headers.get('origin') || 'http://localhost:5173'
-
-    if (!stripeSecretKey) {
-      // The mock URL only does anything in a dev build — ReviewSailContext
-      // gates the handler behind import.meta.env.DEV. Returned to a deployed
-      // client it just redirected to the dashboard, changed nothing and
-      // reported no error, so checkout appeared to silently do nothing.
-      //
-      // Localhost is the test for "this is a dev build", rather than a new env
-      // var that has to be remembered: it needs no configuration and fails
-      // closed everywhere else.
-      const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-      if (!isLocalOrigin) {
-        console.error("[create-checkout-session] STRIPE_SECRET_KEY is not configured; refusing to mock for a deployed client.");
-        return new Response(JSON.stringify({
-          error: "Payments aren't set up yet. Please contact support.",
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 503,
-        });
-      }
-
-      console.log("[create-checkout-session] Stripe Secret Key is missing. Triggering Mock checkout link.");
-      // Return a special mock flag so client can activate instantly
-      return new Response(JSON.stringify({
-        url: `${origin}/dashboard?mock_checkout_success=true&account_id=${accountId}`,
-        isMock: true
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
-
-    // Call real Stripe API
-    // Construct the pricing plan (e.g. $49/mo)
-    // Create checkout session
-    const stripeUrl = 'https://api.stripe.com/v1/checkout/sessions'
-    const bodyParams = new URLSearchParams()
-    
-    // Stripe requires customer or we create one
-    let customerId = account.stripe_customer_id
-    if (!customerId) {
-      // Create Stripe Customer first
-      const createCustomerRes = await fetch('https://api.stripe.com/v1/customers', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeSecretKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        // Stripe takes nested params as bracketed keys. Passing an object here
-        // stringified it to "metadata=[object Object]", so every Stripe
-        // customer this created carried no account_id at all. The subscription
-        // metadata set further down was correct, which is the only reason the
-        // webhook could still resolve the account.
-        body: new URLSearchParams({
-          name: account.name,
-          email: user.email || '',
-          'metadata[account_id]': accountId,
-        }).toString()
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
+    if (!stripeKey) return reply(503, { error: "Payments aren't set up yet. No purchase was made." })
+    // A caller-controlled Origin must never choose the payment return URL.
+    const appUrl = new URL(Deno.env.get('APP_URL') || '')
+    if (appUrl.protocol !== 'https:' || appUrl.username || appUrl.password || appUrl.pathname !== '/'
+      || appUrl.search || appUrl.hash) throw new Error('A trusted HTTPS APP_URL origin is required')
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!serviceKey) throw new Error('Checkout storage not configured')
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+    const prepare = async (expiredOperation: string | null = null) => {
+      // EGRESS-COST: low — one serialized account checkout attempt.
+      const { data, error } = await admin.rpc('prepare_billing_checkout', {
+        p_account_id: member.account_id, p_actor_id: user.id, p_email: user.email || '',
+        p_app_url: appUrl.origin, p_expired_operation: expiredOperation,
       })
-      
-      if (createCustomerRes.ok) {
-        const custData = await createCustomerRes.json()
-        customerId = custData.id
-        
-        // Save to DB
-        const supabaseService = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-        await supabaseService
-          .from('accounts')
-          .update({ stripe_customer_id: customerId })
-          .eq('id', accountId)
+      if (error || !data) throw new Error('Could not prepare checkout safely')
+      return data
+    }
+    const stripe = async (path: string, params?: URLSearchParams, key?: string) => {
+      const res = await fetch('https://api.stripe.com/v1/' + path, {
+        method: params ? 'POST' : 'GET',
+        headers: { Authorization: `Bearer ${stripeKey}`, ...(params ? {
+          'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': key!,
+        } : {}) },
+        ...(params ? { body: params.toString() } : {}), signal: AbortSignal.timeout(10000),
+      })
+      if (!res.ok) throw new Error('Stripe request failed; retry will keep the same attempt')
+      return res.json()
+    }
+    const record = async (attempt: any, customerId: string, sessionId: string | null = null) => {
+      // EGRESS-COST: low — atomic identity persistence for the exact attempt.
+      const { data, error } = await admin.rpc('record_billing_checkout', {
+        p_account_id: member.account_id, p_actor_id: user.id, p_operation_id: attempt.operation_id,
+        p_customer_id: customerId, p_session_id: sessionId,
+      })
+      if (error || data !== true) throw new Error('Checkout response could not be saved safely')
+    }
+    const sessionIdentity = (session: any, attempt: any) => {
+      if (session.mode !== 'subscription' || session.client_reference_id !== member.account_id
+        || idOf(session.customer) !== attempt.customer_id) throw new Error('Checkout session identity mismatch')
+    }
+    const checkoutUrl = (session: any) => {
+      const url = new URL(session.url)
+      if (url.protocol !== 'https:' || url.hostname !== 'checkout.stripe.com' || url.username || url.password) {
+        throw new Error('Invalid checkout URL')
       }
+      return url.href
     }
 
-    bodyParams.append('payment_method_types[0]', 'card')
-    bodyParams.append('mode', 'subscription')
-    bodyParams.append('line_items[0][price_data][currency]', 'usd')
-    bodyParams.append('line_items[0][price_data][product_data][name]', 'ReviewSail Premium Pro Plan')
-    bodyParams.append('line_items[0][price_data][product_data][description]', 'Unlimited guest feedback review requests, automated multi-channel emails/texts, and full reporting.')
-    bodyParams.append('line_items[0][price_data][unit_amount]', '4900') // $49.00
-    bodyParams.append('line_items[0][price_data][recurring][interval]', 'month')
-    // Stripe's parameter is `quantity`. This said `qty`, which Stripe ignores,
-    // and quantity is required for a price_data line item — so every checkout
-    // attempt was rejected before it could reach the payment page.
-    bodyParams.append('line_items[0][quantity]', '1')
-    if (customerId) {
-      bodyParams.append('customer', customerId)
+    const checkExistingSubscription = async (attempt: any): Promise<boolean> => {
+      const customerId = attempt.customer_id
+      const subscriptions = await stripe('subscriptions?' + new URLSearchParams({
+        customer: customerId, status: 'all', limit: '100',
+      }))
+      if (!Array.isArray(subscriptions.data) || subscriptions.has_more !== false || subscriptions.data.length > 100) {
+        throw new Error('Subscription history requires review')
+      }
+      if (subscriptions.data.some((s: any) => idOf(s.customer) !== customerId || typeof s.status !== 'string')) {
+        throw new Error('Subscription history identity mismatch')
+      }
+      if (subscriptions.data.some((s: any) => !ended(s.status))) return true
+      if (attempt.subscription_id) {
+        const bound = await stripe('subscriptions/' + encodeURIComponent(attempt.subscription_id))
+        if (bound.id !== attempt.subscription_id || idOf(bound.customer) !== customerId) throw new Error('Subscription identity mismatch')
+        if (!ended(bound.status)) return true
+      }
+      return false
     }
-    bodyParams.append('success_url', `${origin}/dashboard?checkout_success=true`)
-    bodyParams.append('cancel_url', `${origin}/settings`)
-    bodyParams.append('subscription_data[metadata][account_id]', accountId)
-
-    const stripeRes = await fetch(stripeUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${stripeSecretKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: bodyParams.toString()
-    })
-
-    if (!stripeRes.ok) {
-      const errTxt = await stripeRes.text()
-      console.error("[create-checkout-session] Stripe Error:", errTxt)
-      return new Response(JSON.stringify({ error: "Failed to create checkout session with Stripe: " + errTxt }), { status: 500, headers: corsHeaders })
+    let attempt = await prepare()
+    if (attempt.blocked) return reply(409, { error: 'A subscription already exists. Use Manage Billing.' })
+    if (attempt.session_id) {
+      const existing = await stripe('checkout/sessions/' + encodeURIComponent(attempt.session_id))
+      if (existing.id !== attempt.session_id) throw new Error('Checkout session mismatch')
+      sessionIdentity(existing, attempt)
+      if (existing.status === 'open') {
+        if (await checkExistingSubscription(attempt)) return reply(409, { error: 'An existing subscription needs attention. Use Manage Billing.' })
+        return reply(200, { url: checkoutUrl(existing) })
+      }
+      if (existing.status === 'complete') return reply(409, { error: 'Checkout already completed. Billing is updating; do not purchase again.' })
+      if (existing.status !== 'expired') throw new Error('Unknown checkout status')
+      attempt = await prepare(attempt.operation_id)
+      if (attempt.blocked) return reply(409, { error: 'A subscription already exists. Use Manage Billing.' })
+      // A competing request may already have finished the replacement.
+      if (attempt.session_id) return reply(409, { error: 'Checkout changed. Please try again.' })
     }
-
-    const sessionData = await stripeRes.json()
-    return new Response(JSON.stringify({ url: sessionData.url }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
+    // Stripe may prune idempotency keys after 24 hours. An unknown attempt must
+    // never become a fresh purchase just because time elapsed.
+    const age = Date.now() - new Date(attempt.created_at).getTime()
+    if (!Number.isFinite(age) || age < -60000 || age >= 20 * 60 * 60 * 1000) {
+      return reply(409, { error: 'This checkout needs review before another can be started. No new purchase was created.' })
+    }
+    let customerId = attempt.customer_id
+    if (!customerId) {
+      if (attempt.subscription_id) throw new Error('Subscription exists without a customer mapping')
+      const customer = await stripe('customers', new URLSearchParams({
+        name: attempt.snapshot.name || '', email: attempt.snapshot.email,
+        'metadata[account_id]': member.account_id,
+      }), 'reviewsail-customer-' + attempt.operation_id)
+      if (typeof customer.id !== 'string' || !customer.id.startsWith('cus_')) throw new Error('Invalid customer response')
+      customerId = customer.id
+      await record(attempt, customerId)
+      attempt.customer_id = customerId
+    }
+    // Check Stripe too: a successful purchase may precede its webhook.
+    if (await checkExistingSubscription(attempt)) {
+      return reply(409, { error: 'An existing subscription needs attention. Use Manage Billing instead of purchasing again.' })
+    }
+    const params = new URLSearchParams({
+      'payment_method_types[0]': 'card', mode: 'subscription', customer: customerId,
+      client_reference_id: member.account_id,
+      'metadata[account_id]': member.account_id,
+      'subscription_data[metadata][account_id]': member.account_id,
+      'line_items[0][price_data][currency]': 'usd',
+      'line_items[0][price_data][product_data][name]': 'ReviewSail Premium Pro Plan',
+      'line_items[0][price_data][unit_amount]': '4900',
+      'line_items[0][price_data][recurring][interval]': 'month',
+      'line_items[0][quantity]': '1',
+      success_url: attempt.snapshot.app_url + '/dashboard?checkout_success=true',
+      cancel_url: attempt.snapshot.app_url + '/settings',
+      expires_at: String(Math.floor(new Date(attempt.created_at).getTime() / 1000) + 23 * 60 * 60),
     })
-
-  } catch (error: any) {
-    console.error("[create-checkout-session] Unexpected error:", error)
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
-    })
+    const session = await stripe('checkout/sessions', params, 'reviewsail-checkout-' + attempt.operation_id)
+    if (typeof session.id !== 'string' || !session.id.startsWith('cs_')) throw new Error('Invalid checkout response')
+    sessionIdentity(session, attempt)
+    await record(attempt, customerId, session.id)
+    if (session.status !== 'open') return reply(409, { error: 'Checkout is no longer open. Please check billing before trying again.' })
+    return reply(200, { url: checkoutUrl(session) })
+  } catch (error) {
+    console.error('[create-checkout-session]', error instanceof Error ? error.message : 'Checkout failed')
+    return reply(503, { error: 'Checkout could not be confirmed. Please retry; do not start a separate purchase.' })
   }
 })

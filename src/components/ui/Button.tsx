@@ -23,10 +23,10 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
  * rule would be broken on every screen by definition.
  */
 const variants: Record<Variant, string> = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 shadow-sm shadow-brand-900/10',
+  primary: 'bg-brand-600 text-white hover:bg-[hsl(206_100%_31%)] active:bg-[hsl(216_100%_29%)] shadow-sm shadow-brand-900/10',
   secondary: 'bg-card text-ink border border-line hover:bg-canvas active:bg-line/60',
   ghost: 'text-ink-muted hover:bg-canvas hover:text-ink active:bg-line/60',
-  danger: 'bg-critical text-white hover:bg-critical/90 active:bg-critical/80',
+  danger: 'bg-critical text-destructive-foreground hover:bg-critical/90 active:bg-critical/80',
 };
 
 const sizes: Record<Size, string> = {
@@ -50,7 +50,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center font-medium transition-colors',
+        'inline-flex shrink-0 items-center justify-center font-medium transition-colors [@media(pointer:coarse)]:min-h-11',
         'disabled:pointer-events-none disabled:opacity-50',
         variants[variant],
         sizes[size],
