@@ -270,7 +270,7 @@ export default function CsvImportWizard() {
 
         // Only identical file rows are excluded here. The database checks all
         // existing stays in the selected property, with no history-size cap.
-        const key = JSON.stringify([dedupeKey(row), row.checkinDate, row.source || fallbackSource,
+        const key = JSON.stringify([dedupeKey(row), row.checkinDate, row.expectedArrival, row.source || fallbackSource,
           row.externalReference, row.firstName, row.lastName, row.email, row.phone]);
         if (seen.has(key)) {
           return { ...row, status: 'duplicate' as const };
@@ -355,7 +355,7 @@ export default function CsvImportWizard() {
           email: r.email,
           phone: r.phone,
           checkoutDate: r.checkoutDate!,
-          checkinDate: r.checkinDate,
+          checkinDate: r.checkinDate, expectedArrival: r.expectedArrival,
           // A per-row source column wins; otherwise everything in this file gets
           // the detected platform or the owner's choice.
           source: r.source || fallbackSource,

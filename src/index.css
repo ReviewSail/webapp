@@ -228,3 +228,10 @@
     scroll-behavior: auto !important;
   }
 }
+
+@media print {
+  body:has(.property-help-card) * { visibility: hidden; }
+  .property-help-card, .property-help-card * { visibility: visible !important; }
+  .property-help-card { position: absolute; inset: 0 auto auto 0; background: white; color: black; }
+  .property-help-card button, .property-help-card a { display: none; }
+}

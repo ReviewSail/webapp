@@ -1,3 +1,5 @@
+import { CheckinSettings, type ScheduleMode } from '../settings/CheckinSettings';
+import PropertyQrCard from '../import/PropertyQrCard';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, Check, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -10,7 +12,7 @@ import { Button } from '../ui/Button';
 import { Notice } from '../ui/Notice';
 import { cn } from '../../lib/utils';
 
-const STEPS = ['Property', 'Review link', 'Add guests'];
+const STEPS = ['Property', 'Guest link', 'Add guests'];
 const progressKey = (id: string) => `reviewsail:setup:v1:${id}`;
 
 function initialStep(location: Location): number {
@@ -20,7 +22,7 @@ function initialStep(location: Location): number {
   const inferred = !hasProperty ? 1 : hasLink ? 3 : 2;
   try {
     const saved = Number(localStorage.getItem(progressKey(location.id)));
-    return Number.isInteger(saved) && saved >= 1 && saved <= 3 ? Math.min(saved, inferred) : inferred;
+    return Number.isInteger(saved) && saved >= 1 && saved <= 3 ? (hasProperty ? saved : 1) : inferred;
   } catch { return inferred; }
 }
 
@@ -46,6 +48,10 @@ function PropertySetup({ location, onAddGuests }: { location: Location; onAddGue
   const [name, setName] = useState(location.name === 'Main Location' ? '' : location.name);
   const [timezone, setTimezone] = useState(location.timezone || browserTimezone());
   const [googleUrl, setGoogleUrl] = useState(location.googlePlaceUrl || '');
+  const [arrival,setArrival]=useState(location.usualArrival || '16:00');
+  const [mode, setMode] = useState<ScheduleMode>(location.checkinSchedule ?? 'legacy');
+  const [enabled, setEnabled] = useState(location.midstayEnabled ?? true);
+  const [contact,setContact]=useState(location.recoveryEmail || '');
   const [editingTimezone, setEditingTimezone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -68,15 +74,15 @@ function PropertySetup({ location, onAddGuests }: { location: Location; onAddGue
     event.preventDefault();
     if (saving) return;
     if (step === 1 && !name.trim()) { setError('Enter the property name your guests will recognise.'); return; }
-    if (step === 2 && ['empty', 'invalid'].includes(assessment.kind)) { setError('Enter a valid Google review link or Place ID.'); return; }
+    if (step === 2 && assessment.kind === 'invalid') { setError('Enter a valid Google review link or Place ID.'); return; }
     setSaving(true);
     setError('');
     try {
       if (step === 1) {
-        await updateLocationSettings(location.id, { name: name.trim(), timezone });
+        await updateLocationSettings(location.id, { name: name.trim(), timezone, usualArrival:arrival, recoveryEmail:contact.trim() });
         moveTo(2);
       } else if (step === 2) {
-        await updateLocationSettings(location.id, { googlePlaceUrl: assessment.normalized });
+        if (googleUrl.trim()) await updateLocationSettings(location.id, { googlePlaceUrl: assessment.normalized });
         moveTo(3);
       }
     } catch (err) {
@@ -88,6 +94,11 @@ function PropertySetup({ location, onAddGuests }: { location: Location; onAddGue
     setSaving(true);
     setError('');
     try {
+      const checkinSchedule = mode === 'legacy' ? null : mode;
+      if (checkinSchedule !== (location.checkinSchedule ?? null) || enabled !== (location.midstayEnabled ?? true)
+        || arrival !== (location.usualArrival || '16:00')) {
+        await updateLocationSettings(location.id, { checkinSchedule, midstayEnabled: enabled, usualArrival: arrival });
+      }
       await completeOnboarding(location.id);
       try { localStorage.removeItem(progressKey(location.id)); } catch { /* Nonessential progress storage. */ }
       if (addGuests) onAddGuests();
@@ -98,7 +109,7 @@ function PropertySetup({ location, onAddGuests }: { location: Location; onAddGue
   const inputClass = 'w-full rounded-lg border border-line bg-canvas px-3 py-2.5 text-base sm:text-sm text-ink placeholder:text-ink-faint';
   const labels = [
     ['Make it feel like you', 'Use the property name your guests will recognise.'],
-    ['Connect your review page', 'Add the Google review link for this property.'],
+    ['Share your guest help link', 'Guests can use this link as soon as they arrive.'],
     ['Bring in your first guests', 'Upload a checkout report or add a guest by hand.'],
   ];
   return (
@@ -123,21 +134,27 @@ function PropertySetup({ location, onAddGuests }: { location: Location; onAddGue
                 {[...new Set([timezone, ...TIMEZONES])].map(zone => <option key={zone} value={zone}>{friendlyTimezone(zone)}</option>)}
               </select> : <button type="button" onClick={() => setEditingTimezone(true)} className="rounded-md py-1 text-left text-sm font-medium text-brand-700 hover:underline" aria-label={`Change property timezone: ${friendlyTimezone(timezone)}`}>{friendlyTimezone(timezone)} · Change</button>}
             </div>
+            <label className="block text-sm font-medium">Usual arrival time<input required type="time" className={inputClass} value={arrival} onChange={e=>setArrival(e.target.value)} /></label>
+            <label className="block text-sm font-medium">Host contact email<input required type="email" className={inputClass} value={contact} onChange={e=>setContact(e.target.value)} /></label>
             <div className="rounded-r-lg border-l-2 border-brand-700 bg-canvas px-4 py-3">
               <p className="text-xs font-medium text-ink-muted">Example guest message</p>
-              <p className="mt-2 text-sm leading-relaxed text-ink">Thank you for staying at <strong className="font-semibold">{name.trim() || 'your property'}</strong>. How was your stay?</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink">How are you settling in at <strong className="font-semibold">{name.trim() || 'your property'}</strong>? If anything needs attention, you can reach your host here.</p>
             </div>
           </>}
           {step === 2 && <>
-            <div className="space-y-1.5"><label htmlFor="onboarding-google" className="block text-sm font-medium text-ink">Google review link</label><input id="onboarding-google" value={googleUrl} onChange={event => setGoogleUrl(event.target.value)} placeholder="https://g.page/r/…/review" className={inputClass} aria-invalid={assessment.kind === 'invalid' || !!error} aria-describedby={error ? 'setup-error' : undefined} /></div>
+            <PropertyQrCard locationId={location.id} locationName={name} />
+            <div className="space-y-1.5"><label htmlFor="onboarding-google" className="block text-sm font-medium text-ink">Google review link (optional)</label><input id="onboarding-google" value={googleUrl} onChange={event => setGoogleUrl(event.target.value)} placeholder="https://g.page/r/…/review" className={inputClass} aria-invalid={assessment.kind === 'invalid' || !!error} aria-describedby={error ? 'setup-error' : undefined} /></div>
             {googleUrl.trim() && assessment.message && <p className={cn('text-sm', assessment.opensReviewComposer ? 'text-positive' : assessment.kind === 'invalid' ? 'text-critical' : 'text-ink-muted')}>{assessment.message}</p>}
             {assessment.normalized && !['empty', 'invalid'].includes(assessment.kind) && <a href={assessment.normalized} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline">Preview what guests see <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></a>}
             <details className="text-sm text-ink-muted"><summary className="cursor-pointer font-medium text-ink">How do I find my review link?</summary><ol className="mt-3 list-decimal space-y-2 pl-5"><li>Open Google Business Profile and select your property.</li><li>Choose “Ask for reviews” and copy the link.</li><li>Paste the link above.</li></ol></details>
           </>}
-          {step === 3 && <div className="rounded-lg bg-canvas p-4 text-sm leading-relaxed text-ink-muted"><h3 className="font-medium text-ink">What happens after you add guests</h3><p className="mt-2">Importing creates queued invites. With an active plan and a sending channel enabled, eligible invites are sent from {friendlySendHour(location.preferredSendHour ?? 10)} on the checkout date, in {friendlyTimezone(timezone)}. Past checkouts may be picked up on the next scheduled run.</p><p className="mt-2">Check your message and sending preferences in Settings before importing.</p></div>}
+          {step === 3 && <CheckinSettings enabled={enabled} setEnabled={setEnabled} mode={mode} setMode={setMode}
+            arrival={arrival} setArrival={setArrival} timezone={timezone} legacyDay={location.midstayDay ?? 2}
+            legacyHour={location.preferredSendHour ?? 10} />}
+          {step === 3 && <div className="rounded-lg bg-canvas p-4 text-sm leading-relaxed text-ink-muted"><h3 className="font-medium text-ink">What happens after you add guests</h3><p className="mt-2">Importing creates queued invites. With an active plan and a sending channel enabled, eligible invites are sent from {friendlySendHour(location.preferredSendHour ?? 10)} after checkout, in {friendlyTimezone(timezone)}. Past checkouts may be picked up on the next scheduled run.</p><p className="mt-2">Check your message and sending preferences in Settings before importing.</p></div>}
           {error && <p id="setup-error" role="alert" className="rounded-lg bg-critical-soft p-3 text-sm text-critical">{error}</p>}
           <div className="flex flex-wrap items-center gap-3 pt-1">
-            {step < 3 ? <Button type="submit" size="lg" loading={saving} icon={ArrowRight}>{step === 1 ? 'Continue to review link' : 'Save and continue'}</Button> : <Button type="button" size="lg" onClick={() => finish(true)} loading={saving} icon={ArrowRight}>Finish and add guests</Button>}
+            {step < 3 ? <Button type="submit" size="lg" loading={saving} icon={ArrowRight}>{step === 1 ? 'Continue to guest link' : 'Save and continue'}</Button> : <Button type="button" size="lg" onClick={() => finish(true)} loading={saving} icon={ArrowRight}>Finish and add guests</Button>}
             {step > 1 && <Button type="button" variant="ghost" onClick={() => moveTo(step - 1)}>Back</Button>}
             {step === 3 && <Button type="button" variant="ghost" onClick={() => finish(false)}>I’ll add guests later</Button>}
           </div>

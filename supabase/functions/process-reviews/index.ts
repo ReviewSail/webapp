@@ -272,7 +272,7 @@ serve(async (req) => {
       return !!data?.some(account => account.id === location?.account_id);
     };
 
-    const dueCandidates = async (phase: 'initial' | 'reminder' | 'midstay'):
+    const dueCandidates = async (phase: 'initial' | 'reminder' | 'midstay' | 'arrival'):
       Promise<{ request_id: string; order_id: string }[]> => {
       // EGRESS-COST: low — fixed work batch, at most 50 IDs, not a guest-list
       // pagination loop. Eligibility/fairness are evaluated BEFORE the limit.
@@ -300,7 +300,7 @@ serve(async (req) => {
     // Every phase uses the same acceptance rules. HTTP success is not delivery:
     // retain the provider ID and expose per-channel outcomes to manual callers.
     const sendChannels = async (
-      orderId: string, requestId: string, phase: 'initial' | 'reminder' | 'midstay',
+      orderId: string, requestId: string, phase: 'initial' | 'reminder' | 'midstay' | 'arrival',
       location: any, customer: any, subject: string, emailText: string, smsText: string,
       emailFrom: string = resendFromEmail,
     ): Promise<{ email: ChannelOutcome; sms: ChannelOutcome }> => {
@@ -748,138 +748,109 @@ serve(async (req) => {
 
       // SQL filters local timing, cancellation, suppression and existing claims
       // before choosing a fair, fixed-size batch. Fetch details only for it.
-      const midstayKeys = await dueCandidates('midstay');
+      for (const phase of ['arrival', 'midstay'] as const) {
+        const midstayKeys = await dueCandidates(phase);
+        if (!midstayKeys.length) continue;
 
-      const { data: midstayCandidates, error: midstayFetchError } = await supabase
-        .from('orders')
-        .select(`
-          id,
-          checkin_date,
-          source,
-          checkout_date,
-          customer_id,
-          location_id,
-          customers (
+        const { data: midstayCandidates, error: midstayFetchError } = await supabase
+          .from('orders')
+          .select(`
             id,
-            first_name,
-            last_name,
-            email,
-            phone
-          ),
-          locations (
-            id,
-            account_id,
-            name,
-            midstay_enabled,
-            midstay_day,
-            preferred_send_hour,
-            timezone,
-            enable_email,
-            enable_sms
-          ),
-          review_requests (
-            id
-          )
-        `)
-        .eq('status', 'completed')
-        .not('checkin_date', 'is', null)
-        .in('id', midstayKeys.map(row => row.order_id)).order('id').limit(50);
+            checkin_date,
+            source,
+            checkout_date,
+            customer_id,
+            location_id,
+            customers (
+              id,
+              first_name,
+              last_name,
+              email,
+              phone
+            ),
+            locations (
+              id,
+              account_id,
+              name,
+              midstay_enabled,
+              midstay_day,
+              checkin_schedule,
+              preferred_send_hour,
+              timezone,
+              enable_email,
+              enable_sms
+            ),
+            review_requests (
+              id
+            )
+          `)
+          .eq('status', 'completed')
+          .not('checkin_date', 'is', null)
+          .in('id', midstayKeys.map(row => row.order_id)).order('id').limit(50);
 
-      if (midstayFetchError) {
-        console.error("[process-reviews] Error fetching mid-stay candidates:", midstayFetchError);
-      } else if (midstayCandidates && midstayCandidates.length > 0) {
-        console.log(`[process-reviews] Found ${midstayCandidates.length} mid-stay candidates to evaluate.`);
+        if (midstayFetchError) {
+          console.error("[process-reviews] Error fetching mid-stay candidates:", midstayFetchError);
+        } else if (midstayCandidates && midstayCandidates.length > 0) {
+          console.log(`[process-reviews] Found ${midstayCandidates.length} mid-stay candidates to evaluate.`);
 
-        for (const order of midstayCandidates) {
-          if ((order as any).source === 'reviewsail_test') continue;
-          const customer = (order as any).customers;
-          const location = (order as any).locations;
-          const reviewRequests = (order as any).review_requests;
+          for (const order of midstayCandidates) {
+            if ((order as any).source === 'reviewsail_test') continue;
+            const customer = (order as any).customers;
+            const location = (order as any).locations;
+            const reviewRequests = (order as any).review_requests;
 
-          if (!customer || !location) {
-            console.warn(`[process-reviews] Mid-stay: Incomplete data for order ${order.id}, skipping.`);
-            continue;
+            if (!customer || !location) {
+              console.warn(`[process-reviews] Mid-stay: Incomplete data for order ${order.id}, skipping.`);
+              continue;
+            }
+
+            const selectedRequestId = midstayKeys.find(row => row.order_id === order.id)?.request_id;
+            const reviewRequest = Array.isArray(reviewRequests)
+              ? reviewRequests.find((row: { id: string }) => row.id === selectedRequestId)
+              : null;
+
+            if (!reviewRequest) {
+              console.warn(`[process-reviews] Mid-stay: No review_request found for order ${order.id}, skipping.`);
+              continue;
+            }
+
+            if (location.midstay_enabled === false) {
+              console.log(`[process-reviews] Mid-stay: Location "${location.name}" has mid-stay disabled, skipping order ${order.id}.`);
+              continue;
+            }
+
+            const emailLower = customer.email?.toLowerCase();
+            if (emailLower && optedOutEmails.has(emailLower)) {
+              console.log(`[process-reviews] Mid-stay: Customer opted out, skipping order ${order.id}.`);
+              continue;
+            }
+
+            // The SQL selector and locked send claim share the property-local schedule.
+            const helpLink = `${appUrl}/help/stay/${shortCode(reviewRequest.id)}`;
+            const prompt = phase === 'arrival' ? "How are you settling in?" : "How was your first night?";
+            const wording = location.checkin_schedule ? prompt : "How is your stay going?";
+            const midstayEmailText = `Hi ${customer.first_name || 'there'}, ${wording} If you need anything at ${location.name}, you can reach your host here: ${helpLink}`;
+            const midstaySmsText = `${midstayEmailText} Reply STOP to opt out.`;
+
+            // For the new schedules, pick one available channel per check-in.
+            const canText = Boolean(location.enable_sms !== false && customer.phone?.trim()
+              && twilioAccountSid && twilioAuthToken && twilioFromNumber
+              && !optedOutPhones.has(phoneKey(customer.phone)));
+            const checkinChannels = location.checkin_schedule
+              ? { ...location, enable_sms: canText, enable_email: !canText && location.enable_email !== false }
+              : location;
+            const channels = await sendChannels(
+              order.id, reviewRequest.id, phase,
+              checkinChannels, customer, `How's your stay at ${location.name}? 😊`, midstayEmailText, midstaySmsText,
+              `${location.name} <${resendFromEmail}>`,
+            );
+            if (!hasAcceptance(channels) || Object.values(channels).some(channel => channel.recordingFailed)) {
+              processedResults.push({ id: order.id, type: phase, status: unsuccessfulStatus(channels), channels });
+              continue;
+            }
+
+            processedResults.push({ id: order.id, type: phase, status: phase === 'arrival' ? 'arrival_sent' : 'midstay_checkin_sent', channels });
           }
-
-          const selectedRequestId = midstayKeys.find(row => row.order_id === order.id)?.request_id;
-          const reviewRequest = Array.isArray(reviewRequests)
-            ? reviewRequests.find((row: { id: string }) => row.id === selectedRequestId)
-            : null;
-
-          if (!reviewRequest) {
-            console.warn(`[process-reviews] Mid-stay: No review_request found for order ${order.id}, skipping.`);
-            continue;
-          }
-
-          if (location.midstay_enabled === false) {
-            console.log(`[process-reviews] Mid-stay: Location "${location.name}" has mid-stay disabled, skipping order ${order.id}.`);
-            continue;
-          }
-
-          const emailLower = customer.email?.toLowerCase();
-          if (emailLower && optedOutEmails.has(emailLower)) {
-            console.log(`[process-reviews] Mid-stay: Customer opted out, skipping order ${order.id}.`);
-            continue;
-          }
-
-          const checkinDay = utcDateOnly(order.checkin_date);
-          if (!checkinDay) {
-            console.warn(`[process-reviews] Mid-stay: Unreadable checkin_date for order ${order.id}, skipping.`);
-            continue;
-          }
-
-          // Day 1 is the arrival day, so day N is (N - 1) days after it.
-          const midstayDay = location.midstay_day ?? 2;
-          const sendDay = addDays(checkinDay, midstayDay - 1);
-
-          // A check-in the guest cannot act on is worse than none: they need at
-          // least the night after it to see something put right. This replaces
-          // the old "checkout within 24h" guard, which measured from the sweep
-          // rather than from the day the message actually goes out.
-          const checkoutDay = utcDateOnly(order.checkout_date);
-          if (checkoutDay && checkoutDay <= sendDay) {
-            console.log(`[process-reviews] Mid-stay: order ${order.id} checks out ${checkoutDay}, on or before its day-${midstayDay} send date (${sendDay}). Skipping.`);
-            continue;
-          }
-
-          const localDate = localDateFor(location.timezone);
-          if (localDate < sendDay || localDate > addDays(sendDay, 1) || (checkoutDay && localDate >= checkoutDay)) {
-            console.log(`[process-reviews] Mid-stay: order ${order.id} sends on ${sendDay} (day ${midstayDay} of the stay); it is ${localDate} at "${location.name}". Skipping.`);
-            continue;
-          }
-
-          /**
-           * At or past the hour, not exactly on it. An exact match would drop
-           * the guest entirely if one hourly sweep failed; this catches up for
-           * four-hour window, capped at local midnight. Nothing goes out before
-           * the property's chosen hour or later than that catch-up window.
-           */
-          const preferredHour = location.preferred_send_hour ?? 10;
-          const localHour = localHourFor(location.timezone);
-          if (localHour < preferredHour || localHour >= Math.min(preferredHour + 4, 24)) {
-            console.log(`[process-reviews] Mid-stay: order ${order.id} is outside its local send window (${localHour}:00 at "${location.name}", window starts ${preferredHour}:00). Skipping.`);
-            continue;
-          }
-
-          console.log(`[process-reviews] Mid-stay: Sending check-in message for order ${order.id}`);
-
-          // Email can carry the emoji and the longer prose; SMS cannot. A single
-          // emoji forces UCS-2, cutting a segment from 160 characters to 70 —
-          // this message used to bill 3 segments for 186 characters.
-          const midstayEmailText = `Hi ${customer.first_name}, we hope you're enjoying your stay at ${location.name}! 😊 Is there anything we can do to make your stay even better? Just reply to this message and we'll take care of it right away.`;
-          const midstaySmsText = `Hi ${customer.first_name}, hope your stay at ${location.name} is going well! Anything we can do to improve it? Just reply. Reply STOP to opt out`;
-
-          const channels = await sendChannels(
-            order.id, reviewRequest.id, 'midstay',
-            location, customer, `How's your stay at ${location.name}? 😊`, midstayEmailText, midstaySmsText,
-            `${location.name} <${resendFromEmail}>`,
-          );
-          if (!hasAcceptance(channels) || Object.values(channels).some(channel => channel.recordingFailed)) {
-            processedResults.push({ id: order.id, type: 'midstay', status: unsuccessfulStatus(channels), channels });
-            continue;
-          }
-
-          processedResults.push({ id: order.id, type: 'midstay', status: 'midstay_checkin_sent', channels });
         }
       }
     }

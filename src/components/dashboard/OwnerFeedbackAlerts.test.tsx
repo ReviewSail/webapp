@@ -56,7 +56,7 @@ describe('owner alert settings through React and TanStack Query',()=>{
       {id:'a',property:'House',createdAt:'2026-09-15T09:58:00Z',status:'accepted',reason:null},
       {id:'b',property:'House',createdAt:'2026-09-15T09:59:00Z',status:'uncertain',reason:'transport_interrupted'},
       {id:'c',property:'House',createdAt:'2026-09-15T10:00:00Z',status:'failed',reason:'daily_limit'},
-    ]}));await mount();fireEvent.click(screen.getByText('Latest 3 alert attempts'));
+    ]}));await mount();fireEvent.click(screen.getByText(/Alert settings/, {selector:'summary'}));fireEvent.click(screen.getByText('Latest 3 alert attempts'));
     expect(screen.getByText('Accepted by email provider — delivery unverified')).toBeVisible();expect(screen.getByText(/held to prevent duplicate/)).toBeVisible();
     expect(screen.getByText(/50 attempts per owner/)).toBeVisible();expect(screen.getByRole('alert')).toHaveTextContent('2 alert(s)');
   });

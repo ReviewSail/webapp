@@ -6,6 +6,7 @@ export type BulkImportRow = {
   email: string | null;
   phone?: string | null;
   checkoutDate: string;
+  expectedArrival?: string | null;
   checkinDate?: string | null;
   source?: string | null;
   externalReference?: string | null;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { X, Mail, Phone, Calendar, Clock, RefreshCw, Send, MousePointerClick, BedDouble } from 'lucide-react';
 import { ReviewRequest, Order, Customer, MessageEvent } from '../../context/ReviewSailContext';
+import { encodeShortId } from '../../lib/shortLink';
 import { StatusBadge } from '../ui/StatusBadge';
 
 interface GuestDetailPanelProps {
@@ -47,6 +48,7 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
       className="fixed inset-y-0 right-0 w-full max-w-sm bg-card border-l border-line shadow-xl z-50 overflow-y-auto animate-slide-in"
     >
       <div className="p-6">
+        {encodeShortId(request.id) && <a className="mb-3 inline-flex min-h-11 items-center font-medium text-brand-700 underline" target="_blank" rel="noreferrer" href={'/help/stay/'+encodeShortId(request.id)}>Guest’s stay help link</a>}
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-bold text-ink">Guest Details</h3>
           <button
@@ -96,6 +98,8 @@ export function GuestDetailPanel({ request, order, customer, events, onClose, on
             <Calendar className="h-4 w-4 text-ink-faint" />
             <span>Checkout: {format(new Date(order.checkoutDate), 'MMM d, yyyy')}</span>
           </div>
+
+          {order.expectedArrival && <p className="text-sm text-ink-muted">Expected arrival · {order.expectedArrival} property time</p>}
 
           {request.sentAt ? (
             <div className="flex items-center space-x-2.5 text-sm text-ink-muted">

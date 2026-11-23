@@ -20,7 +20,7 @@ export default function PropertyQrCard({
   const [copied, setCopied] = useState(false);
 
   const code = locationId ? encodeShortId(locationId) : null;
-  const link = code ? `${window.location.origin}/p/${code}` : '';
+  const link = code ? `${window.location.origin}/help/property/${code}` : '';
 
   useEffect(() => {
     if (!link) {
@@ -29,9 +29,12 @@ export default function PropertyQrCard({
     }
     // Rendered locally rather than via a QR web service: the link identifies
     // the property, and there's no reason to hand that to a third party.
+    let active = true;
+    setPngUrl('');
     QRCode.toDataURL(link, { width: 512, margin: 2, errorCorrectionLevel: 'M' })
-      .then(setPngUrl)
+      .then(url => { if(active) setPngUrl(url); })
       .catch(err => console.error('Could not render QR code:', err));
+    return () => { active=false; };
   }, [link]);
 
   const copyLink = async () => {
@@ -49,29 +52,27 @@ export default function PropertyQrCard({
     if (!pngUrl) return;
     const link_ = document.createElement('a');
     link_.href = pngUrl;
-    link_.download = `${locationName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'property'}-review-qr.png`;
+    link_.download = `${locationName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'property'}-help-qr.png`;
     link_.click();
   };
 
   if (!locationId) return null;
 
   return (
-    <div className="bg-card rounded-xl border border-line p-6">
+    <div className="property-help-card bg-card rounded-xl border border-line p-6">
       <h3 className="text-lg font-semibold text-ink mb-1 flex items-center gap-2">
         <QrCode size={20} className="text-brand-500" />
-        No guest list? Use your property code
+        Guest help link
       </h3>
       <p className="text-sm text-ink-muted mb-4">
-        Print this where guests check out. They scan, rate their stay, and happy guests go straight
-        to your Google page — no import needed. Useful for Airbnb and Booking.com stays, where the
-        platform never gives you a working email address.
+        Share this link in your arrival instructions or print the code for your property. Guests can ask for help as soon as they arrive.
       </p>
 
       <div className="flex flex-col sm:flex-row gap-5 items-start">
         {pngUrl ? (
           <img
             src={pngUrl}
-            alt={`QR code linking to the review page for ${locationName}`}
+            alt={`QR code linking to guest help for ${locationName}`}
             className="w-36 h-36 rounded-lg border border-line bg-white p-2 shrink-0"
           />
         ) : (
@@ -81,7 +82,7 @@ export default function PropertyQrCard({
         <div className="min-w-0 flex-1 space-y-3">
           <div>
             <p className="text-xs font-medium text-ink-muted uppercase tracking-wide mb-1">
-              Your review link
+              Your guest help link
             </p>
             <code className="block text-xs text-ink bg-canvas border border-line rounded-lg px-3 py-2 break-all">
               {link}
@@ -90,19 +91,21 @@ export default function PropertyQrCard({
 
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={copyLink}
+              type="button" onClick={copyLink}
               className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-ink border border-line rounded-lg hover:bg-canvas transition-colors"
             >
               {copied ? <Check size={15} className="text-positive" /> : <Copy size={15} />}
-              {copied ? 'Copied' : 'Copy link'}
+              {copied ? 'Copied' : 'Copy guest link'}
             </button>
             <button
-              onClick={downloadPng}
+              type="button" onClick={downloadPng}
               disabled={!pngUrl}
               className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 disabled:opacity-50 transition-colors"
             >
-              <Download size={15} /> Download QR
+              <Download size={15} /> Save QR
             </button>
+            <button type="button" disabled={!pngUrl} onClick={() => window.print()} className="text-sm font-medium text-brand-700">Print QR code</button>
+            <a href={link+'?preview=1'} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-700">Preview as guest</a>
           </div>
 
           <p className="text-xs text-ink-faint">

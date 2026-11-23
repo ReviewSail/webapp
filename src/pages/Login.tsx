@@ -6,7 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 import { SailMark } from '../components/brand/SailMark';
 import { useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { inboxSignInDestination } from '../lib/inboxSignIn';
+import { inboxLoginPath, inboxSignInDestination } from '../lib/inboxSignIn';
 
 /**
  * Sign-in is the first thing anyone sees, and it was the one screen still
@@ -46,7 +46,7 @@ const authAppearance = (dark: boolean) => ({
 });
 
 export default function Login() {
-  const { session, loading } = useAuth();
+  const { session, loading, role } = useAuth();
   const { search } = useLocation();
   const { resolved } = useTheme();
   const dark = resolved === 'dark';
@@ -64,7 +64,7 @@ export default function Login() {
   }
 
   if (session) {
-    return <Navigate to={inboxSignInDestination(search)} replace />;
+    return <Navigate to={role==='staff' && inboxSignInDestination(search)==='/dashboard' ? '/inbox' : inboxSignInDestination(search)} replace />;
   }
 
   return (
@@ -80,7 +80,7 @@ export default function Login() {
         <Auth
           supabaseClient={supabase}
           providers={[]}
-          redirectTo={window.location.origin + '/login' + (search === '?next=inbox' ? search : '')}
+          redirectTo={window.location.origin + (inboxSignInDestination(search).startsWith('/inbox') ? inboxLoginPath('/inbox', search) : '/login')}
           view={view}
           showLinks={false}
           // key forces a remount when the theme flips; ThemeSupa reads its

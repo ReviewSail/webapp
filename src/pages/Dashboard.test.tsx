@@ -54,7 +54,8 @@ describe('overview account states', () => {
     expect(screen.queryByLabelText('Property name')).not.toBeInTheDocument();
   });
   it('keeps admin billing actions out of staff views', () => {
-    fixture.role = 'staff'; fixture.state.locations[0].onboardingComplete = true; show();
+    fixture.role = 'staff'; fixture.state.locations[0].onboardingComplete = true;
+    fixture.state.locations[0].enableEmail = false; show();
     expect(screen.queryByRole('button', { name: 'Set up Premium Pro' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Update review link' })).not.toBeInTheDocument();
     expect(screen.getByText('Ask your administrator')).toBeVisible();
