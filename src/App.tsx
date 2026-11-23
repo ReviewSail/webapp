@@ -24,6 +24,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 import { ToastProvider } from "./components/ui/Toast"
 import { ThemeProvider } from "./context/ThemeContext"
 import { SailMark } from "./components/brand/SailMark"
+import StayHelp from './pages/StayHelp';
 import { isAdmin } from "./lib/roles"
 
 /** The first thing a returning user sees. Branded, and quiet about it. */
@@ -38,14 +39,14 @@ const RouteLoader = () => (
 
 export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { session, loading, error, refreshIdentity, accountId, scopeVersion } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   if (loading) {
     return <RouteLoader />;
   }
 
   if (!session) {
-    return <Navigate to={inboxLoginPath(pathname)} replace />;
+    return <Navigate to={inboxLoginPath(pathname,search)} replace />;
   }
 
   if (error) return <div role="alert" className="p-8 text-ink">
@@ -76,6 +77,8 @@ function AppRoutes() {
   return (
     <Suspense fallback={<RouteLoader />}>
     <Routes>
+      <Route path="/help/stay/:code" element={<StayHelp mode="request" />} />
+      <Route path="/help/property/:code" element={<StayHelp mode="property" />} />
       <Route path="/opt-out" element={<Unsubscribe />} />
       <Route path="/unsubscribe" element={<Unsubscribe />} />
       <Route path="/feedback" element={<Feedback />} />

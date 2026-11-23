@@ -149,20 +149,7 @@ export function RecentRequestsTable({
                             Mid-stay sent
                           </span>
                         )}
-                        {order && !order.midstaySent && order.status === 'completed' && order.checkinDate && (() => {
-                          const checkin = new Date(order.checkinDate);
-                          const checkout = new Date(order.checkoutDate);
-                          const oneDayMs = 24 * 60 * 60 * 1000;
-                          const now = Date.now();
-                          if (checkin.getTime() < now - oneDayMs && checkout.getTime() > now + oneDayMs) {
-                            return (
-                              <span className="rounded-full border border-line bg-canvas px-2.5 py-0.5 text-xs font-medium text-ink-muted">
-                                Mid-stay due
-                              </span>
-                            );
-                          }
-                          return null;
-                        })()}
+
                       </div>
                     </td>
                     <td className="tnum hidden whitespace-nowrap px-5 py-3 text-sm text-ink-muted sm:table-cell">

@@ -227,19 +227,6 @@ export default function Guests() {
                                 </span>
                               );
                             }
-                            if (order && order.status === 'completed' && order.checkinDate) {
-                              const checkin = new Date(order.checkinDate);
-                              const checkout = new Date(order.checkoutDate);
-                              const oneDayMs = 24 * 60 * 60 * 1000;
-                              const now = Date.now();
-                              if (checkin.getTime() < now - oneDayMs && checkout.getTime() > now + oneDayMs) {
-                                return (
-                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-brand-50 text-brand-500 border-brand-200">
-                                    ⏳ Mid-Stay Pending
-                                  </span>
-                                );
-                              }
-                            }
                             return null;
                           })()}
                         </div>

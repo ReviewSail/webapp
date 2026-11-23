@@ -26,6 +26,8 @@ export type Location = {
   midstayEnabled: boolean;
   /** Day of the stay the check-in goes out on; day 1 is the arrival day. */
   midstayDay: number;
+  checkinSchedule?: 'both' | 'arrival' | 'day2' | null;
+  usualArrival?: string;
   onboardingComplete: boolean;
   preferredSendHour: number;
   recoveryEmail: string;
@@ -45,6 +47,7 @@ export type Order = {
   locationId: string;
   checkoutDate: string;
   checkinDate?: string;
+  expectedArrival?: string;
   midstaySent?: boolean;
   midstaySentAt?: string;
   /** Booking origin. Null on stays recorded before the column existed. */
@@ -213,10 +216,10 @@ const ReviewSailContext = createContext<ReviewSailContextType | undefined>(undef
 const COLUMNS = {
   accounts: 'subscription_status, stripe_customer_id, plan_name, current_period_end, cancel_at_period_end',
   locations:
-    'id, name, google_place_url, timezone, enable_email, enable_sms, midstay_enabled, midstay_day, onboarding_complete, preferred_send_hour, recovery_email',
+    'id, name, google_place_url, timezone, enable_email, enable_sms, midstay_enabled, midstay_day, checkin_schedule, usual_arrival, onboarding_complete, preferred_send_hour, recovery_email',
   messageTemplates: 'location_id, type, template_text',
   customers: 'id, first_name, last_name, email, phone',
-  orders: 'id, customer_id, location_id, checkout_date, checkin_date, midstay_sent, midstay_sent_at, source, status',
+  orders: 'id, customer_id, location_id, checkout_date, checkin_date, expected_arrival, midstay_sent, midstay_sent_at, source, status',
   reviewRequests: 'id, order_id, status, sent_at, origin',
   messageEvents: 'id, request_id, event_type, created_at',
   digestSettings: 'id, user_id, account_id, frequency, enabled',
@@ -335,6 +338,8 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
           timezone: l.timezone || 'UTC',
           enableEmail: l.enable_email !== false,
           enableSms: l.enable_sms !== false,
+          checkinSchedule: l.checkin_schedule,
+          usualArrival: l.usual_arrival?.slice(0,5),
           midstayEnabled: l.midstay_enabled !== false,
           midstayDay: l.midstay_day != null ? l.midstay_day : 2,
           onboardingComplete: l.onboarding_complete === true,
@@ -382,6 +387,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
         locationId: o.location_id,
         checkoutDate: o.checkout_date,
         checkinDate: o.checkin_date || undefined,
+        expectedArrival: o.expected_arrival?.slice(0, 5),
         midstaySent: o.midstay_sent === true,
         midstaySentAt: o.midstay_sent_at || undefined,
         source: o.source ?? null,
@@ -574,6 +580,8 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       enableEmail: true,
       enableSms: true,
       midstayEnabled: true,
+      checkinSchedule: 'both' as const,
+      usualArrival: '16:00',
       midstayDay: 2,
       onboardingComplete: false,
       preferredSendHour: 10,
@@ -619,6 +627,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       checkout_date: order.checkoutDate,
       // Without this, mid-stay check-ins can never fire: process-reviews
       // Phase 3 only considers orders where checkin_date is not null.
+      expected_arrival: order.checkinDate ? order.expectedArrival || null : null,
       checkin_date: order.checkinDate || null,
       source: order.source || null,
       status: order.status,
@@ -636,6 +645,7 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
       locationId: data.location_id,
       checkoutDate: data.checkout_date,
       checkinDate: data.checkin_date || undefined,
+      expectedArrival: data.expected_arrival?.slice(0, 5),
       midstaySent: data.midstay_sent === true,
       midstaySentAt: data.midstay_sent_at || undefined,
       source: data.source ?? null,
@@ -777,6 +787,8 @@ export const ReviewSailProvider = ({ children }: { children: ReactNode }) => {
     if (settings.enableEmail !== undefined) updateData.enable_email = settings.enableEmail;
     if (settings.enableSms !== undefined) updateData.enable_sms = settings.enableSms;
     if (settings.midstayEnabled !== undefined) updateData.midstay_enabled = settings.midstayEnabled;
+    if (settings.checkinSchedule !== undefined) updateData.checkin_schedule = settings.checkinSchedule;
+    if (settings.usualArrival !== undefined) updateData.usual_arrival = settings.usualArrival;
     if (settings.midstayDay !== undefined) updateData.midstay_day = settings.midstayDay;
     if (settings.preferredSendHour !== undefined) updateData.preferred_send_hour = settings.preferredSendHour;
     if (settings.recoveryEmail !== undefined) updateData.recovery_email = settings.recoveryEmail;

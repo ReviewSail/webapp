@@ -1,6 +1,6 @@
 type Rpc = (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 type Config = { cronSecret?: string; enabled?: string; resendKey?: string; from?: string; appUrl?: string };
-type Job = { id: string; token: string; email: string; property: string };
+type Job = { id: string; token: string; email: string; property: string; issueId?: string };
 
 function inboxUrl(value?: string): string | null {
   try {
@@ -40,7 +40,7 @@ export function createOwnerAlertHandler(config: Config, rpc: Rpc, send: typeof f
             method: 'POST', signal: AbortSignal.timeout(10_000),
             headers: { Authorization: `Bearer ${config.resendKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `owner-feedback/${job.id}` },
             body: JSON.stringify({ from: config.from, to: [job.email], subject: 'Guest feedback needs your attention',
-              text: `New low-rating feedback or a follow-up is waiting for ${job.property}.\n\nOpen your ReviewSail inbox: ${link}\n\nReply to the guest separately through Booking.com or your usual channel. This email has not sent a reply to the guest.\n\nYou can turn off owner alerts in your ReviewSail inbox.` }),
+              text: job.issueId ? `A guest needs help at ${job.property}. Open the report: ${link}?issue=${encodeURIComponent(job.issueId)}` : `New low-rating feedback or a follow-up is waiting for ${job.property}.\n\nOpen your ReviewSail inbox: ${link}\n\nReply to the guest separately through Booking.com or your usual channel. This email has not sent a reply to the guest.\n\nYou can turn off owner alerts in your ReviewSail inbox.` }),
           });
           const body = await response.json().catch(() => null);
           if (response.ok && typeof body?.id === 'string' && body.id.trim()) {

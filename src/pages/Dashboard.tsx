@@ -1,3 +1,4 @@
+import PropertyQrCard from '../components/import/PropertyQrCard';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, FileUp, MessageSquare, PauseCircle } from 'lucide-react';
@@ -59,7 +60,7 @@ export default function Dashboard() {
 
   const attention = [
     ...(summary.unread > 0 ? [{ title: `${summary.unread} unread guest ${summary.unread === 1 ? 'message' : 'messages'}`, description: 'Review private guest feedback and follow-up messages.', href: '/inbox', action: 'Review feedback' }] : []),
-    ...(ready && !isUsableReviewUrl(activeLoc.googlePlaceUrl) ? [{ title: 'Your Google review link needs attention', description: 'Guests need a valid link to reach your review page.', href: admin ? '/settings?tab=locations' : '/inbox', action: admin ? 'Update review link' : 'Ask your administrator', adminOnlyAction: !admin }] : []),
+    ...(ready && activeLoc.googlePlaceUrl?.trim() && !isUsableReviewUrl(activeLoc.googlePlaceUrl) ? [{ title: 'Your Google review link needs attention', description: 'Guests need a valid link to reach your review page.', href: admin ? '/settings?tab=locations' : '/inbox', action: admin ? 'Update review link' : 'Ask your administrator', adminOnlyAction: !admin }] : []),
     ...(ready && !channelsEnabled ? [{ title: 'Sending channels are switched off', description: 'Enable email or SMS before queued invites can be sent.', href: '/settings?tab=locations', action: admin ? 'Review sending settings' : 'Ask your administrator', adminOnlyAction: !admin }] : []),
     ...(ready && channelsEnabled && summary.missingContact > 0 ? [{ title: `${summary.missingContact} queued ${summary.missingContact === 1 ? 'invite needs' : 'invites need'} contact details`, description: 'These guests have no contact details for an enabled sending channel.', href: '/guests?filter=contact', action: 'Check guests' }] : []),
     ...(admin && subscriptionStatus === 'past_due' ? [{ title: 'Your payment needs attention', description: 'Review billing to check whether automated sending can continue.', href: '/settings?tab=billing', action: 'Review billing' }] : []),
@@ -76,7 +77,8 @@ export default function Dashboard() {
       </section> : ready && summary.hasActivity ? <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"><CheckCircle2 className="h-4 w-4 text-positive" aria-hidden="true" /><span className="font-medium">No unread guest messages</span><Link to="/inbox" className="text-brand-700 hover:underline">View guest feedback</Link></div> : null}
 
       <OnboardingWizard />
-      {!ready && admin && <p className="max-w-[660px] text-sm text-ink-muted">Automatic sending requires Premium Pro. <Link to="/settings?tab=billing" className="font-medium text-brand-700 hover:underline">View plan details</Link> before adding guests.</p>}
+      {ready && admin && activeLoc && <details className="rounded-xl border border-line bg-card p-4"><summary className="cursor-pointer font-medium">Share guest help link</summary><PropertyQrCard locationId={activeLoc.id} locationName={activeLoc.name} /></details>}
+      {!ready && admin && !paid && <p className="max-w-[660px] text-sm text-ink-muted">Automatic sending requires Premium Pro. <Link to="/settings?tab=billing" className="font-medium text-brand-700 hover:underline">View plan details</Link> before adding guests.</p>}
 
       {ready && !summary.hasActivity && <section className="max-w-[660px] rounded-xl border border-line bg-card p-6 sm:p-8">
         <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><MessageSquare className="h-5 w-5" aria-hidden="true" /></div>

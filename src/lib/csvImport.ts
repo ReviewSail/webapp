@@ -15,6 +15,7 @@ export type ImportFieldKey =
   | 'phone'
   | 'checkoutDate'
   | 'checkinDate'
+  | 'expectedArrival'
   | 'source'
   | 'externalReference'
   | 'reservationStatus';
@@ -36,6 +37,7 @@ export const IMPORT_FIELDS: Array<{
   { key: 'phone', label: 'Phone', required: false, hint: 'Email or phone required' },
   { key: 'checkoutDate', label: 'Check-out date', required: true },
   { key: 'checkinDate', label: 'Check-in date', required: false, hint: 'Enables mid-stay check-ins' },
+  { key: 'expectedArrival', label: 'Expected arrival time', required: false, hint: 'Property local time, HH:MM' },
   { key: 'source', label: 'Reservation source', required: false, hint: 'Only if your file has a source column' },
   { key: 'externalReference', label: 'Booking reference', required: false, hint: 'Recommended: identifies the same booking across exports' },
   { key: 'reservationStatus', label: 'Booking status', required: false, hint: 'Blocks canceled, no-show and unrecognized statuses' },
@@ -100,6 +102,7 @@ const HEADER_CANDIDATES: Record<ImportFieldKey, string[]> = {
     'checkoutdate', 'checkout', 'departuredate', 'departure', 'enddate', 'todate',
     'checkoutday', 'dateout',
   ],
+  expectedArrival: ['arrivaltime','expectedarrival','expectedarrivaltime','checkintime'],
   checkinDate: [
     'checkindate', 'checkin', 'arrivaldate', 'arrival', 'startdate', 'fromdate',
     'checkinday', 'datein',
@@ -362,6 +365,7 @@ export type MappedRow = {
   phone: string | null;
   checkoutDate: string | null;
   checkinDate: string | null;
+  expectedArrival?: string | null;
   /** Booking origin, when the file carries one. Null falls back to the wizard's choice. */
   source: ReservationSource | null;
   externalReference?: string | null;
@@ -421,6 +425,7 @@ export const mapRow = (
     email: read('email') || null,
     phone: read('phone') || null,
     checkoutDate: readDate('checkoutDate'),
+    expectedArrival: read('expectedArrival') || null,
     checkinDate: readDate('checkinDate'),
     invalidCheckinDate: !!read('checkinDate') && !readDate('checkinDate'),
     source: normalizeSource(read('source')),
@@ -478,6 +483,9 @@ export const validateRow = (row: MappedRow, today: Date = new Date()): Validated
     issues.push({ level: 'error', message: 'Missing or unreadable check-out date' });
   }
 
+  if (row.expectedArrival && (!row.checkinDate || !/^([01]\d|2[0-3]):[0-5]\d$/.test(row.expectedArrival))) {
+    issues.push({ level: 'error', message: 'Supply a check-in date and a local arrival time in HH:MM format.' });
+  }
   if (row.invalidCheckinDate) {
     issues.push({ level: 'error', message: 'Unreadable check-in date — correct it or leave the field empty' });
   }

@@ -42,7 +42,7 @@ export default function SyncGuests() {
     email: '',
     phone: '',
     checkoutDate: new Date().toISOString().split('T')[0],
-    checkinDate: '',
+    checkinDate: '', expectedArrival: '',
     source: 'direct' as ReservationSource,
   });
 
@@ -114,6 +114,7 @@ export default function SyncGuests() {
           locationId: activeLocationId,
           checkoutDate: formData.checkoutDate,
           checkinDate: formData.checkinDate || undefined,
+          expectedArrival: formData.expectedArrival || undefined,
           source: formData.source,
           status: 'completed',
         });
@@ -126,7 +127,7 @@ export default function SyncGuests() {
             email: '',
             phone: '',
             checkoutDate: new Date().toISOString().split('T')[0],
-            checkinDate: '',
+            checkinDate: '', expectedArrival: '',
             // Keep the source: an owner adding walk-ins is adding several.
             source: formData.source,
           });
@@ -278,7 +279,10 @@ export default function SyncGuests() {
                   className="w-full px-3 py-2 border border-line rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors"
                   disabled={!activeLocationId}
                 />
-                <p className="text-xs text-ink-faint mt-1">Optional — enables mid-stay check-ins</p>
+                <p className="text-xs text-ink-faint mt-1">Optional · enables guest check-ins</p>
+                {formData.checkinDate && <label className="mt-2 block text-sm">Expected arrival (optional)
+                  <input type="time" className="ml-2 rounded border border-line bg-card p-2" value={formData.expectedArrival}
+                    onChange={e => setFormData(prev => ({ ...prev, expectedArrival: e.target.value }))} /></label>}
               </div>
             </div>
 

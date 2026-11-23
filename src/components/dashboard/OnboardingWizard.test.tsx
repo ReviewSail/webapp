@@ -16,11 +16,12 @@ describe('property setup', () => {
     const view = render(content());
     expect(screen.getByRole('button', { name: /Change property timezone/ })).toHaveTextContent('Pacific Time');
     fireEvent.change(screen.getByLabelText('Property name'), { target: { value: 'Harbour Inn' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to review link' }));
-    await screen.findByRole('heading', { name: 'Connect your review page' });
-    expect(mock.update).toHaveBeenCalledWith('a', { name: 'Harbour Inn', timezone: 'America/Los_Angeles' });
+    fireEvent.change(screen.getByLabelText('Host contact email'), {target:{value:'host@example.com'}});
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to guest link' }));
+    await screen.findByRole('heading', { name: 'Share your guest help link' });
+    expect(mock.update).toHaveBeenCalledWith('a', { name: 'Harbour Inn', timezone: 'America/Los_Angeles', usualArrival:'16:00', recoveryEmail:'host@example.com' });
     view.unmount(); mock.state.locations[0].name = 'Harbour Inn'; render(content());
-    expect(screen.getByLabelText('Google review link')).toBeVisible();
+    expect(screen.getByLabelText('Google review link (optional)')).toBeVisible();
   });
   it('discards form values when switching properties', () => {
     const view = render(content());
@@ -32,7 +33,7 @@ describe('property setup', () => {
   });
   it('rejects an invalid link without writing it', async () => {
     mock.state.locations[0].name = 'Harbour Inn'; render(content());
-    fireEvent.change(screen.getByLabelText('Google review link'), { target: { value: 'not a link' } });
+    fireEvent.change(screen.getByLabelText('Google review link (optional)'), { target: { value: 'not a link' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('valid Google review link');
     expect(mock.update).not.toHaveBeenCalled();

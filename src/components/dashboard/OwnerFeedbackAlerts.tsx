@@ -56,11 +56,17 @@ function OwnerAlertsForUser({ userId }: { userId: string }) {
     finally { busy.current = false; if (active.current) setSaving(false); }
   }
   const workerStale = !state?.worker || state.worker.state !== 'ready' || Date.now() - Date.parse(state.worker.checkedAt) > 10 * 60_000;
-  return <section aria-label="Owner email alerts" className="rounded-xl border border-line bg-card p-4 sm:p-5 space-y-3">
+  const deliveryProblem = query.isError || (state?.enabled && (workerStale || state.attentionCount > 0));
+  return <details className="rounded-xl border border-line bg-card p-4">
+    <summary className="cursor-pointer font-medium">Alert settings
+      {deliveryProblem && <span className="ml-2 text-sm text-caution">Check email delivery</span>}
+      {state && !state.enabled && <span className="ml-2 text-sm text-ink-muted">Email alerts off</span>}
+    </summary>
+    <section aria-label="Owner email alerts" className="rounded-xl border border-line bg-card p-4 sm:p-5 space-y-3">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="font-semibold text-ink">Owner email alerts</h2>
-        <p className="mt-1 text-sm text-ink-muted">An email when new 1–3 star feedback or a follow-up is saved, even when ReviewSail is closed.</p>
+        <p className="mt-1 text-sm text-ink-muted">An email when a guest reports an issue, sends a follow-up, or leaves 1–3 star feedback, even when ReviewSail is closed.</p>
       </div>
       <Button variant="secondary" size="sm" onClick={() => { void query.refetch(); }} disabled={saving || query.isFetching}>Refresh alert status</Button>
     </div>
@@ -88,5 +94,5 @@ function OwnerAlertsForUser({ userId }: { userId: string }) {
     {saveError ? <p role="alert" className="text-sm text-critical">{saveError}</p> : null}
     {notice ? <p role="status" className="text-sm text-ink-muted">{notice}</p> : null}
     <p className="text-xs text-ink-muted">These emails notify you, not the guest. Reply separately through Booking.com or your usual channel. Public review options are unchanged.</p>
-  </section>;
+  </section></details>;
 }

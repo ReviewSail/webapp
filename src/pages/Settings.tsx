@@ -1,3 +1,4 @@
+import { CheckinSettings, type ScheduleMode } from '../components/settings/CheckinSettings';
 import { useState, useEffect, useMemo } from 'react';
 import { assessGoogleReviewUrl } from '../lib/googleReviewUrl';
 import { TIMEZONES, browserTimezone, formatHourInZone } from '../lib/timezones';
@@ -84,6 +85,8 @@ export default function SettingsPage() {
   const [enableEmail, setEnableEmail] = useState(activeLoc?.enableEmail ?? true);
   const [enableSms, setEnableSms] = useState(activeLoc?.enableSms ?? true);
   const [midstayEnabled, setMidstayEnabled] = useState(activeLoc?.midstayEnabled ?? true);
+  const [mode, setMode] = useState<ScheduleMode>(activeLoc?.checkinSchedule ?? 'legacy');
+  const [arrival, setArrival] = useState(activeLoc?.usualArrival || '16:00');
   const [midstayDay, setMidstayDay] = useState(activeLoc?.midstayDay ?? 2);
   const [recoveryEmail, setRecoveryEmail] = useState(activeLoc?.recoveryEmail ?? '');
 
@@ -106,6 +109,8 @@ export default function SettingsPage() {
       setEnableEmail(activeLoc.enableEmail ?? true);
       setEnableSms(activeLoc.enableSms ?? true);
       setMidstayEnabled(activeLoc.midstayEnabled ?? true);
+      setMode(activeLoc.checkinSchedule ?? 'legacy');
+      setArrival(activeLoc.usualArrival || '16:00');
       setMidstayDay(activeLoc.midstayDay ?? 2);
       setRecoveryEmail(activeLoc.recoveryEmail ?? '');
     }
@@ -160,6 +165,8 @@ export default function SettingsPage() {
         timezone,
         enableEmail,
         enableSms,
+        checkinSchedule: mode === 'legacy' ? null : mode,
+        usualArrival: arrival,
         midstayEnabled,
         midstayDay,
         recoveryEmail,
@@ -466,7 +473,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-ink mb-1">Recovery Email (for unhappy guests)</label>
+              <label className="block text-xs font-bold text-ink mb-1">Host contact email</label>
               <input
                 type="email"
                 value={recoveryEmail}
@@ -474,54 +481,12 @@ export default function SettingsPage() {
                 placeholder="manager@myhotel.com"
                 className="w-full rounded-xl border-line shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm py-2.5 px-3 border bg-card"
               />
-              <p className="text-[11px] text-ink-faint mt-1">Shown to unhappy guests as a direct contact option.</p>
+              <p className="text-[11px] text-ink-faint mt-1">Guests see this address when they need to reach you directly.</p>
             </div>
 
-            <div className="p-3 bg-canvas rounded-xl border border-line space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-sm font-semibold text-ink">Mid-stay Check-in</span>
-                  <p className="text-xs text-ink-faint mt-0.5">Catch problems while there is still time to fix them</p>
-                </div>
-                <button
-                  onClick={() => setMidstayEnabled(!midstayEnabled)}
-                  className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                    midstayEnabled ? 'bg-brand-600' : 'bg-line'
-                  }`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-card rounded-full shadow-sm transition-transform ${
-                    midstayEnabled ? 'translate-x-4' : ''
-                  }`} />
-                </button>
-              </div>
-
-              {/* The hour is deliberately not a second control — it reuses the
-                  send hour set above, so there is only one number to choose. */}
-              {midstayEnabled && (
-                <div className="pt-3 border-t border-line">
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-ink">
-                    <span>Send on</span>
-                    <select
-                      value={midstayDay}
-                      onChange={(e) => setMidstayDay(Number(e.target.value))}
-                      className="rounded-lg border-line shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm py-1.5 px-2 border bg-card font-semibold"
-                    >
-                      {[2, 3, 4, 5, 6, 7].map((day) => (
-                        <option key={day} value={day}>Day {day}</option>
-                      ))}
-                    </select>
-                    <span>of the stay, at {formatHourInZone(sendHour)} local</span>
-                  </div>
-                  <p className="text-[11px] text-ink-faint mt-1.5">
-                    {midstayDay === 2
-                      ? 'Day 1 is the arrival day, so Day 2 is the morning after they arrive.'
-                      : `Day 1 is the arrival day, so Day ${midstayDay} is ${midstayDay - 1} days after they arrive.`}
-                    {' '}Skipped for guests who check out on or before that day.
-                  </p>
-                </div>
-              )}
-            </div>
-
+            <CheckinSettings enabled={midstayEnabled} setEnabled={setMidstayEnabled}
+              mode={mode} setMode={setMode} arrival={arrival} setArrival={setArrival}
+              timezone={timezone} legacyDay={midstayDay} legacyHour={sendHour} />
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={handleSaveGeneral}
