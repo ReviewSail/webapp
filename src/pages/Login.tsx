@@ -75,7 +75,9 @@ export default function Login() {
             <SailMark variant="container" className="h-8 w-8 shrink-0" />
             <span>ReviewSail</span>
           </span>
-          <p className="mt-2 text-sm text-ink-muted">Sign in to manage your review invites</p>
+          <p className="mt-2 text-sm text-ink-muted">
+            {view === 'sign_in' ? 'Sign in to manage your review invites' : 'Create your ReviewSail account'}
+          </p>
         </div>
         <Auth
           supabaseClient={supabase}
@@ -89,6 +91,11 @@ export default function Login() {
           appearance={authAppearance(dark)}
           theme={dark ? 'dark' : 'light'}
         />
+        {view === 'sign_up' && (
+          <p role="note" className="rounded-lg border border-line bg-card px-3 py-2.5 text-left text-sm leading-5 text-ink-muted">
+            Already have an account? Choose “Already have an account? Sign in” below, or use “Forgot your password?” to recover access. New accounts need to confirm their email before signing in.
+          </p>
+        )}
         <div className="space-y-3 text-center text-sm">
           <Link to="/reset-password" className="block text-brand-600 underline">Forgot your password?</Link>
           <button type="button" className="text-brand-600 underline" onClick={() => setView(view === 'sign_in' ? 'sign_up' : 'sign_in')}>
